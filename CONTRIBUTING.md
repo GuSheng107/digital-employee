@@ -296,8 +296,6 @@ python -m pytest
 
 ## 发布流程
 
-（待定 — 目前是单人维护项目。）
-
 计划流程：
 
 1. 在 `pyproject.toml` 和 `package.json` 中升级版本号
@@ -310,7 +308,6 @@ python -m pytest
 
 ## 有疑问？
 
-- 💬 一般性问题请在 [Discussions](../../discussions) 发起讨论
 - 🐛 Bug 与功能请求请提交 [Issue](../../issues)
 - 📧 敏感事项请联系维护者
 
