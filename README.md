@@ -104,9 +104,12 @@ docker compose up --build
 
 ## 贡献
 
-请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 了解协作流程与分支保护规则。
+我们欢迎所有形式的贡献 — 提交 bug 报告、提出功能建议、改进文档或贡献代码。
+
+📖 请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 了解完整的协作流程。
 
 > **注意**：`master` 分支已受保护，所有改动必须通过 Pull Request 流程合入。
+> 当前要求：必须通过 PR、推送新 commit 后旧 review 自动失效、管理员不可绕过。
 
 ## 许可证
 
