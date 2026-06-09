@@ -228,8 +228,6 @@ BREAKING CHANGE: webhook platform configs must be migrated to grpc
 
 ### 代码规范
 
-完整规范见 [`.ai-memory/code-style.md`](./.ai-memory/code-style.md)。
-
 简要总结：
 
 - **Python**：`black` + `isort` + type hints；遵循 PEP 8；snake_case；公开 API 必须有 docstring
