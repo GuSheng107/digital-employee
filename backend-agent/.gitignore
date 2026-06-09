@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/
+web/node_modules/
+web/dist/
+config.yaml
+/.attachments/
+/.doc/
+/.memory/
+/.skills/*
+!/.skills/system/
+/.trae/
+/tests/
+/test/

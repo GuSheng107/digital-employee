@@ -1,0 +1,435 @@
+.task-management {
+  background: #f5f7fa;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  font-size: 15px;
+}
+
+.task-management .header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 16px 24px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  flex-shrink: 0;
+}
+
+.task-management .header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.task-management .header h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.task-management .header-hint {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.task-management .filter-bar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding: 16px 24px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  flex-shrink: 0;
+}
+
+.task-management .filter-bar .el-select,
+.task-management .filter-bar .el-input {
+  width: 180px;
+}
+
+.task-management .table-container {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.task-management .table-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.task-management .table-container .el-table {
+  border-radius: 0;
+  height: 100%;
+}
+
+.task-management .table-container .el-table th.el-table__cell {
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+}
+
+.task-management .table-container .el-tabs__content {
+  padding-top: 8px;
+}
+
+.task-management .table-container .el-table .cell {
+  padding: 14px 0;
+}
+
+.task-management .table-container .el-table__header-wrapper th {
+  padding: 14px 0;
+  font-size: 15px;
+}
+
+.task-management .task-prompt-text {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.task-management .empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: #94a3b8;
+  font-size: 15px;
+}
+
+.task-management .pagination-container {
+  padding: 16px 24px;
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid #f1f5f9;
+  flex-shrink: 0;
+}
+
+.task-management .pagination-container .el-pagination {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.task-management .pagination-container .el-pagination__sizes .el-select {
+  width: 112px;
+}
+
+.task-management .dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.task-management .prompt-text-view,
+.task-management .result-text {
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #334155;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.task-management .prompt-text-view::-webkit-scrollbar,
+.task-management .result-text::-webkit-scrollbar {
+  width: 6px;
+}
+
+.task-management .prompt-text-view::-webkit-scrollbar-thumb,
+.task-management .result-text::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.task-management .prompt-text-view::-webkit-scrollbar-track,
+.task-management .result-text::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.task-management .divider-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.task-management .time-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.task-management .current-time {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+}
+
+.task-management .current-time .label {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.task-management .current-time .value {
+  font-size: 13px;
+  color: #1f2937;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.task-management .data-summary {
+  display: flex;
+  gap: 16px;
+}
+
+.task-management .summary-card {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  color: #fff;
+}
+
+.task-management .summary-card:last-child {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.task-management .summary-card .icon {
+  font-size: 36px;
+  line-height: 1;
+}
+
+.task-management .summary-card .info {
+  flex: 1;
+}
+
+.task-management .summary-card .number {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.task-management .summary-card .label {
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.task-management .memory-prompt-input textarea {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.task-management .action-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.task-management .action-buttons .el-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-management .btn-icon {
+  font-size: 16px;
+}
+
+.task-management .message-list-editor {
+  width: 100%;
+  max-height: 650px;
+  overflow-y: auto;
+  border: 1px solid var(--el-border-color);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.task-management .message-list-editor.is-readonly {
+  max-height: 720px;
+}
+
+.task-management .chat-section {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid var(--el-border-color-light);
+}
+
+.task-management .chat-section:last-child {
+  margin-bottom: 0;
+}
+
+.task-management .chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.task-management .chat-title {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  font-size: 15px;
+}
+
+.task-management .chat-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.task-management .chat-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.task-management .qa-pair {
+  margin-bottom: 16px;
+  padding: 14px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid var(--el-border-color-light);
+}
+
+.task-management .qa-pair:last-child {
+  margin-bottom: 0;
+}
+
+.task-management .qa-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.task-management .pair-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.task-management .pair-feedback-tag {
+  cursor: default;
+}
+
+.task-management .qa-question {
+  margin-bottom: 12px;
+}
+
+.task-management .qa-answer {
+  background: #f0f7ff;
+  padding: 12px;
+  border-radius: 6px;
+}
+
+.task-management .qa-label {
+  font-weight: 600;
+  color: #409eff;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-management .qa-label.answer {
+  color: #67c23a;
+}
+
+.task-management .qa-subtitle {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 6px;
+}
+
+.task-management .qa-input {
+  width: 100%;
+}
+
+.task-management .qa-text-view {
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #334155;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.task-management .unpaired-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--el-border-color-lighter);
+}
+
+.task-management .unpaired-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 12px;
+}
+
+.task-management .unpaired-item {
+  margin-bottom: 12px;
+  padding: 12px;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid var(--el-border-color-light);
+}
+
+.task-management .unpaired-item:last-child {
+  margin-bottom: 0;
+}
+
+.task-management .unpaired-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.task-management .json-edit-toggle {
+  margin: 12px 0;
+}
+
+@media (max-width: 1200px) {
+  .task-management .filter-bar {
+    flex-wrap: wrap;
+  }
+
+  .task-management .filter-bar .el-select,
+  .task-management .filter-bar .el-input {
+    width: 100%;
+  }
+}

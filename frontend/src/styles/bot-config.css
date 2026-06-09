@@ -1,0 +1,460 @@
+.bot-config {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 20px;
+  font-size: 15px;
+}
+
+.bot-config .header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.bot-config .header h2 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.bot-config .content {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+  gap: 20px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.bot-config .left-panel,
+.bot-config .right-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.bot-config .left-panel {
+  flex: 1;
+}
+
+.bot-config .right-panel {
+  width: auto;
+}
+
+.bot-config .table-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.bot-config .table-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.bot-config .table-container :deep(.el-table) {
+  min-width: 980px;
+  font-size: 15px;
+  width: 100%;
+}
+
+.bot-config .table-container :deep(.el-table .cell) {
+  padding: 14px 0;
+}
+
+.bot-config .table-container :deep(.el-table__header-wrapper th) {
+  padding: 14px 0;
+  font-size: 15px;
+}
+
+.bot-config .table-container :deep(.el-table__body-wrapper) {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.bot-config .pagination-container {
+  padding-top: 16px;
+  flex-shrink: 0;
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.bot-config .pagination-container :deep(.el-pagination) {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bot-config .pagination-container :deep(.el-pagination__sizes .el-select) {
+  width: 112px;
+}
+
+.bot-config .right-panel .el-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.bot-config .right-panel .el-card__body {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.bot-config .active-bots-container {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.bot-config .actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.bot-config .bot-search-input {
+  width: 260px;
+}
+
+.bot-config .actions :deep(.el-input__wrapper) {
+  min-height: 40px;
+}
+
+.bot-config .actions :deep(.el-button) {
+  min-width: 76px;
+}
+
+.bot-config .loading {
+  text-align: center;
+  padding: 40px;
+  color: #909399;
+  font-size: 15px;
+}
+
+.bot-config .empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: #909399;
+  font-size: 15px;
+}
+
+.bot-config .empty-bots {
+  text-align: center;
+  color: #909399;
+  padding: 20px;
+}
+
+.bot-config .bot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bot-config .bot-item {
+  padding: 12px;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  background-color: #f5f7fa;
+}
+
+.bot-config .bot-item-disabled {
+  background-color: #fafafa;
+  opacity: 0.7;
+}
+
+.bot-config .bot-name {
+  font-weight: 500;
+  font-size: 14px;
+  color: #303133;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bot-config .bot-status-tag {
+  flex-shrink: 0;
+}
+
+.bot-config .bot-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.bot-config .bot-buttons .el-button {
+  font-size: 12px;
+}
+
+.bot-config .bind-dialog-body {
+  line-height: 1.8;
+  color: #303133;
+  word-break: break-word;
+}
+
+.bot-config .bind-dialog-body p {
+  margin: 0 0 12px 0;
+}
+
+.bot-config .bind-countdown {
+  font-size: 18px;
+  font-weight: 600;
+  color: #409eff;
+  text-align: center;
+  margin-top: 16px;
+  padding: 12px;
+  background: #ecf5ff;
+  border-radius: 6px;
+}
+
+.bot-config .bind-countdown-danger {
+  color: #f56c6c;
+  background: #fef0f0;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.bot-edit-dialog {
+  max-width: 94vw;
+}
+
+.bot-edit-dialog .el-dialog__body {
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.bot-edit-form {
+  min-width: 0;
+}
+
+.bot-config .bot-edit-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 390px);
+  gap: 20px;
+  align-items: start;
+  width: 100%;
+}
+
+.bot-config .bot-edit-fields {
+  min-width: 0;
+}
+
+.bot-config .bot-edit-preview {
+  position: sticky;
+  top: 0;
+  min-width: 0;
+}
+
+.bot-config .prompt-editor-form-item {
+  margin-bottom: 18px;
+}
+
+.bot-config .prompt-editor-form-item .el-form-item__content {
+  display: block;
+}
+
+.bot-config .prompt-editor-textarea {
+  min-width: 0;
+}
+
+.bot-config .prompt-editor-textarea .el-textarea__inner {
+  min-height: 500px !important;
+  resize: vertical;
+  font-family: "Cascadia Mono", "Consolas", "Menlo", monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.bot-config .prompt-preview-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: calc(80vh - 112px);
+  min-height: 560px;
+  max-height: 720px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.bot-config .prompt-preview-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 38px;
+  padding: 0 12px;
+  border-bottom: 1px solid #ebeef5;
+  color: #606266;
+  font-size: 13px;
+  background: #f8fafc;
+}
+
+.bot-config .prompt-preview-panel__body {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 14px 16px;
+  overflow: auto;
+  color: #303133;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.bot-config .prompt-preview-panel__body--text {
+  font-family: "Cascadia Mono", "Consolas", "Menlo", monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bot-config .prompt-preview-panel__body--markdown {
+  word-break: break-word;
+}
+
+.bot-config .prompt-preview-panel__body--markdown h1,
+.bot-config .prompt-preview-panel__body--markdown h2,
+.bot-config .prompt-preview-panel__body--markdown h3,
+.bot-config .prompt-preview-panel__body--markdown h4,
+.bot-config .prompt-preview-panel__body--markdown h5,
+.bot-config .prompt-preview-panel__body--markdown h6 {
+  margin: 14px 0 8px;
+  color: #1f2937;
+  line-height: 1.35;
+}
+
+.bot-config .prompt-preview-panel__body--markdown h1 {
+  font-size: 22px;
+}
+
+.bot-config .prompt-preview-panel__body--markdown h2 {
+  font-size: 18px;
+}
+
+.bot-config .prompt-preview-panel__body--markdown h3 {
+  font-size: 16px;
+}
+
+.bot-config .prompt-preview-panel__body--markdown p,
+.bot-config .prompt-preview-panel__body--markdown ul,
+.bot-config .prompt-preview-panel__body--markdown ol,
+.bot-config .prompt-preview-panel__body--markdown blockquote,
+.bot-config .prompt-preview-panel__body--markdown pre,
+.bot-config .prompt-preview-panel__body--markdown table {
+  margin: 0 0 12px;
+}
+
+.bot-config .prompt-preview-panel__body--markdown ul,
+.bot-config .prompt-preview-panel__body--markdown ol {
+  padding-left: 22px;
+}
+
+.bot-config .prompt-preview-panel__body--markdown blockquote {
+  padding: 8px 12px;
+  border-left: 3px solid #cbd5e1;
+  color: #475569;
+  background: #f8fafc;
+}
+
+.bot-config .prompt-preview-panel__body--markdown code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  font-family: "Cascadia Mono", "Consolas", "Menlo", monospace;
+}
+
+.bot-config .prompt-preview-panel__body--markdown pre {
+  padding: 12px;
+  overflow: auto;
+  border-radius: 4px;
+  background: #111827;
+  color: #e5e7eb;
+}
+
+.bot-config .prompt-preview-panel__body--markdown pre code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.bot-config .prompt-preview-panel__body--markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.bot-config .prompt-preview-panel__body--markdown th,
+.bot-config .prompt-preview-panel__body--markdown td {
+  padding: 6px 8px;
+  border: 1px solid #e5e7eb;
+  text-align: left;
+  vertical-align: top;
+}
+
+.bot-config .prompt-preview-panel__body--markdown th {
+  background: #f8fafc;
+  font-weight: 600;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@media (max-width: 1280px) {
+  .bot-config .content {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .bot-config .bot-edit-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .bot-config .bot-edit-preview {
+    position: static;
+  }
+
+  .bot-config .prompt-preview-panel {
+    height: auto;
+    min-height: 360px;
+    max-height: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .bot-config {
+    padding: 16px;
+  }
+
+  .bot-config .header {
+    align-items: flex-start;
+  }
+
+  .bot-config .actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .bot-config .bot-search-input {
+    width: 100%;
+  }
+}

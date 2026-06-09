@@ -1,0 +1,706 @@
+package main
+
+import (
+	"database/sql"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+
+	"github.com/chenhg5/cc-connect/config"
+	"github.com/chenhg5/cc-connect/core"
+	_ "modernc.org/sqlite"
+)
+
+func runProviderCommand(args []string) {
+	if len(args) == 0 {
+		printProviderUsage()
+		os.Exit(1)
+	}
+
+	switch args[0] {
+	case "add":
+		runProviderAdd(args[1:])
+	case "list":
+		runProviderList(args[1:])
+	case "remove":
+		runProviderRemove(args[1:])
+	case "import":
+		runProviderImport(args[1:])
+	case "presets":
+		runProviderPresets(args[1:])
+	case "global":
+		runProviderGlobal(args[1:])
+	case "help", "--help", "-h":
+		printProviderUsage()
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown provider subcommand: %s\n\n", args[0])
+		printProviderUsage()
+		os.Exit(1)
+	}
+}
+
+func printProviderUsage() {
+	fmt.Println(`Usage: cc-connect provider <command> [options]
+
+Commands:
+  add      Add a new API provider to a project
+  list     List providers for a project
+  remove   Remove a provider from a project
+  import   Import providers from cc-switch
+  presets  Browse recommended provider presets
+  global   Manage global shared providers
+
+Examples:
+  cc-connect provider add --project my-backend --name relay --api-key sk-xxx
+  cc-connect provider add --project my-backend --name bedrock --env CLAUDE_CODE_USE_BEDROCK=1,AWS_PROFILE=bedrock
+  cc-connect provider list --project my-backend
+  cc-connect provider remove --project my-backend --name relay
+  cc-connect provider import --project my-backend
+  cc-connect provider presets
+  cc-connect provider global list
+  cc-connect provider global add --name minimaxi --api-key sk-xxx --base-url https://api.minimaxi.chat/v1`)
+}
+
+// initConfigPath resolves the config path and sets config.ConfigPath.
+func initConfigPath(flagValue string) {
+	config.ConfigPath = resolveConfigPath(flagValue)
+}
+
+func runProviderAdd(args []string) {
+	fs := flag.NewFlagSet("provider add", flag.ExitOnError)
+	configFile := fs.String("config", "", "path to config file")
+	project := fs.String("project", "", "project name (required)")
+	name := fs.String("name", "", "provider name (required)")
+	apiKey := fs.String("api-key", "", "API key")
+	baseURL := fs.String("base-url", "", "API base URL (optional)")
+	model := fs.String("model", "", "model name override (optional)")
+	envStr := fs.String("env", "", "extra env vars as KEY=VAL,KEY2=VAL2 (optional)")
+	_ = fs.Parse(args)
+
+	if *project == "" || *name == "" {
+		fmt.Fprintln(os.Stderr, "Error: --project and --name are required")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	initConfigPath(*configFile)
+
+	p := config.ProviderConfig{
+		Name:    *name,
+		APIKey:  *apiKey,
+		BaseURL: *baseURL,
+		Model:   *model,
+	}
+	if *envStr != "" {
+		p.Env = parseEnvStr(*envStr)
+	}
+
+	if err := config.AddProviderToConfig(*project, p); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✅ Provider %q added to project %q\n", *name, *project)
+	if *baseURL != "" {
+		fmt.Printf("   Base URL: %s\n", *baseURL)
+	}
+	if *model != "" {
+		fmt.Printf("   Model: %s\n", *model)
+	}
+	if len(p.Env) > 0 {
+		fmt.Printf("   Extra env: %v\n", p.Env)
+	}
+	fmt.Printf("\nTo activate: use /provider switch %s in chat.\n", *name)
+}
+
+func runProviderList(args []string) {
+	fs := flag.NewFlagSet("provider list", flag.ExitOnError)
+	configFile := fs.String("config", "", "path to config file")
+	project := fs.String("project", "", "project name (lists all projects if empty)")
+	_ = fs.Parse(args)
+
+	initConfigPath(*configFile)
+
+	if *project != "" {
+		listProjectProviders(*project)
+		return
+	}
+
+	projects, err := config.ListProjects()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	for _, p := range projects {
+		fmt.Printf("── %s ──\n", p)
+		listProjectProviders(p)
+		fmt.Println()
+	}
+}
+
+func listProjectProviders(projectName string) {
+	providers, active, err := config.GetProjectProviders(projectName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return
+	}
+
+	if len(providers) == 0 {
+		fmt.Println("  (no providers)")
+		return
+	}
+
+	for _, p := range providers {
+		marker := "  "
+		if p.Name == active {
+			marker = "▶ "
+		}
+		info := p.Name
+		if p.BaseURL != "" {
+			info += fmt.Sprintf(" (base_url: %s)", p.BaseURL)
+		}
+		if p.Model != "" {
+			info += fmt.Sprintf(" [model: %s]", p.Model)
+		}
+		apiKeyHint := "(not set)"
+		if p.APIKey != "" {
+			if len(p.APIKey) > 8 {
+				apiKeyHint = p.APIKey[:4] + "..." + p.APIKey[len(p.APIKey)-4:]
+			} else {
+				apiKeyHint = "****"
+			}
+		}
+		fmt.Printf("%s%s  api_key: %s\n", marker, info, apiKeyHint)
+	}
+}
+
+func runProviderRemove(args []string) {
+	fs := flag.NewFlagSet("provider remove", flag.ExitOnError)
+	configFile := fs.String("config", "", "path to config file")
+	project := fs.String("project", "", "project name (required)")
+	name := fs.String("name", "", "provider name (required)")
+	_ = fs.Parse(args)
+
+	if *project == "" || *name == "" {
+		fmt.Fprintln(os.Stderr, "Error: --project and --name are required")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	initConfigPath(*configFile)
+
+	if err := config.RemoveProviderFromConfig(*project, *name); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✅ Provider %q removed from project %q\n", *name, *project)
+}
+
+// ── Import from cc-switch ──────────────────────────────────────
+
+func runProviderImport(args []string) {
+	fs := flag.NewFlagSet("provider import", flag.ExitOnError)
+	configFile := fs.String("config", "", "path to config file")
+	project := fs.String("project", "", "target project name (auto-detect if only one)")
+	dbPath := fs.String("db-path", "", "path to cc-switch database (auto-detect)")
+	appType := fs.String("type", "", "filter by agent type: claude or codex (imports all if empty)")
+	_ = fs.Parse(args)
+
+	initConfigPath(*configFile)
+
+	// Resolve cc-switch DB path
+	db := *dbPath
+	if db == "" {
+		db = findCCSwitchDB()
+		if db == "" {
+			fmt.Fprintln(os.Stderr, "Error: cc-switch database not found. Searched:")
+			for _, p := range ccSwitchDBCandidates() {
+				fmt.Fprintf(os.Stderr, "  - %s\n", p)
+			}
+			fmt.Fprintln(os.Stderr, "\nSpecify manually with --db-path")
+			os.Exit(1)
+		}
+	}
+	if _, err := os.Stat(db); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: database not found at %s\n", db)
+		os.Exit(1)
+	}
+
+	// Resolve target project
+	targetProject := *project
+	if targetProject == "" {
+		projects, err := config.ListProjects()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading config: %v\n", err)
+			os.Exit(1)
+		}
+		if len(projects) == 1 {
+			targetProject = projects[0]
+		} else if len(projects) == 0 {
+			fmt.Fprintln(os.Stderr, "Error: no projects in config file")
+			os.Exit(1)
+		} else {
+			fmt.Fprintln(os.Stderr, "Error: multiple projects found, specify one with --project:")
+			for _, p := range projects {
+				fmt.Fprintf(os.Stderr, "  - %s\n", p)
+			}
+			os.Exit(1)
+		}
+	}
+
+	fmt.Printf("Importing from: %s\n", db)
+	fmt.Printf("Target project: %s\n\n", targetProject)
+
+	rows, err := queryCCSwitchDB(db, *appType)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error querying database: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(rows) == 0 {
+		fmt.Println("No providers found in cc-switch database.")
+		return
+	}
+
+	imported := 0
+	skipped := 0
+	for _, row := range rows {
+		provider, err := convertCCSwitchProvider(row)
+		if err != nil {
+			fmt.Printf("  ⚠ Skip %q (%s): %v\n", row.Name, row.AppType, err)
+			skipped++
+			continue
+		}
+
+		if err := config.AddProviderToConfig(targetProject, provider); err != nil {
+			if strings.Contains(err.Error(), "already exists") {
+				fmt.Printf("  ⏭ Skip %q: already exists\n", provider.Name)
+				skipped++
+			} else {
+				fmt.Fprintf(os.Stderr, "  ✗ Failed to add %q: %v\n", provider.Name, err)
+				skipped++
+			}
+			continue
+		}
+
+		activeTag := ""
+		if row.IsCurrent == 1 {
+			activeTag = " (was active in cc-switch)"
+		}
+		fmt.Printf("  ✅ %s [%s] → %s%s\n", row.Name, row.AppType, provider.Name, activeTag)
+		imported++
+	}
+
+	fmt.Printf("\nDone: %d imported, %d skipped\n", imported, skipped)
+	if imported > 0 {
+		fmt.Println("\nActivate a provider with: /provider switch <name> in chat")
+	}
+}
+
+type ccSwitchRow struct {
+	ID             string `json:"id"`
+	AppType        string `json:"app_type"`
+	Name           string `json:"name"`
+	SettingsConfig string `json:"settings_config"`
+	IsCurrent      int    `json:"is_current"`
+}
+
+// queryCCSwitchDB opens the cc-switch SQLite database and returns provider rows.
+// appTypeFilter can be empty (return all) or "claude"/"codex".
+func queryCCSwitchDB(dbPath, appTypeFilter string) ([]ccSwitchRow, error) {
+	db, err := sql.Open("sqlite", dbPath+"?mode=ro")
+	if err != nil {
+		return nil, fmt.Errorf("open cc-switch db: %w", err)
+	}
+	defer db.Close()
+
+	query := "SELECT id, app_type, name, settings_config, is_current FROM providers"
+	var args []any
+	if appTypeFilter != "" {
+		query += " WHERE app_type = ?"
+		args = append(args, appTypeFilter)
+	}
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query cc-switch db: %w", err)
+	}
+	defer rows.Close()
+
+	var result []ccSwitchRow
+	for rows.Next() {
+		var r ccSwitchRow
+		if err := rows.Scan(&r.ID, &r.AppType, &r.Name, &r.SettingsConfig, &r.IsCurrent); err != nil {
+			continue
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
+func convertCCSwitchProvider(row ccSwitchRow) (config.ProviderConfig, error) {
+	var sc map[string]any
+	if err := json.Unmarshal([]byte(row.SettingsConfig), &sc); err != nil {
+		return config.ProviderConfig{}, fmt.Errorf("invalid settings_config JSON: %w", err)
+	}
+
+	p := config.ProviderConfig{
+		Name: strings.ToLower(strings.ReplaceAll(strings.TrimSpace(row.Name), " ", "-")),
+	}
+
+	switch row.AppType {
+	case "claude":
+		return convertClaudeProvider(p, sc)
+	case "codex":
+		return convertCodexProvider(p, sc)
+	default:
+		return config.ProviderConfig{}, fmt.Errorf("unsupported app_type %q (only claude and codex are supported)", row.AppType)
+	}
+}
+
+func convertClaudeProvider(p config.ProviderConfig, sc map[string]any) (config.ProviderConfig, error) {
+	env, _ := sc["env"].(map[string]any)
+	if env == nil {
+		return p, fmt.Errorf("no env in settings_config")
+	}
+
+	if key, ok := env["ANTHROPIC_AUTH_TOKEN"].(string); ok && key != "" {
+		p.APIKey = key
+	}
+	if url, ok := env["ANTHROPIC_BASE_URL"].(string); ok && url != "" {
+		p.BaseURL = url
+	}
+	if model, ok := env["ANTHROPIC_MODEL"].(string); ok && model != "" {
+		p.Model = model
+	}
+
+	// Carry over any extra env vars (e.g. ANTHROPIC_DEFAULT_HAIKU_MODEL)
+	extra := make(map[string]string)
+	known := map[string]bool{"ANTHROPIC_AUTH_TOKEN": true, "ANTHROPIC_BASE_URL": true, "ANTHROPIC_MODEL": true}
+	for k, v := range env {
+		if !known[k] {
+			if s, ok := v.(string); ok && s != "" {
+				extra[k] = s
+			}
+		}
+	}
+	if len(extra) > 0 {
+		p.Env = extra
+	}
+
+	if p.APIKey == "" && len(p.Env) == 0 {
+		return p, fmt.Errorf("no API key or env found")
+	}
+	return p, nil
+}
+
+func convertCodexProvider(p config.ProviderConfig, sc map[string]any) (config.ProviderConfig, error) {
+	// API key from auth.OPENAI_API_KEY
+	if auth, ok := sc["auth"].(map[string]any); ok {
+		if key, ok := auth["OPENAI_API_KEY"].(string); ok && key != "" {
+			p.APIKey = key
+		}
+	}
+
+	// base_url and model from config TOML string
+	if cfgStr, ok := sc["config"].(string); ok && cfgStr != "" {
+		p.BaseURL, p.Model = parseCodexConfigTOML(cfgStr)
+	}
+
+	if p.APIKey == "" {
+		return p, fmt.Errorf("no OPENAI_API_KEY found")
+	}
+	return p, nil
+}
+
+// parseCodexConfigTOML extracts base_url and model from a Codex config.toml string.
+// It handles both flat `base_url = "..."` and upstream-style `[model_providers.X]` sections.
+func parseCodexConfigTOML(cfgStr string) (baseURL, model string) {
+	for _, line := range strings.Split(cfgStr, "\n") {
+		line = strings.TrimSpace(line)
+		if k, v, ok := parseTOMLKV(line); ok {
+			switch k {
+			case "base_url":
+				if baseURL == "" {
+					baseURL = v
+				}
+			case "model":
+				if model == "" {
+					model = v
+				}
+			}
+		}
+	}
+	return
+}
+
+func parseTOMLKV(line string) (key, value string, ok bool) {
+	idx := strings.Index(line, "=")
+	if idx < 0 || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "[") {
+		return "", "", false
+	}
+	key = strings.TrimSpace(line[:idx])
+	value = strings.TrimSpace(line[idx+1:])
+	value = strings.Trim(value, "\"'")
+	return key, value, true
+}
+
+func findCCSwitchDB() string {
+	for _, p := range ccSwitchDBCandidates() {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+func ccSwitchDBCandidates() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
+	candidates := []string{
+		filepath.Join(home, ".cc-switch", "cc-switch.db"),
+	}
+
+	switch runtime.GOOS {
+	case "linux":
+		dataHome := os.Getenv("XDG_DATA_HOME")
+		if dataHome == "" {
+			dataHome = filepath.Join(home, ".local", "share")
+		}
+		candidates = append(candidates, filepath.Join(dataHome, "cc-switch", "cc-switch.db"))
+	case "darwin":
+		candidates = append(candidates, filepath.Join(home, "Library", "Application Support", "cc-switch", "cc-switch.db"))
+	}
+
+	return candidates
+}
+
+// listCCSwitchProvidersForWeb reads the cc-switch database and returns
+// providers in the format expected by the management API.
+func listCCSwitchProvidersForWeb() ([]core.CCSwitchProviderInfo, error) {
+	dbPath := findCCSwitchDB()
+	if dbPath == "" {
+		return nil, fmt.Errorf("cc-switch database not found")
+	}
+
+	rows, err := queryCCSwitchDB(dbPath, "")
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]core.CCSwitchProviderInfo, 0, len(rows))
+	for _, row := range rows {
+		p, err := convertCCSwitchProvider(row)
+		if err != nil {
+			continue
+		}
+		result = append(result, core.CCSwitchProviderInfo{
+			Name:      p.Name,
+			AppType:   row.AppType,
+			APIKey:    p.APIKey,
+			BaseURL:   p.BaseURL,
+			Model:     p.Model,
+			IsCurrent: row.IsCurrent == 1,
+		})
+	}
+	return result, nil
+}
+
+func parseEnvStr(s string) map[string]string {
+	env := make(map[string]string)
+	for _, pair := range strings.Split(s, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		if idx := strings.IndexByte(pair, '='); idx > 0 {
+			env[pair[:idx]] = pair[idx+1:]
+		}
+	}
+	return env
+}
+
+// ── Presets ────────────────────────────────────────────────────
+
+func runProviderPresets(args []string) {
+	fs := flag.NewFlagSet("provider presets", flag.ExitOnError)
+	url := fs.String("url", "", "override presets URL")
+	_ = fs.Parse(args)
+
+	if *url != "" {
+		core.SetPresetsURL(*url)
+	}
+
+	data, err := core.FetchProviderPresets()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(data.Providers) == 0 {
+		fmt.Println("No presets available.")
+		return
+	}
+
+	fmt.Printf("Provider Presets (v%d)\n\n", data.Version)
+	for i, p := range data.Providers {
+		sponsor := ""
+		if p.Tier <= 1 {
+			sponsor = " ⭐ SPONSOR"
+		}
+		fmt.Printf("%d. %s%s\n", i+1, p.DisplayName, sponsor)
+		if p.Description != "" {
+			fmt.Printf("   %s\n", p.Description)
+		}
+		agentTypes := make([]string, 0, len(p.Agents))
+		for at := range p.Agents {
+			agentTypes = append(agentTypes, at)
+		}
+		if len(agentTypes) > 0 {
+			fmt.Printf("   Agents: %s\n", strings.Join(agentTypes, ", "))
+		}
+		for at, ac := range p.Agents {
+			fmt.Printf("   [%s] %s · %s\n", at, ac.BaseURL, ac.Model)
+		}
+		if p.InviteURL != "" {
+			fmt.Printf("   Register: %s\n", p.InviteURL)
+		}
+		fmt.Println()
+	}
+}
+
+// ── Global provider management ─────────────────────────────────
+
+func runProviderGlobal(args []string) {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, `Usage: cc-connect provider global <command>
+
+Commands:
+  list     List global providers
+  add      Add a global provider
+  remove   Remove a global provider`)
+		os.Exit(1)
+	}
+
+	switch args[0] {
+	case "list":
+		runGlobalProviderList(args[1:])
+	case "add":
+		runGlobalProviderAdd(args[1:])
+	case "remove":
+		runGlobalProviderRemove(args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown global subcommand: %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func runGlobalProviderList(args []string) {
+	fs := flag.NewFlagSet("provider global list", flag.ExitOnError)
+	configFile := fs.String("config", "", "path to config file")
+	_ = fs.Parse(args)
+
+	initConfigPath(*configFile)
+
+	providers, err := config.ListGlobalProviders()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	if len(providers) == 0 {
+		fmt.Println("No global providers configured.")
+		fmt.Println("\nAdd one with: cc-connect provider global add --name <name> --api-key <key>")
+		return
+	}
+
+	fmt.Printf("Global Providers (%d)\n\n", len(providers))
+	for _, p := range providers {
+		info := p.Name
+		if p.BaseURL != "" {
+			info += fmt.Sprintf(" (%s)", p.BaseURL)
+		}
+		if p.Model != "" {
+			info += fmt.Sprintf(" [%s]", p.Model)
+		}
+		apiKeyHint := "(not set)"
+		if p.APIKey != "" {
+			if len(p.APIKey) > 8 {
+				apiKeyHint = p.APIKey[:4] + "..." + p.APIKey[len(p.APIKey)-4:]
+			} else {
+				apiKeyHint = "****"
+			}
+		}
+		fmt.Printf("  %s  api_key: %s\n", info, apiKeyHint)
+	}
+}
+
+func runGlobalProviderAdd(args []string) {
+	fs := flag.NewFlagSet("provider global add", flag.ExitOnError)
+	configFile := fs.String("config", "", "path to config file")
+	name := fs.String("name", "", "provider name (required)")
+	apiKey := fs.String("api-key", "", "API key")
+	baseURL := fs.String("base-url", "", "API base URL")
+	model := fs.String("model", "", "default model")
+	thinking := fs.String("thinking", "", "thinking override: enabled/disabled")
+	envStr := fs.String("env", "", "extra env vars as KEY=VAL,KEY2=VAL2")
+	_ = fs.Parse(args)
+
+	if *name == "" {
+		fmt.Fprintln(os.Stderr, "Error: --name is required")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	initConfigPath(*configFile)
+
+	p := config.ProviderConfig{
+		Name:     *name,
+		APIKey:   *apiKey,
+		BaseURL:  *baseURL,
+		Model:    *model,
+		Thinking: *thinking,
+	}
+	if *envStr != "" {
+		p.Env = parseEnvStr(*envStr)
+	}
+
+	if err := config.AddGlobalProvider(p); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✅ Global provider %q added\n", *name)
+	fmt.Println("\nTo use in a project, add to config.toml:")
+	fmt.Printf("  [projects.agent]\n  provider_refs = [\"%s\"]\n", *name)
+}
+
+func runGlobalProviderRemove(args []string) {
+	fs := flag.NewFlagSet("provider global remove", flag.ExitOnError)
+	configFile := fs.String("config", "", "path to config file")
+	name := fs.String("name", "", "provider name (required)")
+	_ = fs.Parse(args)
+
+	if *name == "" {
+		fmt.Fprintln(os.Stderr, "Error: --name is required")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	initConfigPath(*configFile)
+
+	if err := config.RemoveGlobalProvider(*name); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✅ Global provider %q removed\n", *name)
+}

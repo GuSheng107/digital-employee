@@ -1,0 +1,46 @@
+version: "3.8"
+
+services:
+  backend-agent:
+    build:
+      context: ./backend-agent
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend-agent:/app
+      - ./data:/app/data
+    env_file:
+      - ./backend-agent/.env
+    depends_on:
+      - redis
+
+  backend-gateway:
+    build:
+      context: ./backend-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend-gateway:/app
+    depends_on:
+      - backend-agent
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend-agent
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:

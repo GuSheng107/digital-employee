@@ -1,0 +1,767 @@
+package claudecode
+
+import (
+	"os"
+	"path/filepath"
+	"reflect"
+	"runtime"
+	"testing"
+
+	"github.com/chenhg5/cc-connect/core"
+)
+
+func TestNew_ParsesRunAsUserAndRunAsEnv(t *testing.T) {
+	opts := map[string]any{
+		"work_dir":    "/tmp/claudecode-test",
+		"run_as_user": "partseeker-coder",
+		"run_as_env":  []any{"PGSSLROOTCERT", "PGSSLMODE"},
+	}
+	a, err := New(opts)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	ag, ok := a.(*Agent)
+	if !ok {
+		t.Fatalf("agent is not *Agent: %T", a)
+	}
+	if ag.spawnOpts.RunAsUser != "partseeker-coder" {
+		t.Errorf("spawnOpts.RunAsUser = %q, want %q", ag.spawnOpts.RunAsUser, "partseeker-coder")
+	}
+	if got := ag.spawnOpts.EnvAllowlist; len(got) != 2 || got[0] != "PGSSLROOTCERT" || got[1] != "PGSSLMODE" {
+		t.Errorf("spawnOpts.EnvAllowlist = %v, want [PGSSLROOTCERT PGSSLMODE]", got)
+	}
+}
+
+func TestNew_RunAsUserSkipsClaudeLookPath(t *testing.T) {
+	// With run_as_user set, the supervisor's PATH lookup for "claude" is
+	// skipped because the target user's PATH is what matters. Verify that
+	// New() doesn't fail even when claude isn't on this test process's PATH.
+	opts := map[string]any{
+		"work_dir":    "/tmp/claudecode-test",
+		"run_as_user": "target-that-definitely-exists",
+	}
+	// Note: this test relies on New() NOT calling exec.LookPath("claude")
+	// when run_as_user is set. If claude IS on PATH in the test env,
+	// either branch of the code returns success and the test still passes.
+	if _, err := New(opts); err != nil {
+		// The only other reason New() could fail for these opts is the
+		// LookPath check — fail loudly if that's what happened.
+		t.Errorf("New with run_as_user returned error (LookPath not skipped?): %v", err)
+	}
+	_ = core.AgentSystemPrompt // keep the core import used
+}
+
+func TestParseUserQuestions_ValidInput(t *testing.T) {
+	input := map[string]any{
+		"questions": []any{
+			map[string]any{
+				"question":    "Which database?",
+				"header":      "Setup",
+				"multiSelect": false,
+				"options": []any{
+					map[string]any{"label": "PostgreSQL", "description": "Production"},
+					map[string]any{"label": "SQLite", "description": "Dev"},
+				},
+			},
+		},
+	}
+	qs := parseUserQuestions(input)
+	if len(qs) != 1 {
+		t.Fatalf("expected 1 question, got %d", len(qs))
+	}
+	q := qs[0]
+	if q.Question != "Which database?" {
+		t.Errorf("question = %q", q.Question)
+	}
+	if q.Header != "Setup" {
+		t.Errorf("header = %q", q.Header)
+	}
+	if q.MultiSelect {
+		t.Error("expected multiSelect=false")
+	}
+	if len(q.Options) != 2 {
+		t.Fatalf("expected 2 options, got %d", len(q.Options))
+	}
+	if q.Options[0].Label != "PostgreSQL" {
+		t.Errorf("option[0].label = %q", q.Options[0].Label)
+	}
+	if q.Options[1].Description != "Dev" {
+		t.Errorf("option[1].description = %q", q.Options[1].Description)
+	}
+}
+
+func TestParseUserQuestions_EmptyInput(t *testing.T) {
+	qs := parseUserQuestions(map[string]any{})
+	if len(qs) != 0 {
+		t.Errorf("expected 0 questions, got %d", len(qs))
+	}
+}
+
+func TestParseUserQuestions_NoQuestionText(t *testing.T) {
+	input := map[string]any{
+		"questions": []any{
+			map[string]any{"header": "Setup"},
+		},
+	}
+	qs := parseUserQuestions(input)
+	if len(qs) != 0 {
+		t.Errorf("expected 0 questions (no question text), got %d", len(qs))
+	}
+}
+
+func TestParseUserQuestions_MultiSelect(t *testing.T) {
+	input := map[string]any{
+		"questions": []any{
+			map[string]any{
+				"question":    "Select features",
+				"multiSelect": true,
+				"options": []any{
+					map[string]any{"label": "Auth"},
+					map[string]any{"label": "Logging"},
+				},
+			},
+		},
+	}
+	qs := parseUserQuestions(input)
+	if len(qs) != 1 {
+		t.Fatalf("expected 1 question, got %d", len(qs))
+	}
+	if !qs[0].MultiSelect {
+		t.Error("expected multiSelect=true")
+	}
+}
+
+func TestNormalizePermissionMode(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		// dontAsk aliases
+		{"dontAsk", "dontAsk"},
+		{"dontask", "dontAsk"},
+		{"dont-ask", "dontAsk"},
+		{"dont_ask", "dontAsk"},
+		// auto
+		{"auto", "auto"},
+		// bypassPermissions aliases
+		{"bypassPermissions", "bypassPermissions"},
+		{"yolo", "bypassPermissions"},
+		// acceptEdits aliases
+		{"acceptEdits", "acceptEdits"},
+		{"edit", "acceptEdits"},
+		// plan
+		{"plan", "plan"},
+		// default fallback
+		{"", "default"},
+		{"unknown", "default"},
+	}
+	for _, tt := range tests {
+		got := normalizePermissionMode(tt.input)
+		if got != tt.want {
+			t.Errorf("normalizePermissionMode(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestClaudeSessionSetLiveMode(t *testing.T) {
+	cs := &claudeSession{}
+	cs.setPermissionMode("default")
+	if cs.autoApprove.Load() || cs.acceptEditsOnly.Load() || cs.dontAsk.Load() {
+		t.Fatal("expected default mode flags to be off")
+	}
+
+	if !cs.SetLiveMode("acceptEdits") {
+		t.Fatal("SetLiveMode(acceptEdits) = false, want true")
+	}
+	if !cs.acceptEditsOnly.Load() || cs.autoApprove.Load() || cs.dontAsk.Load() {
+		t.Fatal("acceptEdits flags not set correctly")
+	}
+
+	if cs.SetLiveMode("auto") {
+		t.Fatal("SetLiveMode(auto) = true, want false")
+	}
+
+	cs.SetLiveMode("dontAsk")
+	if !cs.dontAsk.Load() || cs.autoApprove.Load() || cs.acceptEditsOnly.Load() {
+		t.Fatal("dontAsk flags not set correctly")
+	}
+
+	cs.SetLiveMode("bypassPermissions")
+	if !cs.autoApprove.Load() || cs.acceptEditsOnly.Load() || cs.dontAsk.Load() {
+		t.Fatal("bypassPermissions alias flags not set correctly")
+	}
+}
+
+func TestClaudeSessionSetLiveMode_AutoSessionRequiresRestart(t *testing.T) {
+	cs := &claudeSession{}
+	cs.setPermissionMode("auto")
+	if cs.SetLiveMode("default") {
+		t.Fatal("SetLiveMode(default) from auto session = true, want false")
+	}
+}
+
+func TestAgent_PermissionModes(t *testing.T) {
+	a := &Agent{}
+	modes := a.PermissionModes()
+	if len(modes) == 0 {
+		t.Fatal("PermissionModes() returned no modes")
+	}
+
+	foundAuto := false
+	foundBypass := false
+	for _, mode := range modes {
+		if mode.Key == "auto" {
+			foundAuto = true
+		}
+		if mode.Key == "bypassPermissions" {
+			foundBypass = true
+		}
+	}
+	if !foundAuto {
+		t.Fatal("PermissionModes() missing auto mode")
+	}
+	if !foundBypass {
+		t.Fatal("PermissionModes() missing bypassPermissions mode")
+	}
+}
+
+func TestIsClaudeEditTool(t *testing.T) {
+	for _, tool := range []string{"Edit", "Write", "NotebookEdit", "MultiEdit"} {
+		if !isClaudeEditTool(tool) {
+			t.Fatalf("isClaudeEditTool(%q) = false, want true", tool)
+		}
+	}
+	if isClaudeEditTool("Bash") {
+		t.Fatal("isClaudeEditTool(Bash) = true, want false")
+	}
+}
+
+func TestSummarizeInput_AskUserQuestion(t *testing.T) {
+	input := map[string]any{
+		"questions": []any{
+			map[string]any{
+				"question": "Which framework?",
+				"options": []any{
+					map[string]any{"label": "React"},
+					map[string]any{"label": "Vue"},
+				},
+			},
+		},
+	}
+	result := summarizeInput("AskUserQuestion", input)
+	if result == "" {
+		t.Error("expected non-empty summary for AskUserQuestion")
+	}
+}
+
+func TestAgent_Name(t *testing.T) {
+	a := &Agent{}
+	if got := a.Name(); got != "claudecode" {
+		t.Errorf("Name() = %q, want %q", got, "claudecode")
+	}
+}
+
+func TestAgent_CLIBinaryName(t *testing.T) {
+	a := &Agent{cliBin: "claude"}
+	if got := a.CLIBinaryName(); got != "claude" {
+		t.Errorf("CLIBinaryName() = %q, want %q", got, "claude")
+	}
+
+	a2 := &Agent{cliBin: "my-cli"}
+	if got := a2.CLIBinaryName(); got != "my-cli" {
+		t.Errorf("CLIBinaryName() = %q, want %q", got, "my-cli")
+	}
+}
+
+func TestAgent_CLIDisplayName(t *testing.T) {
+	a := &Agent{}
+	if got := a.CLIDisplayName(); got != "Claude" {
+		t.Errorf("CLIDisplayName() = %q, want %q", got, "Claude")
+	}
+}
+
+func TestAgent_SetWorkDir(t *testing.T) {
+	a := &Agent{}
+	a.SetWorkDir("/tmp/test")
+	if got := a.GetWorkDir(); got != "/tmp/test" {
+		t.Errorf("GetWorkDir() = %q, want %q", got, "/tmp/test")
+	}
+}
+
+func TestAgent_SetModel(t *testing.T) {
+	a := &Agent{}
+	a.SetModel("claude-sonnet-4-20250514")
+	if got := a.GetModel(); got != "claude-sonnet-4-20250514" {
+		t.Errorf("GetModel() = %q, want %q", got, "claude-sonnet-4-20250514")
+	}
+}
+
+func TestAgent_SetSessionEnv(t *testing.T) {
+	a := &Agent{}
+	a.SetSessionEnv([]string{"KEY=value"})
+	if len(a.sessionEnv) != 1 || a.sessionEnv[0] != "KEY=value" {
+		t.Errorf("sessionEnv = %v, want [KEY=value]", a.sessionEnv)
+	}
+}
+
+func TestAgent_SetPlatformPrompt(t *testing.T) {
+	a := &Agent{}
+	a.SetPlatformPrompt("You are a helpful assistant on Feishu.")
+	if a.platformPrompt != "You are a helpful assistant on Feishu." {
+		t.Errorf("platformPrompt = %q, want %q", a.platformPrompt, "You are a helpful assistant on Feishu.")
+	}
+}
+
+func TestAgent_SetMode(t *testing.T) {
+	a := &Agent{}
+
+	a.SetMode("auto")
+	if got := a.GetMode(); got != "auto" {
+		t.Fatalf("GetMode() after SetMode(auto) = %q, want auto", got)
+	}
+
+	a.SetMode("yolo")
+	if got := a.GetMode(); got != "bypassPermissions" {
+		t.Fatalf("GetMode() after SetMode(yolo) = %q, want bypassPermissions", got)
+	}
+}
+
+func TestStripXMLTags(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"<tag>content</tag>", "content"},
+		{"no tags", "no tags"},
+		{"<a>hello</a><b>world</b>", "helloworld"},
+		{"<nested><inner>text</inner></nested>", "text"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := stripXMLTags(tt.input)
+			if got != tt.expected {
+				t.Errorf("stripXMLTags(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+// verify Agent implements core.Agent
+var _ core.Agent = (*Agent)(nil)
+
+func TestEncodeClaudeProjectKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "simple ASCII path",
+			input:    "/Users/username/Documents/project",
+			expected: "-Users-username-Documents-project",
+		},
+		{
+			name:     "path with Chinese characters",
+			input:    "/Users/username/Documents/项目文件夹",
+			expected: "-Users-username-Documents------", // 6 hyphens: 1 for "/" + 5 for Chinese chars
+		},
+		{
+			name:     "path with Japanese characters",
+			input:    "/Users/username/Documents/プロジェクト",
+			expected: "-Users-username-Documents-------", // 6 hyphens: 1 for "/" + 5 for Japanese chars
+		},
+		{
+			name:     "path with emoji",
+			input:    "/Users/username/Documents/🎉project",
+			expected: "-Users-username-Documents--project", // 2 hyphens: 1 for "/" + 1 for emoji
+		},
+		{
+			name:     "Windows path with colon",
+			input:    "C:\\Users\\username\\Documents",
+			expected: "C--Users-username-Documents",
+		},
+		{
+			name:     "path with underscore",
+			input:    "/Users/username/my_project",
+			expected: "-Users-username-my-project",
+		},
+		{
+			name:     "path with spaces",
+			input:    "/Users/username/Mobile Documents/my project",
+			expected: "-Users-username-Mobile-Documents-my-project",
+		},
+		{
+			name:     "path with tildes",
+			input:    "/Users/username/com~apple~CloudDocs/project",
+			expected: "-Users-username-com-apple-CloudDocs-project",
+		},
+		{
+			name:     "iCloud path with spaces and tildes",
+			input:    "/Users/username/Library/Mobile Documents/com~apple~CloudDocs/my project",
+			expected: "-Users-username-Library-Mobile-Documents-com-apple-CloudDocs-my-project",
+		},
+		{
+			name:     "mixed ASCII and non-ASCII",
+			input:    "/Users/username/中文folder/english文件夹",
+			expected: "-Users-username---folder-english---", // "/中文" = 3 hyphens, "/文件夹" = 4 hyphens
+		},
+		{
+			name:     "path with dots (hidden dirs and version numbers)",
+			input:    "/home/user/.nvm/versions/node/v22.22.2/lib",
+			expected: "-home-user--nvm-versions-node-v22-22-2-lib",
+		},
+		{
+			name:     "path with @ (scoped npm packages)",
+			input:    "/home/user/node_modules/@anthropic-ai/claude-code",
+			expected: "-home-user-node-modules--anthropic-ai-claude-code",
+		},
+		{
+			name:     "path with both dots and @",
+			input:    "/home/user/.local/share/@org/my.project",
+			expected: "-home-user--local-share--org-my-project",
+		},
+		{
+			name:     "empty path",
+			input:    "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := encodeClaudeProjectKey(tt.input)
+			if got != tt.expected {
+				t.Errorf("encodeClaudeProjectKey(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFindProjectDir_NonASCIIPath(t *testing.T) {
+	// This test verifies that findProjectDir can handle non-ASCII paths
+	// by creating a mock projects directory structure
+	homeDir := t.TempDir()
+	projectsBase := filepath.Join(homeDir, ".claude", "projects")
+
+	// Test case: Chinese characters in path
+	chineseWorkDir := "/Users/test/Documents/项目文件夹"
+	expectedKey := encodeClaudeProjectKey(chineseWorkDir)
+
+	// Create the mock project directory
+	mockProjectDir := filepath.Join(projectsBase, expectedKey)
+	if err := os.MkdirAll(mockProjectDir, 0755); err != nil {
+		t.Fatalf("failed to create mock project dir: %v", err)
+	}
+
+	// Verify findProjectDir finds the directory
+	found := findProjectDir(homeDir, chineseWorkDir)
+	if found != mockProjectDir {
+		t.Errorf("findProjectDir(%q, %q) = %q, want %q", homeDir, chineseWorkDir, found, mockProjectDir)
+	}
+}
+
+func TestFindProjectDir_ASCIIPath(t *testing.T) {
+	// Verify ASCII paths still work correctly
+	homeDir := t.TempDir()
+	projectsBase := filepath.Join(homeDir, ".claude", "projects")
+
+	asciiWorkDir := "/Users/test/Documents/project"
+	expectedKey := encodeClaudeProjectKey(asciiWorkDir)
+
+	mockProjectDir := filepath.Join(projectsBase, expectedKey)
+	if err := os.MkdirAll(mockProjectDir, 0755); err != nil {
+		t.Fatalf("failed to create mock project dir: %v", err)
+	}
+
+	found := findProjectDir(homeDir, asciiWorkDir)
+	if found != mockProjectDir {
+		t.Errorf("findProjectDir(%q, %q) = %q, want %q", homeDir, asciiWorkDir, found, mockProjectDir)
+	}
+}
+
+func TestFindProjectDir_NotFound(t *testing.T) {
+	homeDir := t.TempDir()
+	// Don't create any project directories
+
+	workDir := "/Users/test/Documents/nonexistent"
+	found := findProjectDir(homeDir, workDir)
+	if found != "" {
+		t.Errorf("findProjectDir for nonexistent project = %q, want empty string", found)
+	}
+}
+
+func TestFindProjectDir_ICloudPath(t *testing.T) {
+	// Regression for issue #500: paths containing spaces and "~" (common in macOS
+	// iCloud Drive paths like "/Users/x/Library/Mobile Documents/com~apple~CloudDocs/...")
+	// must match the on-disk project key that Claude Code CLI generates, which
+	// collapses both spaces and "~" to "-".
+	homeDir := t.TempDir()
+	projectsBase := filepath.Join(homeDir, ".claude", "projects")
+
+	iCloudWorkDir := "/Users/test/Library/Mobile Documents/com~apple~CloudDocs/my project"
+	// The on-disk key Claude Code CLI actually writes (spaces and "~" → "-").
+	expectedKey := "-Users-test-Library-Mobile-Documents-com-apple-CloudDocs-my-project"
+
+	mockProjectDir := filepath.Join(projectsBase, expectedKey)
+	if err := os.MkdirAll(mockProjectDir, 0755); err != nil {
+		t.Fatalf("failed to create mock project dir: %v", err)
+	}
+
+	found := findProjectDir(homeDir, iCloudWorkDir)
+	if found != mockProjectDir {
+		t.Errorf("findProjectDir(%q, %q) = %q, want %q", homeDir, iCloudWorkDir, found, mockProjectDir)
+	}
+}
+
+func TestSnapshotCLIPath(t *testing.T) {
+	cases := []struct {
+		name      string
+		cliBin    string
+		extraArgs []string
+		want      string
+	}{
+		{"default-claude-skipped", "claude", nil, ""},
+		{"empty-binary-skipped", "", nil, ""},
+		{"custom-binary-only", "/usr/local/bin/claude", nil, "/usr/local/bin/claude"},
+		{"wrapper-with-args", "my-cli", []string{"code", "-t", "foo"}, "my-cli code -t foo"},
+		{"claude-with-add-dir", "claude", []string{"--add-dir", "/parent"}, "claude --add-dir /parent"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := snapshotCLIPath(tc.cliBin, tc.extraArgs)
+			if got != tc.want {
+				t.Errorf("snapshotCLIPath(%q, %v) = %q, want %q", tc.cliBin, tc.extraArgs, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestWorkspaceAgentOptions_FullSnapshot(t *testing.T) {
+	// Construct an Agent directly so we don't depend on `claude` being on
+	// PATH. WorkspaceAgentOptions only reads fields that the production
+	// New() also writes; this just verifies the snapshot shape.
+	a := &Agent{
+		cliBin:           "my-cli",
+		cliExtraArgs:     []string{"--add-dir", "/parent"},
+		cliArgsFlag:      "-a",
+		model:            "claude-opus-4-7",
+		reasoningEffort:  "high",
+		mode:             "acceptEdits",
+		allowedTools:     []string{"Edit", "Read"},
+		disallowedTools:  []string{"Bash"},
+		maxContextTokens: 200000,
+		routerURL:        "http://127.0.0.1:3456",
+		routerAPIKey:     "secret",
+	}
+	got := a.WorkspaceAgentOptions()
+
+	want := map[string]any{
+		"mode":               "acceptEdits",
+		"cli_path":           "my-cli --add-dir /parent",
+		"cli_args_flag":      "-a",
+		"model":              "claude-opus-4-7",
+		"reasoning_effort":   "high",
+		"allowed_tools":      []any{"Edit", "Read"},
+		"disallowed_tools":   []any{"Bash"},
+		"max_context_tokens": 200000,
+		"router_url":         "http://127.0.0.1:3456",
+		"router_api_key":     "secret",
+	}
+	if len(got) != len(want) {
+		t.Errorf("snapshot len = %d, want %d (got=%v)", len(got), len(want), got)
+	}
+	for k, wv := range want {
+		gv, ok := got[k]
+		if !ok {
+			t.Errorf("snapshot missing key %q", k)
+			continue
+		}
+		if !reflect.DeepEqual(gv, wv) {
+			t.Errorf("snapshot[%q] = %v (%T), want %v (%T)", k, gv, gv, wv, wv)
+		}
+	}
+}
+
+func TestWorkspaceAgentOptions_OmitsZeroValues(t *testing.T) {
+	// Default agent (only mode is always emitted, plus default cliBin
+	// "claude" should be skipped by snapshotCLIPath).
+	a := &Agent{cliBin: "claude", mode: "default"}
+	got := a.WorkspaceAgentOptions()
+
+	if len(got) != 1 {
+		t.Errorf("snapshot len = %d, want 1 (got=%v)", len(got), got)
+	}
+	if got["mode"] != "default" {
+		t.Errorf("snapshot[mode] = %v, want %q", got["mode"], "default")
+	}
+	for _, k := range []string{
+		"cli_path", "cli_args_flag", "model", "reasoning_effort",
+		"allowed_tools", "disallowed_tools", "max_context_tokens",
+		"router_url", "router_api_key",
+	} {
+		if _, ok := got[k]; ok {
+			t.Errorf("snapshot unexpectedly includes %q = %v", k, got[k])
+		}
+	}
+}
+
+func TestWorkspaceAgentOptions_RoundTripsThroughNew(t *testing.T) {
+	// End-to-end: snapshot → New() should reproduce every field. Use
+	// run_as_user to skip the supervisor-side LookPath check, since the
+	// fake "my-cli" binary doesn't exist on the test host's PATH.
+	//
+	// run_as_user only short-circuits LookPath on platforms where
+	// SpawnOptions.IsolationMode() can be true — i.e. Unix. On Windows
+	// it always returns false (see core/runas_windows.go), so the fake
+	// CLI would fail LookPath and New() would error out before the
+	// round-trip assertions run.
+	if runtime.GOOS == "windows" {
+		t.Skip("run_as_user-based LookPath bypass is Unix-only")
+	}
+	parent := &Agent{
+		cliBin:           "my-cli",
+		cliExtraArgs:     []string{"code", "--add-dir", "/parent"},
+		cliArgsFlag:      "-a",
+		model:            "claude-opus-4-7",
+		reasoningEffort:  "high",
+		mode:             "acceptEdits",
+		allowedTools:     []string{"Edit", "Read"},
+		disallowedTools:  []string{"Bash"},
+		maxContextTokens: 200000,
+		routerURL:        "http://127.0.0.1:3456",
+		routerAPIKey:     "secret",
+	}
+	opts := parent.WorkspaceAgentOptions()
+	opts["work_dir"] = "/tmp/claudecode-test"
+	opts["run_as_user"] = "skip-lookpath"
+
+	a, err := New(opts)
+	if err != nil {
+		t.Fatalf("New(snapshot) returned error: %v", err)
+	}
+	child := a.(*Agent)
+
+	if child.cliBin != "my-cli" {
+		t.Errorf("cliBin = %q, want %q", child.cliBin, "my-cli")
+	}
+	if !reflect.DeepEqual(child.cliExtraArgs, []string{"code", "--add-dir", "/parent"}) {
+		t.Errorf("cliExtraArgs = %v, want [code --add-dir /parent]", child.cliExtraArgs)
+	}
+	if child.cliArgsFlag != "-a" {
+		t.Errorf("cliArgsFlag = %q, want -a", child.cliArgsFlag)
+	}
+	if child.model != "claude-opus-4-7" {
+		t.Errorf("model = %q, want claude-opus-4-7", child.model)
+	}
+	if child.reasoningEffort != "high" {
+		t.Errorf("reasoningEffort = %q, want high", child.reasoningEffort)
+	}
+	if child.mode != "acceptEdits" {
+		t.Errorf("mode = %q, want acceptEdits", child.mode)
+	}
+	if !reflect.DeepEqual(child.allowedTools, []string{"Edit", "Read"}) {
+		t.Errorf("allowedTools = %v, want [Edit Read]", child.allowedTools)
+	}
+	if !reflect.DeepEqual(child.disallowedTools, []string{"Bash"}) {
+		t.Errorf("disallowedTools = %v, want [Bash]", child.disallowedTools)
+	}
+	if child.maxContextTokens != 200000 {
+		t.Errorf("maxContextTokens = %d, want 200000", child.maxContextTokens)
+	}
+	if child.routerURL != "http://127.0.0.1:3456" {
+		t.Errorf("routerURL = %q, want http://127.0.0.1:3456", child.routerURL)
+	}
+	if child.routerAPIKey != "secret" {
+		t.Errorf("routerAPIKey = %q, want secret", child.routerAPIKey)
+	}
+}
+
+func TestScanSessionMeta_ArrayContent(t *testing.T) {
+	// Regression test for: scanSessionMeta skips entries where content is a JSON array
+	// (e.g., assistant messages with thinking blocks, or user messages with tool results).
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test.jsonl")
+
+	lines := []string{
+		`{"type": "queue-operation", "operation": "start"}`,
+		`{"type": "user", "message": {"content": "Hello world"}}`,
+		`{"type": "assistant", "message": {"content": [{"type": "thinking", "text": ""}, {"type": "text", "text": "Hi there"}]}}`,
+		`{"type": "user", "message": {"content": [{"tool_use_id": "call_abc", "type": "tool_result", "content": "result data"}]}}`,
+		`{"type": "assistant", "message": {"content": "Plain text reply"}}`,
+		`{"type": "last-prompt", "lastPrompt": "test"}`,
+	}
+
+	data := ""
+	for _, line := range lines {
+		data += line + "\n"
+	}
+	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+		t.Fatalf("write test jsonl: %v", err)
+	}
+
+	summary, count := scanSessionMeta(path)
+
+	// Expected: 2 user + 2 assistant = 4 messages
+	if count != 4 {
+		t.Errorf("scanSessionMeta count = %d, want 4 (2 user + 2 assistant, array content should not be skipped)", count)
+	}
+
+	// Summary should come from the last user message with string content (line 2)
+	if summary != "Hello world" {
+		t.Errorf("scanSessionMeta summary = %q, want %q", summary, "Hello world")
+	}
+}
+
+func TestScanSessionMeta_AllArrayContent(t *testing.T) {
+	// When all user messages have array content, summary should remain empty
+	// and count should still be correct.
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test.jsonl")
+
+	lines := []string{
+		`{"type": "user", "message": {"content": [{"type": "tool_result", "content": "data"}]}}`,
+		`{"type": "assistant", "message": {"content": [{"type": "text", "text": "reply"}]}}`,
+	}
+
+	data := ""
+	for _, line := range lines {
+		data += line + "\n"
+	}
+	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+		t.Fatalf("write test jsonl: %v", err)
+	}
+
+	summary, count := scanSessionMeta(path)
+
+	if count != 2 {
+		t.Errorf("scanSessionMeta count = %d, want 2", count)
+	}
+	if summary != "" {
+		t.Errorf("scanSessionMeta summary = %q, want empty string when no string user content exists", summary)
+	}
+}
+
+func TestExtractStringContent(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"string", `"hello"`, "hello"},
+		{"empty", `""`, ""},
+		{"array", `[{"type": "text"}]`, ""},
+		{"object", `{"key": "val"}`, ""},
+		{"null", `null`, ""},
+		{"number", `42`, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractStringContent([]byte(tt.raw))
+			if got != tt.want {
+				t.Errorf("extractStringContent(%q) = %q, want %q", tt.raw, got, tt.want)
+			}
+		})
+	}
+}

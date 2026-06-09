@@ -1,0 +1,187 @@
+.skills-config {
+  padding: 24px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.skills-config .header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-shrink: 0;
+}
+
+.skills-config .header h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.skills-config .actions {
+  display: flex;
+  gap: 12px;
+}
+
+.skills-container {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.skills-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.skills-container::-webkit-scrollbar-track {
+  background: #f5f7fa;
+  border-radius: 3px;
+}
+
+.skills-container::-webkit-scrollbar-thumb {
+  background: #c0c4cc;
+  border-radius: 3px;
+}
+
+.skills-container::-webkit-scrollbar-thumb:hover {
+  background: #909399;
+}
+
+.skills-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+  padding-bottom: 20px;
+  align-items: start;
+}
+
+.skills-config .empty-state {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #909399;
+}
+
+.skills-config .empty-state p {
+  margin-top: 16px;
+  font-size: 16px;
+}
+
+.skills-config .skill-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 300px;
+}
+
+.skills-config .skill-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.skills-config .skill-title-group {
+  min-width: 0;
+}
+
+.skills-config .skill-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.skills-config .skill-code-name {
+  margin-top: 4px;
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.skills-config .skill-description {
+  flex: 1;
+  color: #606266;
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 16px;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 134px;
+}
+
+.skills-config .skill-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #ebeef5;
+  flex-shrink: 0;
+}
+
+.skills-config .upload-section {
+  margin-bottom: 20px;
+}
+
+.skills-config .preview-section {
+  margin-top: 20px;
+}
+
+.skills-config .preview-summary {
+  margin: 16px 0;
+  color: #606266;
+  font-size: 14px;
+}
+
+.skills-config .preview-list {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+}
+
+.skills-config .preview-item {
+  padding: 16px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.skills-config .preview-item:last-child {
+  border-bottom: none;
+}
+
+.skills-config .preview-field {
+  margin-bottom: 12px;
+}
+
+.skills-config .preview-field:last-child {
+  margin-bottom: 0;
+}
+
+.skills-config .preview-field label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: #909399;
+  font-weight: 500;
+}
+
+.skills-config .skill-edit-form {
+  padding-top: 4px;
+}
+
+.skills-config .skill-tags .el-tag {
+  margin-right: 8px;
+}

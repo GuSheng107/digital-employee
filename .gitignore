@@ -1,0 +1,77 @@
+# ========================
+# Python
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+.env
+*.db
+*.sqlite3
+
+# ========================
+# Node / Frontend
+# ========================
+node_modules/
+frontend/dist/
+frontend/node_modules/
+*.local
+
+# ========================
+# Go
+# ========================
+backend-gateway/bin/
+backend-gateway/tmp/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+
+# ========================
+# IDE / Editor
+# ========================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ========================
+# Project specific
+# ========================
+data/
+logs/
+*.log
+.attachments/
+.pytest_cache/
+.config.toml.lock
+.simple-config.toml.lock
+
+# ========================
+# AI / Memory
+# ========================
+.claude/
+.memory/
+.trae/
+.ai-memory/
+
+# ========================
+# Secrets
+# ========================
+*.pem
+*.key
+credentials.json
