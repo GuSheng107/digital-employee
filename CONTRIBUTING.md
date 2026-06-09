@@ -1,142 +1,324 @@
-# 贡献指南
+# Contributing to Digital Employee
 
-感谢你对 Digital Employee 项目的关注！以下是参与贡献的流程。
+First off, thanks for taking the time to contribute! 🎉
 
-## 分支保护规则（master）
+The following is a set of guidelines for contributing to Digital Employee. These are mostly
+guidelines, not rules. Use your best judgment, and feel free to propose changes to this
+document in a pull request.
 
-`master` 分支已启用 GitHub 分支保护，当前配置如下：
+> 📖 **TL;DR** — Fork → Branch → Commit → Push → Pull Request. PRs to `master` require
+> passing review and must be merged via **Squash and merge** or **Rebase and merge**.
 
-- ✅ **Require a pull request before merging** — 必须通过 PR 合入
-- ✅ **Dismiss stale pull request approvals when new commits are pushed** — 推送新 commit 后旧 review 自动失效
-- ✅ **Require linear history** — 不允许 merge commit，必须 rebase 或 squash
-- ✅ **Lock branch** — master 只读，禁止直接推送
-- ✅ **Do not allow bypassing the above settings** — 管理员也需遵守
-- ❌ Require approvals — 不强制 review（团队小，自审即可）
-- ❌ Require status checks — 暂未启用 CI
-- ❌ Allow force pushes — 禁止强制推送
-- ❌ Allow deletions — 禁止删除 master
+---
 
-## 开发环境搭建
+## Table of Contents
 
-### 1. Backend Agent（Python）
+- [Code of Conduct](#code-of-conduct)
+- [I Want to Contribute](#i-want-to-contribute)
+  - [Reporting Bugs](#reporting-bugs)
+  - [Suggesting Enhancements](#suggesting-enhancements)
+  - [Your First Code Contribution](#your-first-code-contribution)
+  - [Pull Requests](#pull-requests)
+- [Development Setup](#development-setup)
+- [Project Conventions](#project-conventions)
+  - [Branch Naming](#branch-naming)
+  - [Commit Messages](#commit-messages)
+  - [Code Style](#code-style)
+  - [Testing Requirements](#testing-requirements)
+  - [Database Changes](#database-changes)
+- [Branch Protection (master)](#branch-protection-master)
+- [Release Process](#release-process)
+
+---
+
+## Code of Conduct
+
+This project and everyone participating in it is governed by a commitment to a
+harassment-free experience for everyone, regardless of age, body size, disability,
+ethnicity, sex characteristics, gender identity and expression, level of experience,
+education, socio-economic status, nationality, personal appearance, race, religion,
+or sexual identity and orientation.
+
+Please be kind and courteous. Disagreement is fine; disrespect is not.
+
+---
+
+## I Want to Contribute
+
+### Reporting Bugs
+
+🐛 **Before submitting a bug report:**
+
+- Make sure you are on the latest version of `master`.
+- Search the [issue tracker](../../issues) to see if the bug has already been reported.
+- Collect relevant information: OS, Python/Node version, error stack trace, reproduction steps.
+
+📝 **When submitting a bug report, include:**
+
+- A clear, descriptive title
+- Exact steps to reproduce the issue
+- Expected behavior vs. actual behavior
+- Screenshots or logs (if applicable)
+- Environment details (OS, versions, config)
+
+> **Security vulnerabilities** must NOT be reported via public issues.
+> Please contact the maintainers privately instead.
+
+### Suggesting Enhancements
+
+💡 **Enhancement suggestions** are tracked as GitHub issues. When creating one:
+
+- Use a clear, descriptive title
+- Provide a detailed description of the proposed behavior
+- Explain **why** this enhancement would be useful
+- List any alternatives you've considered
+
+### Your First Code Contribution
+
+🌱 **Good first issues** are labeled `good first issue` in the issue tracker.
+These are scoped to help new contributors get familiar with the codebase.
+
+Unsure where to begin? Look for issues tagged:
+- `good first issue` — small, well-defined tasks
+- `help wanted` — extra attention needed
+- `documentation` — improvements to docs
+
+### Pull Requests
+
+🔀 **The workflow:**
+
+1. **Fork** the repository (external contributors) or create a feature branch
+   (for collaborators with write access).
+2. **Create a branch** from `master` (see [Branch Naming](#branch-naming)).
+3. **Make your changes.** Follow the [Project Conventions](#project-conventions).
+4. **Write or update tests** for your change. All PRs must pass existing tests.
+5. **Run the linter and test suite locally** before pushing.
+6. **Commit** with a clear message (see [Commit Messages](#commit-messages)).
+7. **Push** your branch to origin.
+8. **Open a Pull Request** targeting `master`.
+9. **Fill in the PR template** — describe what, why, and how.
+10. **Address review feedback** by pushing new commits (force-push if rebased).
+11. **Wait for CI to pass** and at least one review approval.
+12. Once approved, the PR is merged via **Squash and merge** or **Rebase and merge**.
+
+📋 **PR Checklist** (will be enforced by reviewers):
+
+- [ ] My code follows the project's style guidelines
+- [ ] I have performed a self-review of my own code
+- [ ] I have commented my code, particularly in hard-to-understand areas
+- [ ] I have made corresponding changes to the documentation
+- [ ] My changes generate no new warnings
+- [ ] I have added tests that prove my fix/feature works
+- [ ] New and existing unit tests pass locally
+- [ ] Any dependent changes have been merged and published
+
+💡 **Tips for a great PR:**
+
+- Keep PRs **small and focused** — one logical change per PR
+- Write a **descriptive title** following `type(scope): description`
+- Reference related issues with `Fixes #123` or `Closes #456`
+- Add **screenshots** for UI/visual changes
+- Be **responsive to review feedback** — silence for >2 weeks may result in closure
+
+---
+
+## Development Setup
+
+### Prerequisites
+
+| Tool   | Version  | Notes                              |
+|--------|----------|------------------------------------|
+| Python | 3.10+    | Backend agent                      |
+| Node   | 18+      | Frontend build (static)            |
+| Go     | 1.21+    | Backend gateway (reference only)   |
+
+### Clone & Install
+
+```bash
+git clone https://github.com/GuSheng107/digital-employee.git
+cd digital-employee
+
+# Backend agent
+cd backend-agent
+python -m venv .venv
+source .venv/bin/activate   # or .venv\Scripts\activate on Windows
+pip install -e ".[dev]"
+cd ..
+
+# Frontend (only required when building)
+cd frontend
+npm install
+npm run build               # outputs to backend-agent web dir
+cd ..
+
+# Or use Make (Linux/macOS)
+make install-agent
+make build-frontend
+```
+
+### Run the Project
+
+```bash
+# Linux / macOS
+./scripts/start-web.sh
+
+# Windows
+scripts\start-web.cmd
+```
+
+The web console will be available at <http://localhost:8765>.
+
+---
+
+## Project Conventions
+
+### Branch Naming
+
+Use the following prefixes. Keep names short and descriptive (kebab-case after the prefix).
+
+| Prefix       | Purpose                          | Example                          |
+|--------------|----------------------------------|----------------------------------|
+| `feat/`      | New feature                      | `feat/add-feishu-adapter`        |
+| `fix/`       | Bug fix                          | `fix/memory-leak-on-disconnect`  |
+| `refactor/`  | Code refactor (no behavior change) | `refactor/extract-platform-base` |
+| `docs/`      | Documentation only               | `docs/improve-contributing`      |
+| `test/`      | Add or improve tests             | `test/add-platform-conn-tests`   |
+| `chore/`     | Tooling, deps, CI, misc         | `chore/bump-fastapi-version`     |
+| `perf/`      | Performance improvement          | `perf/optimize-message-queue`    |
+| `hotfix/`    | Urgent production fix           | `hotfix/fix-token-refresh`       |
+
+> ❌ Avoid: `patch`, `temp`, `wip`, `my-changes`, or any name without a prefix.
+
+### Commit Messages
+
+We follow **Conventional Commits** with optional scope. This enables automated
+changelog generation and clean history.
+
+**Format:**
+
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+**Types:** `feat` · `fix` · `refactor` · `docs` · `test` · `chore` · `perf` · `ci` · `build` · `style`
+
+**Scopes (this project):** `agent` · `gateway` · `frontend` · `platform` · `config` · `core` · `db`
+
+**Subject rules:**
+
+- Imperative mood: "add feature" not "added feature"
+- Lowercase, no trailing period
+- ≤72 characters
+- No emoji in subject
+
+**Examples:**
+
+```text
+feat(platform): add feishu websocket adapter
+fix(agent): resolve memory leak in long connection
+refactor(gateway): extract PlatformBase from wecom_bot
+docs: update README with platform support table
+chore(deps): bump fastapi to 0.115.0
+```
+
+**Breaking changes** must be noted in the footer:
+
+```
+feat(platform)!: replace webhook with grpc transport
+
+BREAKING CHANGE: webhook platform configs must be migrated to grpc
+```
+
+### Code Style
+
+See [`.ai-memory/code-style.md`](./.ai-memory/code-style.md) for the full guide.
+
+Quick summary:
+
+- **Python**: `black` + `isort` + type hints; follow PEP 8; snake_case; docstrings on public APIs
+- **Vue/JS**: ESLint + Prettier; 2-space indent; single quotes; no semicolons
+- **Go** (gateway): `gofmt` + `golangci-lint`; explicit error handling
+
+### Testing Requirements
+
+- ✅ Every new feature **must** include tests
+- ✅ Every bug fix **must** include a regression test
+- ✅ Tests must pass locally before opening a PR
+- ✅ Aim for meaningful coverage — focus on behavior, not line count
+- ❌ Do not disable or skip existing tests to make your change pass
+
+Run the test suite before submitting:
 
 ```bash
 cd backend-agent
-python -m venv .venv
-
-# Windows
-.venv\Scripts\activate
-
-# macOS / Linux
-source .venv/bin/activate
-
-pip install -e ".[dev]"
+.venv/Scripts/activate   # or source .venv/bin/activate
+python -m pytest
 ```
 
-### 2. Frontend（构建时需要）
+### Database Changes
 
-```bash
-cd frontend
-npm install
-npm run build    # 构建静态文件，由 backend-agent 托管
-```
+We deliberately **do not** use a migration framework (no Alembic).
 
-### 3. Backend Gateway（Go，参考用）
+When you need to change a database schema:
 
-```bash
-cd backend-gateway/cmd/cc-connect
-go build .
-```
+1. Write a **one-shot script** under `backend-agent/scripts/db_migrations/`
+2. The script is **idempotent** (safe to run twice)
+3. The script is **documented** (header comment explains what it does)
+4. Old data structures are **not** preserved — clean breaks are preferred
+5. The script is run once during deployment and then deleted
 
-## 协作流程
+---
 
-### 1. 创建功能分支
+## Branch Protection (master)
 
-```bash
-git checkout master
-git pull origin master
-git checkout -b feat/<name>     # 或 fix/、chore/、docs/
-```
+The `master` branch is protected with the following rules:
 
-分支命名规范：
-- `feat/xxx` - 新功能
-- `fix/xxx` - 修复
-- `chore/xxx` - 杂项（重构、依赖更新等）
-- `docs/xxx` - 文档
-- `refactor/xxx` - 重构
+| Rule                                      | Status |
+|-------------------------------------------|--------|
+| Require pull request before merging       | ✅      |
+| Dismiss stale pull request approvals       | ✅      |
+| Require approvals                          | ❌ (0 — self-review OK) |
+| Require status checks to pass              | ❌ (no CI yet) |
+| Require linear history                     | ❌      |
+| Lock branch                                | ❌      |
+| Do not allow bypassing the above settings  | ✅      |
+| Allow force pushes                         | ❌      |
+| Allow deletions                            | ❌      |
 
-### 2. 开发 & 提交
+**Implications:**
 
-```bash
-# 频繁小提交
-git add <specific-files>
-git commit -m "type(scope): description"
-```
+- All changes to `master` go through a PR
+- Admins **cannot** bypass the above rules
+- Force-push to `master` is blocked
+- `master` cannot be deleted
+- New commits to a PR invalidate existing approvals
 
-提交规范：
+> ℹ️ When we add CI (GitHub Actions), status checks will be enabled.
 
-```
-type(scope): description
-```
+---
 
-- **type**: feat | fix | refactor | docs | test | chore | ci
-- **scope**: agent | gateway | frontend | platform | config | core
+## Release Process
 
-示例：
-- `feat(platform): add feishu websocket adapter`
-- `fix(agent): resolve memory leak in long connection`
-- `docs: update README with platform support table`
+(To be defined — currently single-maintainer project.)
 
-### 3. 推送 & 创建 PR
+Planned flow:
 
-```bash
-git push -u origin feat/<name>
-```
+1. Bump version in `pyproject.toml` and `package.json`
+2. Update `CHANGELOG.md` (generated from conventional commits)
+3. Tag the release: `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
+4. Push tags: `git push --tags`
+5. Draft GitHub release notes from the tag
 
-在 GitHub 上创建 Pull Request，**目标分支必须指向 `master`**。
+---
 
-### 4. 保持 Linear History
+## Questions?
 
-由于启用了 linear history，PR 合入前需要保持线性提交历史：
+- 💬 Open a [Discussion](../../discussions) for general questions
+- 🐛 Open an [Issue](../../issues) for bugs and feature requests
+- 📧 Contact the maintainers directly for sensitive matters
 
-```bash
-# 推送前先 rebase master
-git fetch origin master
-git rebase origin/master
-git push --force-with-lease
-```
-
-合入 PR 时建议使用 **Squash and merge** 或 **Rebase and merge**，不要使用普通 merge。
-
-### 5. Code Review
-
-- PR 作者自行 review
-- 确认无误后合入 master
-- 启用 require approval 时需等待他人 review
-
-### 6. 清理
-
-```bash
-git checkout master
-git pull origin master
-git branch -d feat/<name>
-git push origin --delete feat/<name>
-```
-
-## 紧急情况
-
-master 已禁止 force push。如需重写历史（如修复泄露的密钥），请：
-
-1. 临时在 GitHub Settings → Branches 启用 "Allow force pushes"
-2. 完成 force push 后立即关闭
-3. 通知所有协作者重新拉取
-
-## 代码规范
-
-详见 `.ai-memory/code-style.md`
-
-## 测试要求
-
-- 每个新功能必须有对应测试
-- 数据库变更使用一次性脚本，不使用迁移工具
-- 每步必须测试通过才标记完成
+**Thank you for contributing!** 🙌
