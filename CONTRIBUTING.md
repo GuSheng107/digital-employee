@@ -4,8 +4,9 @@
 
 以下内容是参与 Digital Employee 项目的协作指南。这些大多是建议而非强制规则，请根据实际情况灵活判断，也欢迎通过 PR 对本文档提出改进建议。
 
-> 📖 **速览** — Fork → 创建分支 → 提交 → 推送 → 发起 Pull Request。提交到 `master`
-> 的 PR 需通过 review，并使用 **Squash and merge** 或 **Rebase and merge** 合入。
+> 📖 **速览** — 核心成员作为 Collaborators 直接创建功能分支；外部贡献者先 Fork。
+> 所有提交到 `master` 的改动都必须发起 Pull Request，通过 review 后使用
+> **Squash and merge** 或 **Rebase and merge** 合入。
 
 ---
 
@@ -17,6 +18,7 @@
   - [建议新功能](#建议新功能)
   - [首次代码贡献](#首次代码贡献)
   - [Pull Request 流程](#pull-request-流程)
+  - [CI / Review 规则](#ci--review-规则)
 - [开发环境搭建](#开发环境搭建)
 - [项目约定](#项目约定)
   - [分支命名](#分支命名)
@@ -80,19 +82,21 @@
 
 ### Pull Request 流程
 
+核心成员会加入仓库 Collaborators，可以直接在原仓库创建功能分支；外部贡献者仍然使用 Fork + PR 的方式参与。
+
 🔀 **完整流程：**
 
-1. **Fork** 仓库（外部贡献者），或在有写权限时创建功能分支。
-2. 从 `master` **创建分支**（参见 [分支命名](#分支命名)）。
-3. **进行修改**，遵循 [项目约定](#项目约定)。
-4. **编写或更新测试**。所有 PR 必须通过现有测试。
+1. 核心成员在原仓库创建功能分支；外部贡献者先 **Fork** 仓库。
+2. 从最新 `master` **创建分支**（参见 [分支命名](#分支命名)）。
+3. **进行修改**，保持 PR 小而专一，避免一个 PR 同时混入多类改动。
+4. **编写或更新测试**。如果暂时无法补测试，需要在 PR 描述里说明原因。
 5. **本地运行 lint 和测试** 后再推送。
 6. 用清晰的 message **提交**（参见 [提交信息](#提交信息)）。
-7. **推送** 分支到 origin。
+7. **推送** 分支到远端。
 8. 发起指向 `master` 的 **Pull Request**。
-9. 填写 **PR 模板** — 说明改了什么、为什么、怎么改的。
-10. 通过推送新 commit **响应 review 反馈**（rebase 后需 force-push）。
-11. 等待 **CI 通过** 并至少获得一次 review 批准。
+9. 填写 **PR 说明**：改了什么、为什么改、怎么验证、是否有风险。
+10. 根据 review 反馈继续推送新 commit。
+11. 等待 **CI 通过**（接入后）并至少获得一次 review 批准。
 12. 批准后，PR 通过 **Squash and merge** 或 **Rebase and merge** 合入。
 
 📋 **PR 自检清单**（reviewer 会按此检查）：
@@ -113,6 +117,30 @@
 - 用 `Fixes #123` 或 `Closes #456` 关联相关 issue
 - UI/视觉类改动添加 **截图**
 - 积极 **响应 review 反馈** — 超过 2 周无响应可能被关闭
+
+### CI / Review 规则
+
+现阶段先把 PR + Review 流程跑顺，CI 接入后再把 status checks 设为强制。
+
+**Review 规则：**
+
+- 所有进入 `master` 的改动都走 PR。
+- Collaborators 也不要直接 push 到 `master`。
+- 默认至少需要 1 个 reviewer 批准。
+- PR 有未解决评论时，不合并。
+- review 后如果又推送了新 commit，旧 approval 会失效，需要重新确认。
+- 大功能先拆小 PR；如果拆不开，先写清楚设计说明和风险。
+
+**CI 规则：**
+
+- CI 接入前，PR 作者负责在本地说明测试结果。
+- CI 接入后，PR 合并前必须通过 required status checks。
+- 第一批 required checks 建议包括：
+  - 后端测试
+  - 前端构建 / 测试
+  - lint
+  - 依赖 pin 检查
+- CD 暂时不作为合并前置条件，等项目有稳定发布流程后再考虑。
 
 ---
 
@@ -266,15 +294,16 @@ python -m pytest
 
 ## 分支保护规则（master）
 
-`master` 分支已配置以下保护规则：
+`master` 分支建议采用以下保护规则：
 
 | 规则                                       | 状态 |
 |--------------------------------------------|------|
 | Require a pull request before merging      | ✅    |
 | Dismiss stale pull request approvals       | ✅    |
-| Require approvals                          | ❌（0 人 — 自审即可） |
-| Require status checks to pass              | ❌（暂未启用 CI） |
-| Require linear history                     | ❌    |
+| Require approvals                          | ✅（建议 1 人） |
+| Require conversation resolution            | ✅    |
+| Require status checks to pass              | ⏳（CI 接入后开启） |
+| Require linear history                     | ✅（配合 Squash / Rebase merge） |
 | Lock branch                                | ❌    |
 | Do not allow bypassing the above settings  | ✅    |
 | Allow force pushes                         | ❌    |
@@ -283,12 +312,12 @@ python -m pytest
 **影响：**
 
 - 所有 `master` 的变更都必须走 PR 流程
-- 管理员 **无法绕过** 上述规则
+- 管理员也不绕过上述规则
 - 禁止向 `master` force-push
 - `master` 不可被删除
 - 推送新 commit 后旧的 review 自动失效
 
-> ℹ️ 后续接入 GitHub Actions 后，将启用 status checks。
+> ℹ️ 后续接入 GitHub Actions 后，再把 status checks 加入 required checks。
 
 ---
 
