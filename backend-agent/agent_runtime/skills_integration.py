@@ -10,7 +10,6 @@ import re
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 from typing import Any
 
@@ -52,23 +51,11 @@ async def expand_query_with_llm(
             return []
 
         prompt = _QUERY_EXPANSION_PROMPT.format(query=user_query)
-        model_info = _get_llm_model_info(settings, database_path)
 
-        _log_query_expansion(
-            database_path=database_path,
-            trace_id=trace_id,
-            phase="prompt",
-            user_query=user_query,
-            prompt=prompt,
-            model_info=model_info,
-        )
-
-        start = time.monotonic()
         response = await asyncio.wait_for(
             asyncio.to_thread(llm.invoke, [HumanMessage(content=prompt)]),
             timeout=_QUERY_EXPANSION_TIMEOUT_SECONDS,
         )
-        elapsed = round(time.monotonic() - start, 2)
         text = str(response.content or "").strip()
 
         # 解析模型输出，兼容偶发的标签、逗号或换行。
@@ -89,18 +76,7 @@ async def expand_query_with_llm(
             if len(terms) >= _QUERY_EXPANSION_MAX_TERMS:
                 break
 
-        tokens, token_usage_source = resolve_token_usage(response, prompt)
-        _log_query_expansion(
-            database_path=database_path,
-            trace_id=trace_id,
-            phase="response",
-            user_query=user_query,
-            raw_output=text,
-            terms=terms,
-            tokens=tokens,
-            token_usage_source=token_usage_source,
-            elapsed_seconds=elapsed,
-        )
+        tokens, _ = resolve_token_usage(response, prompt)
         _record_expansion_token_usage(
             database_path=database_path,
             settings=settings,
@@ -108,121 +84,14 @@ async def expand_query_with_llm(
             trace_id=trace_id,
         )
 
-        if terms:
-            logger.info(f"LLM 查询扩展: '{user_query}' → {terms} ({elapsed}s)")
-
         return terms
 
     except asyncio.TimeoutError:
-        _log_query_expansion(
-            database_path=database_path,
-            trace_id=trace_id,
-            phase="timeout",
-            user_query=user_query,
-        )
         logger.warning("LLM 查询扩展超时，跳过")
         return []
     except Exception as e:
-        _log_query_expansion(
-            database_path=database_path,
-            trace_id=trace_id,
-            phase="error",
-            user_query=user_query,
-            error=str(e),
-        )
         logger.warning(f"LLM 查询扩展失败，跳过: {e}")
         return []
-
-
-def _log_query_expansion(
-    *,
-    database_path: Path | None,
-    trace_id: str,
-    phase: str,
-    user_query: str = "",
-    prompt: str = "",
-    model_info: dict | None = None,
-    raw_output: str = "",
-    terms: list[str] | None = None,
-    tokens: dict | None = None,
-    token_usage_source: str = "",
-    elapsed_seconds: float = 0,
-    error: str = "",
-) -> None:
-    """将查询扩展的各阶段日志写入 project_logs。"""
-    if not trace_id or not database_path:
-        return
-    try:
-        from app.db.log_store import insert_project_log
-
-        source = f"query_expansion.{phase}"
-
-        if phase == "prompt":
-            message = "LLM 查询扩展请求"
-            detail_parts = [
-                f"user_query={user_query}",
-                f"provider_key={model_info.get('provider_key', '<unknown>') if model_info else '<unknown>'}",
-                f"model={model_info.get('model', '<unknown>') if model_info else '<unknown>'}",
-                f"provider_type={model_info.get('provider_type', '<unknown>') if model_info else '<unknown>'}",
-                f"timeout={_QUERY_EXPANSION_TIMEOUT_SECONDS}s",
-                "temperature=0.0",
-                "max_retries=0",
-                "thinking_mode=disabled",
-                "reasoning_trace=not_requested",
-                "",
-                "=" * 80,
-                "【完整 Prompt】",
-                "=" * 80,
-                prompt,
-            ]
-        elif phase == "response":
-            message = "LLM 查询扩展响应"
-            detail_parts = [
-                f"user_query={user_query}",
-                f"elapsed={elapsed_seconds}s",
-                f"input_tokens={tokens.get('input_tokens', 0) if tokens else 0}",
-                f"output_tokens={tokens.get('output_tokens', 0) if tokens else 0}",
-                f"total_tokens={tokens.get('total_tokens', 0) if tokens else 0}",
-                f"token_usage_source={token_usage_source or '<unknown>'}",
-                f"terms_count={len(terms or [])}",
-                "",
-                "=" * 80,
-                "【模型原始输出】",
-                "=" * 80,
-                raw_output or "<empty>",
-                "",
-                "=" * 80,
-                "【解析结果】",
-                "=" * 80,
-                "|".join(terms) if terms else "<empty>",
-            ]
-        elif phase == "timeout":
-            message = "LLM 查询扩展超时"
-            detail_parts = [
-                f"user_query={user_query}",
-                f"timeout={_QUERY_EXPANSION_TIMEOUT_SECONDS}s",
-                "thinking_mode=disabled",
-            ]
-        elif phase == "error":
-            message = "LLM 查询扩展失败"
-            detail_parts = [
-                f"user_query={user_query}",
-                f"error={error}",
-            ]
-        else:
-            return
-
-        insert_project_log(
-            database_path,
-            trace_id=trace_id,
-            level="WARNING" if phase in ("timeout", "error") else "INFO",
-            category="ai",
-            source=source,
-            message=message,
-            detail="\n".join(detail_parts),
-        )
-    except Exception:
-        logger.debug("Failed to log query expansion event", exc_info=True)
 
 
 def _extract_tokens_from_response(response: Any) -> dict[str, int]:
@@ -376,11 +245,6 @@ def _resolve_memory_token_budget(memory_dir: Path) -> tuple[int, int]:
         doc_estimated = int(doc_chars * 1.2)
         base_budget = _pick_budget_tier(core_estimated)
         expanded_budget = _pick_budget_tier(core_estimated + doc_estimated)
-        logger.info(
-            f"记忆 token budget 动态选择: "
-            f"核心估算={core_estimated}, 文档估算={doc_estimated}, "
-            f"base={base_budget}, expanded={expanded_budget}"
-        )
         return base_budget, expanded_budget
     except Exception:
         logger.debug("Failed to resolve memory token budget", exc_info=True)
@@ -665,9 +529,6 @@ async def read_memory(
             )
         if resolved_expanded_terms:
             cmd.extend(["--expanded-terms", "|".join(resolved_expanded_terms)])
-            logger.info(f"记忆读取传入扩展词: {resolved_expanded_terms}")
-        elif expanded_terms is not None or _is_query_expansion_enabled(project_root):
-            logger.info("记忆读取: 查询扩展未返回扩展词")
 
         success, stdout, stderr = await _run_subprocess_async(cmd, project_root)
 
