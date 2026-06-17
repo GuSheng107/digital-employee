@@ -1,0 +1,64 @@
+.mainLayout {
+  min-height: 100vh;
+}
+
+.logo {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 12px;
+  background: #002140;
+  color: #fff;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.logo img {
+  width: 24px;
+  height: 24px;
+}
+
+.header {
+  background: #fff;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.projectName {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ant-color-text-heading);
+}
+
+.userDropdown {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--ant-border-radius-sm);
+  transition: background 0.3s;
+}
+
+.userDropdown:hover {
+  background: var(--ant-color-fill-alter);
+}
+
+.username {
+  font-size: 14px;
+  color: var(--ant-color-text);
+}
+
+.content {
+  padding: 24px;
+  background: var(--ant-color-bg-layout);
+  overflow-y: auto;
+}
+
+.pageContainer {
+  padding: 24px;
+  background: #fff;
+  min-height: 100%;
+  border-radius: var(--ant-border-radius-lg);
+  box-shadow: var(--ant-box-shadow-card);
+}
