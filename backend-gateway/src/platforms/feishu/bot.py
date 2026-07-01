@@ -409,19 +409,21 @@ class FeishuBot(BaseBot):
             message_id: 消息唯一 ID。
         """
         try:
-            # 校验 content 能否被解析为合法的 JSON
-            json.loads(event.message.content)
+            # 接收事件推送的 content 只有 {"zh_cn": ...} 层级，不包含外层 "post" 键
+            content_json = json.loads(event.message.content)
         except Exception as exc:
             logger.warning("[BotID: {}] 解析富文本消息内容 JSON 失败: {}", self.bot_id, exc)
             return
 
         logger.info(
-            "[BotID: {}] 收到 {} 富文本(post)消息, 准备执行原样回复...",
+            "[BotID: {}] 收到 {} 富文本(post)消息, 正在重新包装并原样回复...",
             self.bot_id,
             chat_type,
         )
 
-        raw_content = event.message.content
+        # 按照发送消息格式规范，重新在最外层包装 "post" 键
+        post_data = {"post": content_json}
+        raw_content = lark.JSON.marshal(post_data)
 
         if chat_type == "p2p":
             self._send_post_to_user(sender_id.open_id, raw_content)
