@@ -9,6 +9,8 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI, HTTPException
 
+from loguru import logger
+
 from src.core.schemas import (
     BotConfig,
     BotConfigRequest,
@@ -16,6 +18,15 @@ from src.core.schemas import (
     HealthResponse,
 )
 from src.manager import BotManager
+
+# 配置日志输出到文件
+logger.add(
+    "log/backend-gateway.log",
+    rotation="10 MB",
+    retention="7 days",
+    encoding="utf-8",
+    enqueue=True,
+)
 
 # 初始化全局 BotManager 实例
 manager: BotManager = BotManager(config_path="config/bot.json")

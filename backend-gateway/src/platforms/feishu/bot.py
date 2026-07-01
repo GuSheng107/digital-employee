@@ -117,6 +117,9 @@ class FeishuBot(BaseBot):
         sender_id = event.sender.sender_id
         message_id = event.message.message_id
 
+        # 打印消息原始格式
+        logger.info("[{}] 消息原始格式: {}", self.bot_id, event.message.content)
+
         # 仅处理文本消息，忽略其它非文本事件
         if event.message.message_type != "text":
             logger.debug(
