@@ -162,11 +162,15 @@ class FeishuBot(BaseBot):
         try:
             content = {"text": text}
             req = (
-                lark.im.v1.Message.builder()
+                lark.im.v1.CreateMessageRequest.builder()
                 .receive_id_type("open_id")
-                .receive_id(open_id)
-                .msg_type("text")
-                .content(lark.JSON.marshal(content))
+                .request_body(
+                    lark.im.v1.CreateMessageRequestBody.builder()
+                    .receive_id(open_id)
+                    .msg_type("text")
+                    .content(lark.JSON.marshal(content))
+                    .build()
+                )
                 .build()
             )
             resp = self.api_client.im.v1.message.create(req)
@@ -196,10 +200,14 @@ class FeishuBot(BaseBot):
         try:
             content = {"text": text}
             req = (
-                lark.im.v1.Message.builder()
+                lark.im.v1.ReplyMessageRequest.builder()
                 .message_id(message_id)
-                .msg_type("text")
-                .content(lark.JSON.marshal(content))
+                .request_body(
+                    lark.im.v1.ReplyMessageRequestBody.builder()
+                    .content(lark.JSON.marshal(content))
+                    .msg_type("text")
+                    .build()
+                )
                 .build()
             )
             resp = self.api_client.im.v1.message.reply(req)
