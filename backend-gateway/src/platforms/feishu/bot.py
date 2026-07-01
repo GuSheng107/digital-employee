@@ -186,57 +186,12 @@ class FeishuBot(BaseBot):
             file_key,
         )
 
-        # 1. 调用获取消息资源接口下载图片
-        try:
-            download_req = (
-                lark.im.v1.GetMessageResourceRequest.builder()
-                .message_id(message_id)
-                .file_key(file_key)
-                .type("image")
-                .build()
-            )
-            download_resp = self.api_client.im.v1.message_resource.get(download_req)
-            if not download_resp.success():
-                logger.error(
-                    "[BotID: {}] 下载图片消息资源失败: code={}, msg={}",
-                    self.bot_id,
-                    download_resp.code,
-                    download_resp.msg,
-                )
-                return
-            img_bytes = download_resp.file.getvalue()
-        except Exception as exc:
-            logger.error("[BotID: {}] 下载消息图片发生异常: {}", self.bot_id, exc)
+        new_image_key = self._download_and_upload_image(message_id, file_key)
+        if not new_image_key:
+            logger.error("[BotID: {}] 图片下载或上传失败，终止回复", self.bot_id)
             return
 
-        # 2. 上传处理后的图片二进制内容
-        try:
-            img_stream = io.BytesIO(img_bytes)
-            upload_req = (
-                lark.im.v1.CreateImageRequest.builder()
-                .request_body(
-                    lark.im.v1.CreateImageRequestBody.builder()
-                    .image_type("message")
-                    .image(img_stream)
-                    .build()
-                )
-                .build()
-            )
-            upload_resp = self.api_client.im.v1.image.create(upload_req)
-            if not upload_resp.success():
-                logger.error(
-                    "[BotID: {}] 上传图片到飞书平台失败: code={}, msg={}",
-                    self.bot_id,
-                    upload_resp.code,
-                    upload_resp.msg,
-                )
-                return
-            new_image_key = upload_resp.data.image_key
-        except Exception as exc:
-            logger.error("[BotID: {}] 上传图片时发生异常: {}", self.bot_id, exc)
-            return
-
-        # 3. 发送/回复图片消息
+        # 发送/回复图片消息
         logger.info(
             "[BotID: {}] 图片重传成功, 获取到新 image_key: '{}', 准备回复...",
             self.bot_id,
@@ -402,6 +357,8 @@ class FeishuBot(BaseBot):
     ) -> None:
         """处理接收到的富文本（post）消息，实现富文本 Echo 原样回复。
 
+        支持富文本中 img 标签图片的自动下载与重新上传。
+
         Args:
             event: 飞书消息事件体。
             chat_type: 消息场景（p2p 或 group）。
@@ -416,10 +373,42 @@ class FeishuBot(BaseBot):
             return
 
         logger.info(
-            "[BotID: {}] 收到 {} 富文本(post)消息, 正在重新包装并原样回复...",
+            "[BotID: {}] 收到 {} 富文本(post)消息, 开始解析并替换包含的图片资源...",
             self.bot_id,
             chat_type,
         )
+
+        # 遍历富文本结构，寻找其中的 img 标签并下载重传
+        for lang, post_detail in content_json.items():
+            if not isinstance(post_detail, dict):
+                continue
+            paragraphs = post_detail.get("content", [])
+            if not isinstance(paragraphs, list):
+                continue
+            for paragraph in paragraphs:
+                if not isinstance(paragraph, list):
+                    continue
+                for element in paragraph:
+                    if not isinstance(element, dict):
+                        continue
+                    if element.get("tag") == "img":
+                        old_image_key = element.get("image_key")
+                        if old_image_key:
+                            logger.info(
+                                "[BotID: {}] 正在为富文本重传图片 image_key: '{}'",
+                                self.bot_id,
+                                old_image_key,
+                            )
+                            new_image_key = self._download_and_upload_image(
+                                message_id, old_image_key
+                            )
+                            if new_image_key:
+                                element["image_key"] = new_image_key
+                                logger.info(
+                                    "[BotID: {}] 富文本图片重传成功, 新 image_key: '{}'",
+                                    self.bot_id,
+                                    new_image_key,
+                                )
 
         # 按照发送消息格式规范，重新在最外层包装 "post" 键
         post_data = {"post": content_json}
@@ -503,3 +492,62 @@ class FeishuBot(BaseBot):
         except Exception as exc:
             logger.error("[BotID: {}] 群聊回复富文本异常: {}", self.bot_id, exc)
 
+    def _download_and_upload_image(self, message_id: str, file_key: str) -> str | None:
+        """下载消息中的图片二进制数据并重新上传，获取新的 image_key。
+
+        Args:
+            message_id: 图片所属的消息 ID。
+            file_key: 图片的唯一 file_key / image_key。
+
+        Returns:
+            新上传后的 image_key。若下载或上传失败则返回 None。
+        """
+        # 1. 调用获取消息资源接口下载图片
+        try:
+            download_req = (
+                lark.im.v1.GetMessageResourceRequest.builder()
+                .message_id(message_id)
+                .file_key(file_key)
+                .type("image")
+                .build()
+            )
+            download_resp = self.api_client.im.v1.message_resource.get(download_req)
+            if not download_resp.success():
+                logger.error(
+                    "[BotID: {}] 下载图片资源失败: code={}, msg={}",
+                    self.bot_id,
+                    download_resp.code,
+                    download_resp.msg,
+                )
+                return None
+            img_bytes = download_resp.file.getvalue()
+        except Exception as exc:
+            logger.error("[BotID: {}] 下载消息图片发生异常: {}", self.bot_id, exc)
+            return None
+
+        # 2. 上传处理后的图片二进制内容
+        try:
+            img_stream = io.BytesIO(img_bytes)
+            upload_req = (
+                lark.im.v1.CreateImageRequest.builder()
+                .request_body(
+                    lark.im.v1.CreateImageRequestBody.builder()
+                    .image_type("message")
+                    .image(img_stream)
+                    .build()
+                )
+                .build()
+            )
+            upload_resp = self.api_client.im.v1.image.create(upload_req)
+            if not upload_resp.success():
+                logger.error(
+                    "[BotID: {}] 上传图片到飞书平台失败: code={}, msg={}",
+                    self.bot_id,
+                    upload_resp.code,
+                    upload_resp.msg,
+                )
+                return None
+            return upload_resp.data.image_key
+        except Exception as exc:
+            logger.error("[BotID: {}] 上传图片时发生异常: {}", self.bot_id, exc)
+            return None
