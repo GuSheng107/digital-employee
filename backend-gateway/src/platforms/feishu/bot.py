@@ -126,6 +126,8 @@ class FeishuBot(BaseBot):
             self._handle_text_message(event, chat_type, sender_id, message_id)
         elif msg_type == "image":
             self._handle_image_message(event, chat_type, sender_id, message_id)
+        elif msg_type == "post":
+            self._handle_post_message(event, chat_type, sender_id, message_id)
         else:
             logger.debug(
                 "[BotID: {}] 忽略非处理消息类型: {}",
@@ -394,3 +396,108 @@ class FeishuBot(BaseBot):
                 )
         except Exception as exc:
             logger.error("[BotID: {}] 群聊回复图片异常: {}", self.bot_id, exc)
+
+    def _handle_post_message(
+        self, event: Any, chat_type: str, sender_id: Any, message_id: str
+    ) -> None:
+        """处理接收到的富文本（post）消息，实现富文本 Echo 原样回复。
+
+        Args:
+            event: 飞书消息事件体。
+            chat_type: 消息场景（p2p 或 group）。
+            sender_id: 发送者标识结构。
+            message_id: 消息唯一 ID。
+        """
+        try:
+            # 校验 content 能否被解析为合法的 JSON
+            json.loads(event.message.content)
+        except Exception as exc:
+            logger.warning("[BotID: {}] 解析富文本消息内容 JSON 失败: {}", self.bot_id, exc)
+            return
+
+        logger.info(
+            "[BotID: {}] 收到 {} 富文本(post)消息, 准备执行原样回复...",
+            self.bot_id,
+            chat_type,
+        )
+
+        raw_content = event.message.content
+
+        if chat_type == "p2p":
+            self._send_post_to_user(sender_id.open_id, raw_content)
+        elif chat_type == "group":
+            self._reply_post_to_group_message(message_id, raw_content)
+
+    def _send_post_to_user(self, open_id: str, post_content: str) -> None:
+        """单聊：向指定用户发送富文本（post）消息。
+
+        Args:
+            open_id: 用户唯一标识。
+            post_content: 富文本格式的消息 JSON 字符串。
+        """
+        try:
+            req = (
+                lark.im.v1.CreateMessageRequest.builder()
+                .receive_id_type("open_id")
+                .request_body(
+                    lark.im.v1.CreateMessageRequestBody.builder()
+                    .receive_id(open_id)
+                    .msg_type("post")
+                    .content(post_content)
+                    .build()
+                )
+                .build()
+            )
+            resp = self.api_client.im.v1.message.create(req)
+            if not resp.success():
+                logger.error(
+                    "[BotID: {}] 单聊发送富文本失败: code={}, msg={}",
+                    self.bot_id,
+                    resp.code,
+                    resp.msg,
+                )
+            else:
+                logger.info(
+                    "[BotID: {}] 单聊发送富文本成功: message_id={}",
+                    self.bot_id,
+                    resp.data.message_id,
+                )
+        except Exception as exc:
+            logger.error("[BotID: {}] 单聊发送富文本异常: {}", self.bot_id, exc)
+
+    def _reply_post_to_group_message(self, message_id: str, post_content: str) -> None:
+        """群聊：引用指定消息进行富文本（post）消息回复。
+
+        Args:
+            message_id: 被回复的原始消息 ID。
+            post_content: 富文本格式的消息 JSON 字符串。
+        """
+        try:
+            req = (
+                lark.im.v1.ReplyMessageRequest.builder()
+                .message_id(message_id)
+                .request_body(
+                    lark.im.v1.ReplyMessageRequestBody.builder()
+                    .content(post_content)
+                    .msg_type("post")
+                    .build()
+                )
+                .build()
+            )
+            resp = self.api_client.im.v1.message.reply(req)
+            if not resp.success():
+                logger.error(
+                    "[BotID: {}] 群聊回复富文本失败: code={}, msg={}",
+                    self.bot_id,
+                    resp.code,
+                    resp.msg,
+                )
+            else:
+                logger.info(
+                    "[BotID: {}] 群聊回复富文本成功: message_id={}",
+                    self.bot_id,
+                    resp.data.message_id,
+                )
+        except Exception as exc:
+            logger.error("[BotID: {}] 群聊回复富文本异常: {}", self.bot_id, exc)
+
