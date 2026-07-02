@@ -75,9 +75,10 @@ class MessageHub:
             return
 
         logger.info(
-            "[HUB-OUT] 分发回复指令至 {} 适配器 (BotID: {})",
+            "[HUB-OUT] 分发回复指令{}至 {} 适配器 (BotID: {})",
+            msg.content,
             msg.platform,
-            msg.bot_id,
+            msg.bot_id
         )
         # 将消息递交给适配器出站层发送
         bot_instance.adapter.send_message(msg)
