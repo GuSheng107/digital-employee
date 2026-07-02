@@ -14,6 +14,7 @@ from loguru import logger
 
 from src.core.base import BaseBot
 from src.core.schemas import BotConfig, BotConfigFile, BotStatusResponse
+from src.core.hub import hub
 from src.platforms.feishu.bot import FeishuBot
 
 
@@ -40,6 +41,9 @@ class BotManager:
         # Watchdog 守护线程状态
         self._watchdog_thread: threading.Thread | None = None
         self._watchdog_running: bool = False
+
+        # 注册 Bot 查找器给全局消息中枢，化解循环导包
+        hub.register_bot_provider(self.get_bot)
 
     def load_from_file(self) -> None:
         """从本地静态文件加载 Bot 配置并初始化启动。"""
@@ -138,6 +142,18 @@ class BotManager:
             self.active_configs.pop(bot_id, None)
             logger.info("[BotID: {}] Bot 已成功移除。", bot_id)
             return True
+
+    def get_bot(self, bot_id: str) -> BaseBot | None:
+        """通过 BotID 线程安全地查询对应的 Bot 实例。
+
+        Args:
+            bot_id: 机器人的唯一 ID。
+
+        Returns:
+            Bot 实例，不存在则返回 None。
+        """
+        with self._lock:
+            return self.bots.get(bot_id)
 
     def get_all_status(self) -> list[BotStatusResponse]:
         """获取当前内存中所有 Bot 实例的运行状态。
