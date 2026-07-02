@@ -154,7 +154,7 @@ class FeishuAdapter(BaseAdapter):
         hub.process_inbound(standard_msg)
 
     def send_message(self, msg: StandardMessage) -> None:
-        """将标准出站消息转换为飞书请求体并调用 API 发送。
+        """将标准出站消息统一转换打包为飞书富文本（post）格式发送。
 
         Args:
             msg: 出站的标准归一化消息体。
@@ -163,57 +163,80 @@ class FeishuAdapter(BaseAdapter):
             logger.warning("[BotID: {}] 待发送的标准消息内容为空，放弃发送。", self.bot.bot_id)
             return
 
-        # 一期兼容降维处理：根据内容数组长度和节点类型决定发送模式
-        first_content = msg.content[0]
+        logger.info(
+            "[BotID: {}] 开始将标准消息 (区块数量={}) 统一打包为 post 富文本出站...",
+            self.bot.bot_id,
+            len(msg.content),
+        )
 
-        # 1. 发送/回复纯文本
-        if first_content.msg_type == "text":
-            reply_text = first_content.text or ""
-            if msg.chat_type == "p2p":
-                self._send_text_p2p(msg.session_id, reply_text)
-            elif msg.chat_type == "group":
-                self._reply_text_group(msg.message_id, reply_text)
+        # 构造统一的富文本骨架
+        post_content: dict[str, Any] = {
+            "zh_cn": {
+                "title": "",
+                "content": []
+            }
+        }
 
-        # 2. 发送/回复图片
-        elif first_content.msg_type == "image":
-            file_url = first_content.file_url or ""
-            # 从 MinIO 下载图片并重新上传到飞书，置换出飞书专用的 image_key
-            feishu_image_key = self._transfer_minio_to_feishu(file_url)
-            if not feishu_image_key:
-                logger.error(
-                    "[BotID: {}] 图片从 MinIO 转传回飞书失败，放弃发送。",
-                    self.bot.bot_id,
+        # 遍历所有内容区块，统一翻译并合并进富文本段落中
+        for item in msg.content:
+            if item.msg_type == "text":
+                text_content = item.text or ""
+                post_content["zh_cn"]["content"].append(
+                    [{"tag": "text", "text": text_content}]
                 )
-                return
 
-            if msg.chat_type == "p2p":
-                self._send_image_p2p(msg.session_id, feishu_image_key)
-            elif msg.chat_type == "group":
-                self._reply_image_group(msg.message_id, feishu_image_key)
+            elif item.msg_type == "image":
+                file_url = item.file_url or ""
+                # 从 MinIO 下载并转传至飞书，置换出飞书专用的 image_key
+                feishu_image_key = self._transfer_minio_to_feishu(file_url)
+                if feishu_image_key:
+                    post_content["zh_cn"]["content"].append(
+                        [{"tag": "img", "image_key": feishu_image_key}]
+                    )
+                else:
+                    logger.error(
+                        "[BotID: {}] 图片从 MinIO 转传飞书失败，跳过该图片区块。",
+                        self.bot.bot_id,
+                    )
+                    post_content["zh_cn"]["content"].append(
+                        [{"tag": "text", "text": "[图片转存失败]"}]
+                    )
 
-        # 3. 发送/回复富文本 (post)
-        elif first_content.msg_type == "post":
-            try:
-                post_content = json.loads(first_content.text or "{}")
-            except Exception as exc:
-                logger.error(
-                    "[BotID: {}] 解析出站富文本内容 JSON 失败: {}",
-                    self.bot.bot_id,
-                    exc,
-                )
-                return
+            elif item.msg_type == "post":
+                try:
+                    parsed_post = json.loads(item.text or "{}")
+                except Exception as exc:
+                    logger.error(
+                        "[BotID: {}] 解析出站富文本内容 JSON 失败: {}",
+                        self.bot.bot_id,
+                        exc,
+                    )
+                    continue
 
-            # 遍历出站富文本结构，将 MinIO URL 置换回飞书的 image_key
-            self._recursive_restore_post_images(post_content)
+                # 递归恢复富文本中的图片链接
+                self._recursive_restore_post_images(parsed_post)
 
-            # 按规范，在最外层包装 "post" 键
-            post_data = {"post": post_content}
-            raw_post_content = lark.JSON.marshal(post_data)
+                # 将其内部的段落合并至主富文本的对应语言中
+                for lang, post_detail in parsed_post.items():
+                    if not isinstance(post_detail, dict):
+                        continue
+                    if lang not in post_content:
+                        post_content[lang] = {
+                            "title": post_detail.get("title", ""),
+                            "content": []
+                        }
+                    paragraphs = post_detail.get("content", [])
+                    if isinstance(paragraphs, list):
+                        post_content[lang]["content"].extend(paragraphs)
 
-            if msg.chat_type == "p2p":
-                self._send_post_p2p(msg.session_id, raw_post_content)
-            elif msg.chat_type == "group":
-                self._reply_post_group(msg.message_id, raw_post_content)
+        # 最外层包装 "post" 键
+        post_data = {"post": post_content}
+        raw_post_content = lark.JSON.marshal(post_data)
+
+        if msg.chat_type == "p2p":
+            self._send_post_p2p(msg.session_id, raw_post_content)
+        elif msg.chat_type == "group":
+            self._reply_post_group(msg.message_id, raw_post_content)
 
     # ==========================================
     # 多模态资源置换核心逻辑（MinIO <--> 飞书）
@@ -380,111 +403,6 @@ class FeishuAdapter(BaseAdapter):
     # 底层飞书 API 发送方法封装（只使用 V1 统一格式）
     # ==========================================
 
-    def _send_text_p2p(self, open_id: str, text: str) -> None:
-        """单聊发送文本消息。"""
-        try:
-            content = {"text": text}
-            req = (
-                lark.im.v1.CreateMessageRequest.builder()
-                .receive_id_type("open_id")
-                .request_body(
-                    lark.im.v1.CreateMessageRequestBody.builder()
-                    .receive_id(open_id)
-                    .msg_type("text")
-                    .content(lark.JSON.marshal(content))
-                    .build()
-                )
-                .build()
-            )
-            resp = self.bot.api_client.im.v1.message.create(req)
-            if not resp.success():
-                logger.error(
-                    "[BotID: {}] 单聊文本发送失败: code={}, msg={}",
-                    self.bot.bot_id,
-                    resp.code,
-                    resp.msg,
-                )
-        except Exception as exc:
-            logger.error("[BotID: {}] 单聊文本发送异常: {}", self.bot.bot_id, exc)
-
-    def _reply_text_group(self, message_id: str, text: str) -> None:
-        """群聊回复文本消息。"""
-        try:
-            content = {"text": text}
-            req = (
-                lark.im.v1.ReplyMessageRequest.builder()
-                .message_id(message_id)
-                .request_body(
-                    lark.im.v1.ReplyMessageRequestBody.builder()
-                    .content(lark.JSON.marshal(content))
-                    .msg_type("text")
-                    .build()
-                )
-                .build()
-            )
-            resp = self.bot.api_client.im.v1.message.reply(req)
-            if not resp.success():
-                logger.error(
-                    "[BotID: {}] 群聊文本回复失败: code={}, msg={}",
-                    self.bot.bot_id,
-                    resp.code,
-                    resp.msg,
-                )
-        except Exception as exc:
-            logger.error("[BotID: {}] 群聊文本回复异常: {}", self.bot.bot_id, exc)
-
-    def _send_image_p2p(self, open_id: str, image_key: str) -> None:
-        """单聊发送图片消息。"""
-        try:
-            content = {"image_key": image_key}
-            req = (
-                lark.im.v1.CreateMessageRequest.builder()
-                .receive_id_type("open_id")
-                .request_body(
-                    lark.im.v1.CreateMessageRequestBody.builder()
-                    .receive_id(open_id)
-                    .msg_type("image")
-                    .content(lark.JSON.marshal(content))
-                    .build()
-                )
-                .build()
-            )
-            resp = self.bot.api_client.im.v1.message.create(req)
-            if not resp.success():
-                logger.error(
-                    "[BotID: {}] 单聊图片发送失败: code={}, msg={}",
-                    self.bot.bot_id,
-                    resp.code,
-                    resp.msg,
-                )
-        except Exception as exc:
-            logger.error("[BotID: {}] 单聊图片发送异常: {}", self.bot.bot_id, exc)
-
-    def _reply_image_group(self, message_id: str, image_key: str) -> None:
-        """群聊回复图片消息。"""
-        try:
-            content = {"image_key": image_key}
-            req = (
-                lark.im.v1.ReplyMessageRequest.builder()
-                .message_id(message_id)
-                .request_body(
-                    lark.im.v1.ReplyMessageRequestBody.builder()
-                    .content(lark.JSON.marshal(content))
-                    .msg_type("image")
-                    .build()
-                )
-                .build()
-            )
-            resp = self.bot.api_client.im.v1.message.reply(req)
-            if not resp.success():
-                logger.error(
-                    "[BotID: {}] 群聊图片回复失败: code={}, msg={}",
-                    self.bot.bot_id,
-                    resp.code,
-                    resp.msg,
-                )
-        except Exception as exc:
-            logger.error("[BotID: {}] 群聊图片回复异常: {}", self.bot.bot_id, exc)
 
     def _send_post_p2p(self, open_id: str, post_content: str) -> None:
         """单聊发送富文本消息。"""
