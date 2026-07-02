@@ -48,3 +48,25 @@ class HealthResponse(BaseModel):
     status: str = Field(default="ok", description="服务状态")
     active_bots: int = Field(default=0, description="活跃 Bot 数量")
     bots: list[BotStatusResponse] = Field(default_factory=list, description="各 Bot 状态详情")
+
+
+class MessageContent(BaseModel):
+    """多模态消息的内容区块定义。"""
+
+    msg_type: str = Field(default="text", description="消息类型，如 text, image, file, audio")
+    text: str | None = Field(default=None, description="文本内容")
+    file_url: str | None = Field(default=None, description="已转存至本地 MinIO 的统一对象 URL")
+    file_name: str | None = Field(default=None, description="文件原始名称（可选）")
+
+
+class StandardMessage(BaseModel):
+    """全局统一的归一化消息体模型。"""
+
+    message_id: str | None = Field(default=None, description="原始消息 ID（回复时关联，发新消息时为空）")
+    platform: str = Field(..., description="底层 IM 平台类型，如 feishu")
+    bot_id: str = Field(..., description="关联的机器人实例唯一 ID")
+    chat_type: str = Field(..., description="会话场景，如 p2p（单聊）或 group（群聊）")
+    session_id: str = Field(..., description="发送的目标会话 ID（单聊为对方 open_id，群聊为群聊 ID）")
+    sender_id: str | None = Field(default=None, description="发送方用户唯一 ID（可选）")
+    content: list[MessageContent] = Field(default_factory=list, description="多模态消息内容区块列表")
+
