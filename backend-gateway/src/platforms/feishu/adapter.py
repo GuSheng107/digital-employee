@@ -43,6 +43,15 @@ class FeishuAdapter(BaseAdapter):
         chat_type = event.message.chat_type
         sender_id = event.sender.sender_id
         message_id = event.message.message_id
+        msg_type = event.message.message_type
+
+        logger.info(
+            "[BotID: {}] 收到飞书原始入站推送 JSON -> message_id='{}', msg_type='{}', content='{}'",
+            self.bot.bot_id,
+            message_id,
+            msg_type,
+            event.message.content
+        )
 
         # 确定会话 ID（单聊为发送者 open_id，群聊为群聊 ID）
         session_id = (
@@ -117,10 +126,95 @@ class FeishuAdapter(BaseAdapter):
                 )
                 return
 
-        # 3. 富文本消息类型转换
+        # 3. 音频消息类型转换
+        elif msg_type == "audio":
+            file_key = ""
+            try:
+                content_json = json.loads(event.message.content)
+                file_key = content_json.get("file_key", "")
+            except Exception as exc:
+                logger.warning(
+                    "[BotID: {}] 解析音频 file_key 异常: {}",
+                    self.bot.bot_id,
+                    exc,
+                )
+                return
+
+            if file_key:
+                minio_url = self._transfer_feishu_to_minio(
+                    message_id=message_id,
+                    file_key=file_key,
+                    session_id=session_id,
+                    res_type="audio",
+                )
+                if minio_url:
+                    standard_msg.content.append(
+                        MessageContent(msg_type="audio", file_url=minio_url)
+                    )
+
+        # 4. 视频/媒体消息类型转换
+        elif msg_type == "media":
+            file_key = ""
+            try:
+                content_json = json.loads(event.message.content)
+                file_key = content_json.get("file_key", "")
+            except Exception as exc:
+                logger.warning(
+                    "[BotID: {}] 解析媒体 file_key 异常: {}",
+                    self.bot.bot_id,
+                    exc,
+                )
+                return
+
+            if file_key:
+                minio_url = self._transfer_feishu_to_minio(
+                    message_id=message_id,
+                    file_key=file_key,
+                    session_id=session_id,
+                    res_type="media",
+                )
+                if minio_url:
+                    standard_msg.content.append(
+                        MessageContent(msg_type="video", file_url=minio_url)
+                    )
+
+        # 5. 文件消息类型转换
+        elif msg_type == "file":
+            file_key = ""
+            file_name = ""
+            try:
+                content_json = json.loads(event.message.content)
+                file_key = content_json.get("file_key", "")
+                file_name = content_json.get("file_name", "file")
+            except Exception as exc:
+                logger.warning(
+                    "[BotID: {}] 解析文件 file_key 异常: {}",
+                    self.bot.bot_id,
+                    exc,
+                )
+                return
+
+            if file_key:
+                minio_url = self._transfer_feishu_to_minio(
+                    message_id=message_id,
+                    file_key=file_key,
+                    session_id=session_id,
+                    res_type="file",
+                    file_name=file_name,
+                )
+                if minio_url:
+                    standard_msg.content.append(
+                        MessageContent(
+                            msg_type="file",
+                            file_url=minio_url,
+                            file_name=file_name,
+                        )
+                    )
+
+        # 6. 富文本消息类型转换（降维打散为基础类列表）
         elif msg_type == "post":
             try:
-                post_content = json.loads(event.message.content)
+                raw_post_data = json.loads(event.message.content)
             except Exception as exc:
                 logger.warning(
                     "[BotID: {}] 解析富文本内容 JSON 异常: {}",
@@ -129,18 +223,54 @@ class FeishuAdapter(BaseAdapter):
                 )
                 return
 
-            # 遍历并递归替换富文本里所有 img 标签的 image_key
-            self._recursive_transfer_post_images(
-                post_detail=post_content,
-                message_id=message_id,
-                session_id=session_id,
-            )
+            # 兼容处理：飞书推送的富文本事件中，content JSON 往往包裹在外层 "post" 键下，需解包以获取语言主节点
+            post_content = raw_post_data.get("post", raw_post_data)
 
-            # 将已转存完、包含 MinIO 链接的富文本结构作为 JSON 序列化存入 text
-            raw_post_str = json.dumps(post_content, ensure_ascii=False)
-            standard_msg.content.append(
-                MessageContent(msg_type="post", text=raw_post_str)
-            )
+            # 自适应兼容：判断最外层是直接平铺 title/content（无语言层），还是带有多语言节点（如 zh_cn）
+            if "content" in post_content:
+                unified_post_data = {"zh_cn": post_content}
+            else:
+                unified_post_data = post_content
+
+            # 平铺（Flatten）富文本中的节点到扁平的一维内容列表中，消除 post 类型
+            for lang, post_detail in unified_post_data.items():
+                if not isinstance(post_detail, dict):
+                    continue
+                paragraphs = post_detail.get("content", [])
+                if not isinstance(paragraphs, list):
+                    continue
+                for paragraph in paragraphs:
+                    if not isinstance(paragraph, list):
+                        continue
+                    for element in paragraph:
+                        if not isinstance(element, dict):
+                            continue
+                        tag = element.get("tag")
+                        if tag == "text":
+                            text_str = element.get("text", "")
+                            if text_str:
+                                standard_msg.content.append(
+                                    MessageContent(msg_type="text", text=text_str)
+                                )
+                        elif tag == "img":
+                            old_key = element.get("image_key")
+                            if old_key:
+                                minio_url = self._transfer_feishu_to_minio(
+                                    message_id=message_id,
+                                    file_key=old_key,
+                                    session_id=session_id,
+                                )
+                                if minio_url:
+                                    standard_msg.content.append(
+                                        MessageContent(msg_type="image", file_url=minio_url)
+                                    )
+                        elif tag == "a":
+                            text_str = element.get("text", "")
+                            href = element.get("href", "")
+                            if text_str:
+                                standard_msg.content.append(
+                                    MessageContent(msg_type="text", text=f"[{text_str}]({href})")
+                                )
 
         else:
             logger.debug(
@@ -150,6 +280,11 @@ class FeishuAdapter(BaseAdapter):
             )
             return
 
+        logger.info(
+            "[BotID: {}] 投递入站消息，归一化 StandardMessage JSON: {}",
+            self.bot.bot_id,
+            standard_msg.model_dump_json(indent=2)
+        )
         # 投递入站消息给路由中枢
         hub.process_inbound(standard_msg)
 
@@ -163,6 +298,11 @@ class FeishuAdapter(BaseAdapter):
             logger.warning("[BotID: {}] 待发送的标准消息内容为空，放弃发送。", self.bot.bot_id)
             return
 
+        logger.info(
+            "[BotID: {}] 收到待发送出站消息，StandardMessage JSON: {}",
+            self.bot.bot_id,
+            msg.model_dump_json(indent=2)
+        )
         logger.info(
             "[BotID: {}] 开始将标准消息 (区块数量={}) 统一打包为 post 富文本出站...",
             self.bot.bot_id,
@@ -202,37 +342,42 @@ class FeishuAdapter(BaseAdapter):
                         [{"tag": "text", "text": "[图片转存失败]"}]
                     )
 
-            elif item.msg_type == "post":
-                try:
-                    parsed_post = json.loads(item.text or "{}")
-                except Exception as exc:
-                    logger.error(
-                        "[BotID: {}] 解析出站富文本内容 JSON 失败: {}",
-                        self.bot.bot_id,
-                        exc,
-                    )
-                    continue
+            elif item.msg_type == "audio":
+                file_url = item.file_url or ""
+                post_content["zh_cn"]["content"].append([
+                    {"tag": "text", "text": "🎵 语音消息: "},
+                    {"tag": "a", "href": file_url, "text": "点击播放音频"}
+                ])
 
-                # 递归恢复富文本中的图片链接
-                self._recursive_restore_post_images(parsed_post)
+            elif item.msg_type == "video":
+                file_url = item.file_url or ""
+                post_content["zh_cn"]["content"].append([
+                    {"tag": "text", "text": "🎥 视频消息: "},
+                    {"tag": "a", "href": file_url, "text": "点击观看视频"}
+                ])
 
-                # 将其内部的段落合并至主富文本的对应语言中
-                for lang, post_detail in parsed_post.items():
-                    if not isinstance(post_detail, dict):
-                        continue
-                    if lang not in post_content:
-                        post_content[lang] = {
-                            "title": post_detail.get("title", ""),
-                            "content": []
-                        }
-                    paragraphs = post_detail.get("content", [])
-                    if isinstance(paragraphs, list):
-                        post_content[lang]["content"].extend(paragraphs)
+            elif item.msg_type == "file":
+                file_url = item.file_url or ""
+                file_name = item.file_name or "点击下载文件"
+                post_content["zh_cn"]["content"].append([
+                    {"tag": "text", "text": f"📎 附件 ({file_name}): "},
+                    {"tag": "a", "href": file_url, "text": "点击下载"}
+                ])
 
-        # 最外层包装 "post" 键
-        post_data = {"post": post_content}
-        raw_post_content = lark.JSON.marshal(post_data)
 
+
+        # 根据内容区块数量判定是否需要包装外层 "post" 键
+        if len(msg.content) > 1:
+            post_data = {"post": post_content}
+            raw_post_content = lark.JSON.marshal(post_data)
+        else:
+            raw_post_content = lark.JSON.marshal(post_content)
+
+        logger.info(
+            "[BotID: {}] 最终分发给飞书 API 的富文本 JSON: {}",
+            self.bot.bot_id,
+            raw_post_content
+        )
         if msg.chat_type == "p2p":
             self._send_post_p2p(msg.session_id, raw_post_content)
         elif msg.chat_type == "group":
@@ -243,40 +388,60 @@ class FeishuAdapter(BaseAdapter):
     # ==========================================
 
     def _transfer_feishu_to_minio(
-        self, *, message_id: str, file_key: str, session_id: str
+        self, *, message_id: str, file_key: str, session_id: str, res_type: str = "image", file_name: str | None = None
     ) -> str | None:
-        """从飞书下载图片二进制，存入 MinIO 并获取内部标准 URL。"""
+        """从飞书下载媒体/文件资源二进制，存入 MinIO 并获取内部标准 URL。"""
         try:
-            # 1. 调用飞书接口下载图片
+            # 飞书资源下载接口中，图片类型为 "image"，其余（音频、视频、文件）统一为 "file"
+            download_type = "image" if res_type == "image" else "file"
             req = (
                 lark.im.v1.GetMessageResourceRequest.builder()
                 .message_id(message_id)
                 .file_key(file_key)
-                .type("image")
+                .type(download_type)
                 .build()
             )
             resp = self.bot.api_client.im.v1.message_resource.get(req)
             if not resp.success():
                 logger.error(
-                    "[BotID: {}] 下载飞书资源流失败: code={}, msg={}",
+                    "[BotID: {}] 下载飞书 {} 资源流失败: code={}, msg={}",
                     self.bot.bot_id,
+                    res_type,
                     resp.code,
                     resp.msg,
                 )
                 return None
 
-            img_bytes = resp.file.getvalue()
-            length = len(img_bytes)
+            file_bytes = resp.file.getvalue()
+            length = len(file_bytes)
 
-            # 2. 构造唯一文件名，上传到 MinIO
-            file_extension = ".png"  # 飞书资源通常默认为图片
-            object_name = f"feishu/{self.bot.bot_id}/{session_id}/{uuid.uuid4()}{file_extension}"
+            # 根据资源类型自适应后缀和 MIME 类型
+            if res_type == "image":
+                file_extension = ".png"
+                content_type = "image/png"
+            elif res_type == "audio":
+                file_extension = ".mp3"
+                content_type = "audio/mp3"
+            elif res_type == "media":
+                file_extension = ".mp4"
+                content_type = "video/mp4"
+            else:
+                # 文件类型：如果有传入文件名，则尽可能提取出原有后缀
+                if file_name and "." in file_name:
+                    file_extension = f".{file_name.split('.')[-1]}"
+                else:
+                    file_extension = ""
+                content_type = "application/octet-stream"
+
+            # 构造在桶内唯一的存储对象路径
+            unique_name = f"{uuid.uuid4()}{file_extension}"
+            object_name = f"feishu/{self.bot.bot_id}/{session_id}/{unique_name}"
 
             minio_url = minio_client.upload_file(
                 object_name=object_name,
-                data=io.BytesIO(img_bytes),
+                data=io.BytesIO(file_bytes),
                 length=length,
-                content_type="image/png",
+                content_type=content_type,
             )
             return minio_url
         except Exception as exc:
@@ -287,8 +452,19 @@ class FeishuAdapter(BaseAdapter):
             )
             return None
 
-    def _transfer_minio_to_feishu(self, file_url: str) -> str | None:
-        """从 MinIO 下载图片二进制，上传到飞书以置换获取 image_key。"""
+    def _transfer_minio_to_feishu(
+        self, file_url: str, res_type: str = "image", file_name: str | None = None
+    ) -> str | None:
+        """从 MinIO 下载媒体/文件资源，并上传至飞书平台，换取发送所需的 key (image_key 或 file_key)。
+
+        Args:
+            file_url: 内部 MinIO 资源的完整网络 URL。
+            res_type: 资源类型，如 "image", "audio", "video", "file"。
+            file_name: 文件名（对于 file 类型是必须的）。
+
+        Returns:
+            飞书平台返回的资源唯一 key (image_key 或 file_key)。若失败则返回 None。
+        """
         if not file_url:
             return None
 
@@ -306,32 +482,69 @@ class FeishuAdapter(BaseAdapter):
                 )
                 return None
 
-            # 2. 上传到飞书
-            upload_req = (
-                lark.im.v1.CreateImageRequest.builder()
-                .request_body(
-                    lark.im.v1.CreateImageRequestBody.builder()
-                    .image_type("message")
-                    .image(file_stream)
+            # 2. 如果是图片类型，调用飞书图片上传接口
+            if res_type == "image":
+                upload_req = (
+                    lark.im.v1.CreateImageRequest.builder()
+                    .request_body(
+                        lark.im.v1.CreateImageRequestBody.builder()
+                        .image_type("message")
+                        .image(file_stream)
+                        .build()
+                    )
                     .build()
                 )
-                .build()
-            )
-            upload_resp = self.bot.api_client.im.v1.image.create(upload_req)
-            if not upload_resp.success():
-                logger.error(
-                    "[BotID: {}] 置换飞书图片 key 失败: code={}, msg={}",
-                    self.bot.bot_id,
-                    upload_resp.code,
-                    upload_resp.msg,
-                )
-                return None
+                upload_resp = self.bot.api_client.im.v1.image.create(upload_req)
+                if not upload_resp.success():
+                    logger.error(
+                        "[BotID: {}] 置换飞书图片 key 失败: code={}, msg={}",
+                        self.bot.bot_id,
+                        upload_resp.code,
+                        upload_resp.msg,
+                    )
+                    return None
+                return upload_resp.data.image_key
 
-            return upload_resp.data.image_key
+            # 3. 如果是音频、视频或文件类型，统一调用飞书文件上传接口
+            else:
+                # 判定飞书文件上传所需的 file_type 细分格式
+                if res_type == "audio":
+                    file_type = "opus"  # 飞书语音推荐使用 opus
+                    actual_name = file_name or "voice.opus"
+                elif res_type == "video":
+                    file_type = "mp4"
+                    actual_name = file_name or "video.mp4"
+                else:
+                    file_type = "stream"
+                    actual_name = file_name or "file.bin"
+
+                upload_req = (
+                    lark.im.v1.CreateFileRequest.builder()
+                    .request_body(
+                        lark.im.v1.CreateFileRequestBody.builder()
+                        .file_type(file_type)
+                        .file_name(actual_name)
+                        .file(file_stream)
+                        .build()
+                    )
+                    .build()
+                )
+                upload_resp = self.bot.api_client.im.v1.file.create(upload_req)
+                if not upload_resp.success():
+                    logger.error(
+                        "[BotID: {}] 置换飞书文件 key 失败: code={}, msg={}",
+                        self.bot.bot_id,
+                        upload_resp.code,
+                        upload_resp.msg,
+                    )
+                    return None
+                return upload_resp.data.file_key
+
         except Exception as exc:
             logger.error(
-                "[BotID: {}] MinIO 转传飞书过程发生异常: {}",
+                "[BotID: {}] MinIO 转传飞书过程发生异常 ({}): {}",
                 self.bot.bot_id,
+                res_type,
                 exc,
             )
             return None
@@ -351,53 +564,7 @@ class FeishuAdapter(BaseAdapter):
             return parts[1]
         return path
 
-    def _recursive_transfer_post_images(
-        self, *, post_detail: Any, message_id: str, session_id: str
-    ) -> None:
-        """递归解析富文本结构，将里面所有的 img 标签 image_key 下载并转存至 MinIO。"""
-        if isinstance(post_detail, dict):
-            if post_detail.get("tag") == "img":
-                old_key = post_detail.get("image_key")
-                if old_key and not old_key.startswith("http"):
-                    # 发现飞书原生 image_key，转存
-                    minio_url = self._transfer_feishu_to_minio(
-                        message_id=message_id,
-                        file_key=old_key,
-                        session_id=session_id,
-                    )
-                    if minio_url:
-                        post_detail["image_key"] = minio_url
-            else:
-                for val in post_detail.values():
-                    self._recursive_transfer_post_images(
-                        post_detail=val,
-                        message_id=message_id,
-                        session_id=session_id,
-                    )
-        elif isinstance(post_detail, list):
-            for item in post_detail:
-                self._recursive_transfer_post_images(
-                    post_detail=item,
-                    message_id=message_id,
-                    session_id=session_id,
-                )
 
-    def _recursive_restore_post_images(self, post_detail: Any) -> None:
-        """递归解析富文本结构，将里面所有的 MinIO URL 下载并置换为飞书原生 image_key。"""
-        if isinstance(post_detail, dict):
-            if post_detail.get("tag") == "img":
-                minio_url = post_detail.get("image_key")
-                if minio_url and minio_url.startswith("http"):
-                    # 发现 MinIO 的内部标准 URL，置换为飞书 key
-                    feishu_key = self._transfer_minio_to_feishu(minio_url)
-                    if feishu_key:
-                        post_detail["image_key"] = feishu_key
-            else:
-                for val in post_detail.values():
-                    self._recursive_restore_post_images(post_detail=val)
-        elif isinstance(post_detail, list):
-            for item in post_detail:
-                self._recursive_restore_post_images(post_detail=item)
 
     # ==========================================
     # 底层飞书 API 发送方法封装（只使用 V1 统一格式）
