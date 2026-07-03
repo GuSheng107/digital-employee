@@ -75,3 +75,9 @@ logs/
 *.pem
 *.key
 credentials.json
+
+# ========================
+# Agent
+# ========================
+.agents/
+
