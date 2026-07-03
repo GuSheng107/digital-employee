@@ -14,6 +14,7 @@ class BotConfig(BaseModel):
     platform: str = Field(default="feishu", description="平台类型")
     app_id: str = Field(..., description="飞书应用 APP_ID")
     app_secret: str = Field(..., description="飞书应用 APP_SECRET")
+    mode: str = Field(default="test", description="运行模式：test（内存模拟）或 prod（MQ生产投递）")
 
 
 class BotConfigFile(BaseModel):
@@ -29,6 +30,7 @@ class BotConfigRequest(BaseModel):
     platform: str = Field(default="feishu", description="平台类型")
     app_id: str = Field(..., description="飞书应用 APP_ID")
     app_secret: str = Field(..., description="飞书应用 APP_SECRET")
+    mode: str = Field(default="test", description="运行模式：test（内存模拟）或 prod（MQ生产投递）")
 
 
 class BotStatusResponse(BaseModel):

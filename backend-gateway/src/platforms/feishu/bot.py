@@ -54,6 +54,17 @@ class FeishuBot(BaseBot):
         self.ws_client: lark.ws.Client | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
 
+    def inject_main_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """注入 FastAPI 主事件循环引用至适配器，支持跨线程安全投递。
+
+        在 FastAPI lifespan 启动阶段调用，此时主事件循环已稳定运行。
+
+        Args:
+            loop: FastAPI/Uvicorn 运行中的主异步事件循环实例。
+        """
+        self.adapter.main_loop = loop
+        logger.info("[BotID: {}] 主事件循环已成功注入至适配器。", self.bot_id)
+
     def _run(self) -> None:
         """运行 Bot 连接维持（阻塞式，在独立子线程中工作）。"""
         self._loop = asyncio.new_event_loop()
