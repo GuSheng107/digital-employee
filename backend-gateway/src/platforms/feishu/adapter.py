@@ -5,6 +5,8 @@
 并接管多模态媒体资源（图片）在 MinIO 上的存储寿命周期。
 """
 
+import asyncio
+import concurrent.futures
 import io
 import json
 import uuid
@@ -30,6 +32,8 @@ class FeishuAdapter(BaseAdapter):
             bot: 所属的 FeishuBot 实例引用。
         """
         self.bot = bot
+        # 异步事件循环引用，由 Bot 在 lifespan 阶段启动后注入
+        self.main_loop: asyncio.AbstractEventLoop | None = None
         # 统一从 bot 的配置中读取 Bucket 名称，若无则使用 MinIO 的默认值
         self.bucket_name: str = bot.config.get("minio_bucket_name", minio_client.bucket_name)
 
@@ -285,8 +289,44 @@ class FeishuAdapter(BaseAdapter):
             self.bot.bot_id,
             standard_msg.model_dump_json(indent=2)
         )
-        # 投递入站消息给路由中枢
-        hub.process_inbound(standard_msg)
+        # 通过跨线程安全搭桥投递入站消息给异步路由中枢
+        self._submit_to_hub(standard_msg)
+
+    def _submit_to_hub(self, msg: StandardMessage) -> None:
+        """将归一化消息安全地从同步长连接线程投递至异步事件循环中枢。
+
+        使用 asyncio.run_coroutine_threadsafe 跨越线程边界，并通过
+        Future.result(timeout) 显式捕获投递异常，杜绝消息静默丢失。
+
+        Args:
+            msg: 归一化标准消息对象。
+        """
+        if self.main_loop is None or self.main_loop.is_closed():
+            logger.error(
+                "[BotID: {}] 主事件循环未注入或已关闭，无法投递消息至中枢。",
+                self.bot.bot_id,
+            )
+            return
+
+        future = asyncio.run_coroutine_threadsafe(
+            hub.process_inbound(msg),
+            self.main_loop,
+        )
+
+        try:
+            # 阻塞等待异步中枢处理结果，若 MQ 投递抛出异常则此处捕获
+            future.result(timeout=5.0)
+        except concurrent.futures.TimeoutError:
+            logger.error(
+                "[BotID: {}] 跨线程提交入站任务至异步中枢超时（>5s）。",
+                self.bot.bot_id,
+            )
+        except Exception as exc:
+            logger.error(
+                "[BotID: {}] 跨线程投递异步中枢时发生异常: {}",
+                self.bot.bot_id,
+                exc,
+            )
 
     def send_message(self, msg: StandardMessage) -> None:
         """将标准出站消息统一转换打包为飞书富文本（post）格式发送。

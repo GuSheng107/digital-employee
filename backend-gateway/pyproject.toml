@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "aio-pika>=9.6.2",
     "fastapi>=0.138.2",
     "lark-oapi>=1.4.8",
     "loguru>=0.7.3",

@@ -4,6 +4,7 @@
 负责 Bot 的生命周期管理、本地/动态配置合并、热更新重启及 Watchdog 守护线程。
 """
 
+import asyncio
 import json
 import threading
 import time
@@ -41,6 +42,8 @@ class BotManager:
         # Watchdog 守护线程状态
         self._watchdog_thread: threading.Thread | None = None
         self._watchdog_running: bool = False
+        # FastAPI 主事件循环引用，用于动态添加 Bot 时注入
+        self._main_loop: asyncio.AbstractEventLoop | None = None
 
         # 注册 Bot 查找器给全局消息中枢，化解循环导包
         hub.register_bot_provider(self.get_bot)
@@ -69,6 +72,22 @@ class BotManager:
 
         except Exception as exc:
             logger.error("加载静态配置文件失败: {}", exc)
+
+    def inject_main_loop_to_all(self, loop: asyncio.AbstractEventLoop) -> None:
+        """将 FastAPI 主事件循环注入给所有已加载的 Bot 实例。
+
+        在 lifespan 启动阶段调用，确保所有 Bot 的适配器均能安全地
+        跨线程向异步中枢投递消息。
+
+        Args:
+            loop: FastAPI/Uvicorn 运行中的主异步事件循环。
+        """
+        with self._lock:
+            for bot_id, bot in self.bots.items():
+                if hasattr(bot, "inject_main_loop"):
+                    bot.inject_main_loop(loop)
+        self._main_loop = loop
+        logger.info("已向全部 Bot 实例注入主事件循环。")
 
     def add_or_update_bot(self, bot_cfg: BotConfig) -> None:
         """添加或更新 Bot 实例，支持平滑热重启。
@@ -115,6 +134,10 @@ class BotManager:
 
             self.bots[bot_id] = new_bot
             self.active_configs[bot_id] = new_config_dict
+
+            # 如果主事件循环已注入，则同步注入给新 Bot
+            if self._main_loop is not None and hasattr(new_bot, "inject_main_loop"):
+                new_bot.inject_main_loop(self._main_loop)
 
             # 启动新 Bot 实例的子线程
             new_bot.start()

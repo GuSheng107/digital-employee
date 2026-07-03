@@ -4,6 +4,7 @@
 提供健康检查端点及用于动态更新/注入/删除 Bot 凭证的 Admin 控制台接口。
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -18,6 +19,7 @@ from src.core.schemas import (
     HealthResponse,
 )
 from src.manager import BotManager
+from src.utils.rabbitmq import mq_client
 
 # 配置日志输出到文件
 logger.add(
@@ -36,21 +38,36 @@ manager: BotManager = BotManager(config_path="config/bot.json")
 async def lifespan(app: FastAPI):
     """FastAPI 生命周期管理上下文。
 
-    在 FastAPI 启动时从配置文件加载机器人并开启 Watchdog，
-    在服务关闭时释放所有的网络长连接与子线程资源。
+    启动时完成以下初始化序列：
+    1. 建立 RabbitMQ 连接并声明拓扑结构。
+    2. 注册 MQ 出站队列消费者回调。
+    3. 从配置文件加载机器人并注入主事件循环。
+    4. 启动 Watchdog 守护线程。
     """
-    # 启动前初始化
+    # 1. 连接 RabbitMQ 并声明拓扑
+    outbound_queue = await mq_client.connect_and_setup()
+
+    # 2. 注册出站队列消费者（由 hub 处理 Agent 回复）
+    from src.core.hub import hub
+    await outbound_queue.consume(hub.consume_outbound)
+
+    # 3. 加载 Bot 配置并注入主事件循环
+    main_loop = asyncio.get_running_loop()
     manager.load_from_file()
+    manager.inject_main_loop_to_all(main_loop)
+
+    # 4. 启动 Watchdog
     manager.start_watchdog()
     yield
     # 服务关闭时清理
     manager.shutdown()
+    await mq_client.close()
 
 
 app: FastAPI = FastAPI(
     title="BOT Gateway Service",
-    description="智能机器人系统消息侧网关一期",
-    version="1.0.0",
+    description="智能机器人系统消息侧网关（三期：RabbitMQ 双模路由）",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
@@ -97,6 +114,7 @@ async def add_or_update_bot(req: BotConfigRequest) -> dict[str, str]:
     bot_cfg = BotConfig(
         bot_id=req.bot_id,
         platform=req.platform,
+        mode=req.mode,
         app_id=req.app_id,
         app_secret=req.app_secret,
     )
