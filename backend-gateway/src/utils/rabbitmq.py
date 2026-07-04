@@ -35,21 +35,29 @@ class RabbitMQClient:
         self.connection = await aio_pika.connect_robust(mq_url)
         self.channel = await self.connection.channel()
 
+        # 从环境变量读取拓扑名称与路由键绑定，若无则使用默认值
+        exchange_name = os.getenv("RABBITMQ_EXCHANGE", "bot.topic.exchange")
+        inbound_queue_name = os.getenv("RABBITMQ_INBOUND_QUEUE", "q_inbound_to_agent")
+        outbound_queue_name = os.getenv("RABBITMQ_OUTBOUND_QUEUE", "q_outbound_to_gateway")
+        inbound_prefix = os.getenv("RABBITMQ_INBOUND_PUBLISH_PREFIX", "msg.inbound")
+        inbound_routing_key = os.getenv("RABBITMQ_INBOUND_ROUTING_KEY", f"{inbound_prefix}.#")
+        outbound_routing_key = os.getenv("RABBITMQ_OUTBOUND_ROUTING_KEY", "msg.outbound.#")
+
         # 1. 声明 TOPIC 交换机 (durable=True 保证重启不丢失)
         self.exchange = await self.channel.declare_exchange(
-            "bot.topic.exchange", aio_pika.ExchangeType.TOPIC, durable=True
+            exchange_name, aio_pika.ExchangeType.TOPIC, durable=True
         )
 
         # 2. 声明固定的入站和出站队列（单节点架构，禁用点号命名）
         inbound_queue = await self.channel.declare_queue(
-            "q_inbound_to_agent", durable=True
+            inbound_queue_name, durable=True
         )
-        await inbound_queue.bind(self.exchange, routing_key="msg.inbound.#")
+        await inbound_queue.bind(self.exchange, routing_key=inbound_routing_key)
 
         outbound_queue = await self.channel.declare_queue(
-            "q_outbound_to_gateway", durable=True
+            outbound_queue_name, durable=True
         )
-        await outbound_queue.bind(self.exchange, routing_key="msg.outbound.#")
+        await outbound_queue.bind(self.exchange, routing_key=outbound_routing_key)
 
         logger.info("[MQ] 单节点拓扑结构自动化构建与绑定成功")
         return outbound_queue
