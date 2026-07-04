@@ -8,6 +8,7 @@
 
 import asyncio
 import json
+import os
 from typing import Any, Callable
 
 import aio_pika
@@ -67,7 +68,8 @@ class MessageHub:
                 "[HUB-IN] 机器人 {} (Prod模式)，异步投递至 MQ",
                 msg.bot_id,
             )
-            routing_key = f"msg.inbound.{msg.platform}.{msg.bot_id}"
+            inbound_prefix = os.getenv("RABBITMQ_INBOUND_PUBLISH_PREFIX", "msg.inbound")
+            routing_key = f"{inbound_prefix}.{msg.platform}.{msg.bot_id}"
             payload = msg.model_dump_json()
             try:
                 # 显式 await，发生网络异常时可直接被上层 try 结构捕获
