@@ -406,12 +406,9 @@ class FeishuAdapter(BaseAdapter):
 
 
 
-        # 根据内容区块数量判定是否需要包装外层 "post" 键
-        if len(msg.content) > 1:
-            post_data = {"post": post_content}
-            raw_post_content = lark.JSON.marshal(post_data)
-        else:
-            raw_post_content = lark.JSON.marshal(post_content)
+        # 飞书 V1 发送/回复消息接口中，msg_type="post" 的 content 字符串最外层绝对不能包含 "post" 键
+        # 必须直接以多语言节点（如 zh_cn）为根，格式为：{"zh_cn": {"title": "", "content": ...}}
+        raw_post_content = lark.JSON.marshal(post_content)
 
         logger.info(
             "[BotID: {}] 最终分发给飞书 API 的富文本 JSON: {}",
