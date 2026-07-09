@@ -11,6 +11,7 @@ import concurrent.futures
 from collections import OrderedDict
 import io
 import urllib.request
+from urllib.parse import urlparse
 import uuid
 from typing import Any
 
@@ -343,6 +344,150 @@ class WeChatAdapter(BaseAdapter):
             )
             return None
 
+    def _get_object_name_from_url(self, file_url: str) -> str:
+        """从 MinIO URL 中反向解析对象在存储桶中的真实相对路径。
+
+        Args:
+            file_url: 标准文件下载 URL。
+
+        Returns:
+            MinIO 存储桶内对象真实路径相对字符串。
+        """
+        parsed = urlparse(file_url)
+        path = parsed.path.lstrip("/")
+        # 去掉桶名称前缀以获取桶内实际路径
+        bucket_prefix = minio_client.bucket_name + "/"
+        if path.startswith(bucket_prefix):
+            return path[len(bucket_prefix) :]
+
+        # 容错降级：直接以 '/' 分割掉第一部分（第一部分是 bucket）
+        parts = path.split("/", 1)
+        if len(parts) > 1:
+            return parts[1]
+        return path
+
+    def _upload_media_to_wechat(self, file_url: str, res_type: str, file_name: str | None = None) -> str | None:
+        """从 MinIO 下载资源，并在长连接子线程中向微信执行分块上传临时素材，获取 media_id。
+
+        Args:
+            file_url: MinIO 内的媒体资源下载 URL。
+            res_type: 资源类型，如 "image", "audio", "video", "file"。
+            file_name: 可选文件名。
+
+        Returns:
+            微信分配的 media_id，如果失败则返回 None。
+        """
+        if not file_url:
+            return None
+
+        object_name = self._get_object_name_from_url(file_url)
+
+        try:
+            # 1. 从 MinIO 下载
+            file_stream = minio_client.download_file(object_name=object_name)
+            if file_stream is None:
+                logger.error(
+                    "[BotID: {}] 从 MinIO 读取资源文件失败: {}",
+                    self.bot.bot_id,
+                    object_name,
+                )
+                return None
+
+            media_bytes = file_stream.read()
+
+            # 确定文件名
+            actual_name = file_name
+            if not actual_name:
+                if res_type == "image":
+                    actual_name = "image.png"
+                elif res_type == "audio":
+                    actual_name = "voice.amr"
+                elif res_type == "video":
+                    actual_name = "video.mp4"
+                else:
+                    actual_name = "file.bin"
+
+            # 2. 跨线程投递到子线程中执行分块上传
+            if self.bot._loop is None or not self.bot._loop.is_running():
+                logger.error("[BotID: {}] WeChatBot 异步事件循环未运行，无法执行素材置换。", self.bot.bot_id)
+                return None
+
+            future = asyncio.run_coroutine_threadsafe(
+                self.bot.upload_media(media_bytes, actual_name, res_type),
+                self.bot._loop
+            )
+
+            # 同步阻塞等待分块上传完成，最长等 45s
+            media_id = future.result(timeout=45.0)
+            return media_id
+
+        except Exception as exc:
+            logger.error(
+                "[BotID: {}] 上传媒体资源至微信长连接失败: {}",
+                self.bot.bot_id,
+                exc,
+            )
+            return None
+
+    def _send_raw_wechat_msg(
+        self,
+        *,
+        msg: StandardMessage,
+        msgtype: str,
+        content_body: dict[str, Any],
+        cached_req_id: str = "",
+    ) -> None:
+        """组装并发送一条底层的企业微信消息帧。
+
+        Args:
+            msg: 标准出站消息。
+            msgtype: 微信协议要求的消息类型（如 "markdown", "image", "file" 等）。
+            content_body: 消息具体内容字典结构。
+            cached_req_id: 若针对某个会话消息响应，可透传该 req_id。
+        """
+        if cached_req_id:
+            # 回复模式：使用 aibot_respond_msg
+            logger.info(
+                "[BotID: {}] 使用回复消息接口回复分区块 (req_id='{}', type='{}')",
+                self.bot.bot_id,
+                cached_req_id,
+                msgtype,
+            )
+            payload = {
+                "cmd": "aibot_respond_msg",
+                "headers": {
+                    "req_id": cached_req_id
+                },
+                "body": {
+                    "msgtype": msgtype,
+                    **content_body
+                }
+            }
+        else:
+            # 主动发送模式：使用 aibot_send_msg
+            req_id = str(uuid.uuid4())
+            logger.info(
+                "[BotID: {}] 无匹配接收 req_id，使用主动发送消息接口 (req_id='{}', type='{}')",
+                self.bot.bot_id,
+                req_id,
+                msgtype,
+            )
+            payload = {
+                "cmd": "aibot_send_msg",
+                "headers": {
+                    "req_id": req_id
+                },
+                "body": {
+                    "chatid": msg.session_id,
+                    "chat_type": 1 if msg.chat_type == "p2p" else 2,
+                    "msgtype": msgtype,
+                    **content_body
+                }
+            }
+
+        # 调用 Bot 实例上的发送方法
+        self.bot.send_websocket_msg(payload)
+
     def send_message(self, msg: StandardMessage) -> None:
         """将标准出站消息统一转换并发送给企业微信。
 
@@ -359,67 +504,63 @@ class WeChatAdapter(BaseAdapter):
             msg.model_dump_json(indent=2),
         )
 
-        # 合并所有文本区块，组成待回复内容
-        texts = []
-        for item in msg.content:
-            if item.msg_type == MessageType.TEXT and item.text:
-                texts.append(item.text)
-            elif item.msg_type == MessageType.IMAGE:
-                texts.append(f"[图片: {item.file_url}]")
-            elif item.msg_type == MessageType.FILE:
-                file_name = item.file_name or "文件"
-                texts.append(f"[文件 ({file_name}): {item.file_url}]")
-            else:
-                texts.append(f"[{item.msg_type} 消息]")
-
-        full_content = "\n".join(texts)
-
         # 检查是否能在映射中找到接收时的 req_id (若是对回调的响应)
         cached_req_id = ""
         if msg.message_id:
             cached_req_id = self._req_id_map.get(msg.message_id, "")
 
-        if cached_req_id:
-            # 回复模式：使用 aibot_respond_msg
-            logger.info(
-                "[BotID: {}] 使用回复消息接口回复 (req_id='{}')",
-                self.bot.bot_id,
-                cached_req_id,
-            )
-            payload = {
-                "cmd": "aibot_respond_msg",
-                "headers": {
-                    "req_id": cached_req_id
-                },
-                "body": {
-                    "msgtype": "markdown",
-                    "markdown": {
-                        "content": full_content
-                    }
-                }
-            }
-        else:
-            # 主动发送模式：使用 aibot_send_msg
-            req_id = str(uuid.uuid4())
-            logger.info(
-                "[BotID: {}] 无匹配接收 req_id，使用主动发送消息接口 (req_id='{}')",
-                self.bot.bot_id,
-                req_id,
-            )
-            payload = {
-                "cmd": "aibot_send_msg",
-                "headers": {
-                    "req_id": req_id
-                },
-                "body": {
-                    "chatid": msg.session_id,
-                    "chat_type": 1 if msg.chat_type == "p2p" else 2,
-                    "msgtype": "markdown",
-                    "markdown": {
-                        "content": full_content
-                    }
-                }
-            }
+        # 遍历标准消息的所有区块，分别翻译成微信的原生多媒体消息发出去
+        for item in msg.content:
+            # 1. 文本消息
+            if item.msg_type == MessageType.TEXT and item.text:
+                self._send_raw_wechat_msg(
+                    msg=msg,
+                    msgtype="markdown",
+                    content_body={"markdown": {"content": item.text}},
+                    cached_req_id=cached_req_id
+                )
 
-        # 调用 Bot 实例上的发送方法
-        self.bot.send_websocket_msg(payload)
+            # 2. 图片消息
+            elif item.msg_type == MessageType.IMAGE and item.file_url:
+                media_id = self._upload_media_to_wechat(item.file_url, "image")
+                if media_id:
+                    self._send_raw_wechat_msg(
+                        msg=msg,
+                        msgtype="image",
+                        content_body={"image": {"media_id": media_id}},
+                        cached_req_id=cached_req_id
+                    )
+
+            # 3. 语音消息
+            elif item.msg_type == MessageType.AUDIO and item.file_url:
+                media_id = self._upload_media_to_wechat(item.file_url, "audio")
+                if media_id:
+                    self._send_raw_wechat_msg(
+                        msg=msg,
+                        msgtype="voice",
+                        content_body={"voice": {"media_id": media_id}},
+                        cached_req_id=cached_req_id
+                    )
+
+            # 4. 视频消息
+            elif item.msg_type == MessageType.VIDEO and item.file_url:
+                media_id = self._upload_media_to_wechat(item.file_url, "video")
+                if media_id:
+                    self._send_raw_wechat_msg(
+                        msg=msg,
+                        msgtype="video",
+                        content_body={"video": {"media_id": media_id}},
+                        cached_req_id=cached_req_id
+                    )
+
+            # 5. 普通文件消息
+            elif item.msg_type == MessageType.FILE and item.file_url:
+                file_name = item.file_name or "file.bin"
+                media_id = self._upload_media_to_wechat(item.file_url, "file", file_name=file_name)
+                if media_id:
+                    self._send_raw_wechat_msg(
+                        msg=msg,
+                        msgtype="file",
+                        content_body={"file": {"media_id": media_id}},
+                        cached_req_id=cached_req_id
+                    )
