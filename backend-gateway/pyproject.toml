@@ -13,6 +13,7 @@ dependencies = [
     "pydantic>=2.13.4",
     "python-dotenv>=1.2.2",
     "uvicorn>=0.49.0",
+    "wecom-aibot-sdk>=1.0.8",
 ]
 
 [dependency-groups]
