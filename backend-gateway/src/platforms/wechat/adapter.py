@@ -1,20 +1,26 @@
 # -*- coding: utf-8 -*-
 """企业微信消息协议适配器。
 
-负责在企业微信长连接事件 Payload 与全局归一化 StandardMessage 协议之间进行双向翻译。
+负责在企业微信长连接事件 Payload 与全局归一化 StandardMessage 协议之间进行双向翻译，
+并接管加密媒体资源解密以及在 MinIO 上的存储寿命周期。
 """
 
 import asyncio
+import base64
 import concurrent.futures
 from collections import OrderedDict
+import io
+import urllib.request
 import uuid
 from typing import Any
 
+from Crypto.Cipher import AES
 from loguru import logger
 
 from src.core.hub import hub
 from src.core.schemas import MessageContent, MessageType, StandardMessage
 from src.platforms.base import BaseAdapter
+from src.utils.minio_client import minio_client
 
 
 class LRUCache(OrderedDict[str, str]):
@@ -42,7 +48,7 @@ class LRUCache(OrderedDict[str, str]):
 
 
 class WeChatAdapter(BaseAdapter):
-    """企业微信平台双向数据翻译适配器。"""
+    """企业微信平台双向数据翻译与资源解密适配器。"""
 
     def __init__(self, bot: Any) -> None:
         """初始化适配器。
@@ -103,17 +109,113 @@ class WeChatAdapter(BaseAdapter):
         if msg_type == "text":
             user_text = body.get("text", {}).get("content", "")
             standard_msg.content.append(
-                MessageContent(msg_type="text", text=user_text)
+                MessageContent(msg_type=MessageType.TEXT, text=user_text)
             )
+
+        # 2. 单张图片消息类型转换与解密
+        elif msg_type == "image":
+            img_data = body.get("image", {})
+            minio_url = self._download_and_decrypt_media(
+                url=img_data.get("url", ""),
+                aeskey=img_data.get("aeskey", ""),
+                res_type="image",
+                session_id=session_id,
+            )
+            if minio_url:
+                standard_msg.content.append(
+                    MessageContent(msg_type=MessageType.IMAGE, file_url=minio_url)
+                )
+
+        # 3. 语音消息转换与解密
+        elif msg_type == "voice":
+            voice_data = body.get("voice", {})
+            # 如果有 url 和 aeskey，则尝试进行下载解密
+            if voice_data.get("url") and voice_data.get("aeskey"):
+                minio_url = self._download_and_decrypt_media(
+                    url=voice_data.get("url"),
+                    aeskey=voice_data.get("aeskey"),
+                    res_type="audio",
+                    session_id=session_id,
+                )
+                if minio_url:
+                    standard_msg.content.append(
+                        MessageContent(msg_type=MessageType.AUDIO, file_url=minio_url)
+                    )
+            # 兼容识别出的文本
+            text_val = voice_data.get("content") or voice_data.get("text")
+            if text_val:
+                standard_msg.content.append(
+                    MessageContent(msg_type=MessageType.TEXT, text=text_val)
+                )
+
+        # 4. 文件消息转换与解密
+        elif msg_type == "file":
+            file_data = body.get("file", {})
+            file_name = file_data.get("filename") or file_data.get("name") or "file"
+            minio_url = self._download_and_decrypt_media(
+                url=file_data.get("url", ""),
+                aeskey=file_data.get("aeskey", ""),
+                res_type="file",
+                session_id=session_id,
+                file_name=file_name,
+            )
+            if minio_url:
+                standard_msg.content.append(
+                    MessageContent(
+                        msg_type=MessageType.FILE,
+                        file_url=minio_url,
+                        file_name=file_name,
+                    )
+                )
+
+        # 5. 视频消息转换与解密
+        elif msg_type == "video":
+            video_data = body.get("video", {})
+            minio_url = self._download_and_decrypt_media(
+                url=video_data.get("url", ""),
+                aeskey=video_data.get("aeskey", ""),
+                res_type="video",
+                session_id=session_id,
+            )
+            if minio_url:
+                standard_msg.content.append(
+                    MessageContent(msg_type=MessageType.VIDEO, file_url=minio_url)
+                )
+
+        # 6. 图文混排消息解析
+        elif msg_type == "mixed":
+            mixed_data = body.get("mixed", {})
+            items = mixed_data.get("msg_item", [])
+            for item in items:
+                item_type = item.get("type")
+                if item_type == "text":
+                    text_val = item.get("text", {}).get("content", "")
+                    if text_val:
+                        standard_msg.content.append(
+                            MessageContent(msg_type=MessageType.TEXT, text=text_val)
+                        )
+                elif item_type == "image":
+                    img_data = item.get("image", {})
+                    if img_data.get("url") and img_data.get("aeskey"):
+                        minio_url = self._download_and_decrypt_media(
+                            url=img_data.get("url"),
+                            aeskey=img_data.get("aeskey"),
+                            res_type="image",
+                            session_id=session_id,
+                        )
+                        if minio_url:
+                            standard_msg.content.append(
+                                MessageContent(msg_type=MessageType.IMAGE, file_url=minio_url)
+                            )
+
         else:
-            # 暂时只支持文本消息，其它类型忽略或转换为提示文本
             logger.warning(
-                "[BotID: {}] 暂不支持的企业微信消息类型: {}",
+                "[BotID: {}] 暂不支持的企业微信接收消息类型: {}",
                 self.bot.bot_id,
                 msg_type,
             )
             standard_msg.content.append(
-                MessageContent(msg_type="text", text=f"[暂不支持的消息类型: {msg_type}]")
+                MessageContent(msg_type=MessageType.TEXT, text=f"[暂不支持的消息类型: {msg_type}]")
             )
 
         logger.info(
@@ -155,6 +257,91 @@ class WeChatAdapter(BaseAdapter):
                 self.bot.bot_id,
                 exc,
             )
+
+    def _download_and_decrypt_media(
+        self,
+        *,
+        url: str,
+        aeskey: str,
+        res_type: str,
+        session_id: str,
+        file_name: str | None = None,
+    ) -> str | None:
+        """下载加密媒体资源文件，进行 AES 解密，并转存至本地 MinIO。
+
+        Args:
+            url: 媒体文件的加密下载地址。
+            aeskey: 资源解密密钥，通常为 Base64 编码。
+            res_type: 资源类型，如 "image", "audio", "video", "file"。
+            session_id: 发送者或群聊会话 ID。
+            file_name: 文件名（用于 file 类型）。
+
+        Returns:
+            转存至 MinIO 的统一 URL，若失败则返回 None。
+        """
+        if not url or not aeskey:
+            return None
+
+        try:
+            # 1. 下载加密的媒体文件
+            headers = {"User-Agent": "Mozilla/5.0"}
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as response:
+                encrypted_bytes = response.read()
+
+            # 2. 进行 AES-256-CBC 解密
+            # 补齐 Base64 padding
+            key_pad = len(aeskey) % 4
+            if key_pad:
+                aeskey += "=" * (4 - key_pad)
+            raw_key = base64.b64decode(aeskey)
+            iv = raw_key[:16]
+
+            cipher = AES.new(raw_key, AES.MODE_CBC, iv)
+            decrypted_bytes = cipher.decrypt(encrypted_bytes)
+
+            # PKCS7 反填充
+            pad_len = decrypted_bytes[-1]
+            if 1 <= pad_len <= 32:
+                decrypted_bytes = decrypted_bytes[:-pad_len]
+
+            # 3. 自适应确定文件后缀和 MIME 类型
+            if res_type == "image":
+                file_extension = ".png"
+                content_type = "image/png"
+            elif res_type == "audio":
+                file_extension = ".amr"
+                content_type = "audio/amr"
+            elif res_type == "video":
+                file_extension = ".mp4"
+                content_type = "video/mp4"
+            else:
+                if file_name and "." in file_name:
+                    file_extension = f".{file_name.split('.')[-1]}"
+                else:
+                    file_extension = ""
+                content_type = "application/octet-stream"
+
+            unique_name = f"{uuid.uuid4()}{file_extension}"
+            object_name = f"wechat/{self.bot.bot_id}/{session_id}/{unique_name}"
+
+            # 4. 上传至 MinIO
+            minio_url = minio_client.upload_file(
+                object_name=object_name,
+                data=io.BytesIO(decrypted_bytes),
+                length=len(decrypted_bytes),
+                content_type=content_type,
+            )
+            return minio_url
+
+        except Exception as exc:
+            logger.error(
+                "[BotID: {}] 下载解密或转存微信资源失败 (type='{}'): {}",
+                self.bot.bot_id,
+                res_type,
+                exc,
+            )
+            return None
 
     def send_message(self, msg: StandardMessage) -> None:
         """将标准出站消息统一转换并发送给企业微信。
