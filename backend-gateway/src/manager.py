@@ -17,6 +17,8 @@ from src.core.base import BaseBot
 from src.core.schemas import BotConfig, BotConfigFile, BotStatusResponse
 from src.core.hub import hub
 from src.platforms.feishu.bot import FeishuBot
+from src.platforms.wechat.bot import WeChatBot
+
 
 
 class BotManager:
@@ -126,6 +128,8 @@ class BotManager:
             # 创建新的具体平台 Bot 实例
             if bot_cfg.platform == "feishu":
                 new_bot = FeishuBot(bot_id=bot_id, config=new_config_dict)
+            elif bot_cfg.platform == "wechat":
+                new_bot = WeChatBot(bot_id=bot_id, config=new_config_dict)
             else:
                 logger.error(
                     "[BotID: {}] 不支持的平台类型: {}", bot_id, bot_cfg.platform
