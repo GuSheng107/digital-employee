@@ -486,13 +486,21 @@ class WeChatAdapter(BaseAdapter):
             cached_frame = self._req_id_map.get(msg.message_id)
 
         # 遍历标准消息的所有区块，分别进行回复或发送
+        # 企业微信对被动回复通道只有一次使用权（一次性应答），故如果存在多个块，仅首个块使用被动回复，后续块全部自动降级使用主动发送
+        is_first_reply_sent = False
         for item in msg.content:
+            # 确定当前区块是使用被动回复（cached_frame）还是主动发送（None）
+            current_frame = None
+            if cached_frame and not is_first_reply_sent:
+                current_frame = cached_frame
+                is_first_reply_sent = True
+
             # 1. 文本消息
             if item.msg_type == MessageType.TEXT and item.text:
-                if cached_frame:
+                if current_frame:
                     future = asyncio.run_coroutine_threadsafe(
                         self.bot.client.reply_stream(
-                            cached_frame,
+                            current_frame,
                             stream_id=uuid.uuid4().hex,
                             content=item.text,
                             finish=True
@@ -527,11 +535,11 @@ class WeChatAdapter(BaseAdapter):
                     logger.error("[BotID: {}] 微信媒体上传失败，跳过该多媒体出站消息模块。", self.bot.bot_id)
                     continue
 
-                if cached_frame:
+                if current_frame:
                     # 被动回复媒体卡片
                     future = asyncio.run_coroutine_threadsafe(
                         self.bot.client.reply_media(
-                            cached_frame,
+                            current_frame,
                             media_type=send_media_type,
                             media_id=media_id,
                             video_title=file_name if send_media_type == "video" else None
