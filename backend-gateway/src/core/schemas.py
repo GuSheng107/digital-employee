@@ -4,7 +4,9 @@
 使用 Pydantic v2 定义 Bot 配置、API 请求和响应等数据结构。
 """
 
+from enum import Enum
 from pydantic import BaseModel, Field
+
 
 
 class BotConfig(BaseModel):
@@ -52,13 +54,27 @@ class HealthResponse(BaseModel):
     bots: list[BotStatusResponse] = Field(default_factory=list, description="各 Bot 状态详情")
 
 
+class MessageType(str, Enum):
+    """归一化的消息类型枚举。"""
+
+    TEXT = "text"
+    IMAGE = "image"
+    AUDIO = "audio"
+    VIDEO = "video"
+    FILE = "file"
+
+    def __str__(self) -> str:
+        return self.value
+
+
 class MessageContent(BaseModel):
     """多模态消息的内容区块定义。"""
 
-    msg_type: str = Field(default="text", description="消息类型，如 text, image, file, audio")
+    msg_type: MessageType = Field(default=MessageType.TEXT, description="消息类型")
     text: str | None = Field(default=None, description="文本内容")
     file_url: str | None = Field(default=None, description="已转存至本地 MinIO 的统一对象 URL")
     file_name: str | None = Field(default=None, description="文件原始名称（可选）")
+
 
 
 class StandardMessage(BaseModel):
