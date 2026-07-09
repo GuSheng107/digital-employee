@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """企业微信 Bot 实例。
 
-基于原生的 websockets 维持与企业微信长连接的网络保活与重连逻辑。
+基于原生的 websockets 维持与企业微信长连接的网络保活与重连逻辑，
+并实现了全双工下的 API 调用（RPC over WebSocket）和媒体资源分片上传逻辑。
 """
 
 import asyncio
@@ -37,6 +38,9 @@ class WeChatBot(BaseBot):
         self.ws: websockets.WebSocketClientProtocol | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._send_queue: asyncio.Queue[dict[str, Any]] | None = None
+
+        # 存储当前正阻塞等待响应的 Futures，key 为 req_id
+        self._response_futures: dict[str, asyncio.Future[dict[str, Any]]] = {}
 
     def inject_main_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         """注入 FastAPI 主事件循环引用至适配器。
@@ -87,6 +91,129 @@ class WeChatBot(BaseBot):
 
         # 跨线程安全地把数据推入子线程 asyncio.Queue
         self._loop.call_soon_threadsafe(self._send_queue.put_nowait, payload)
+
+    async def call_api(self, cmd: str, body: dict[str, Any], timeout: float = 15.0) -> dict[str, Any]:
+        """向企业微信发送 WebSocket 请求包，并等待响应返回（RPC 模式）。
+
+        Args:
+            cmd: 命令类型。
+            body: 请求体内容。
+            timeout: 超时秒数。
+
+        Returns:
+            服务端返回的响应包字典。
+        """
+        if self.ws is None or self._loop is None:
+            raise RuntimeError("WebSocket 暂未连接，无法执行接口请求。")
+
+        req_id = str(uuid.uuid4())
+        fut = self._loop.create_future()
+        self._response_futures[req_id] = fut
+
+        payload = {
+            "cmd": cmd,
+            "headers": {
+                "req_id": req_id
+            },
+            "body": body
+        }
+
+        # 写入发送队列
+        await self._send_queue.put(payload)
+
+        try:
+            # 阻塞等待响应
+            resp = await asyncio.wait_for(fut, timeout=timeout)
+            return resp
+        except Exception as exc:
+            self._response_futures.pop(req_id, None)
+            logger.error("[BotID: {}] 长连接接口调用 '{}' 异常或超时 (req_id={}): {}", self.bot_id, cmd, req_id, exc)
+            raise
+
+    async def upload_media(self, media_bytes: bytes, filename: str, res_type: str) -> str:
+        """分片上传媒体资源到微信，并获取返回的 media_id。
+
+        Args:
+            media_bytes: 加密或解密的媒体文件二进制数据。
+            filename: 上传的文件名。
+            res_type: 资源类型，如 "image", "audio", "video", "file"。
+
+        Returns:
+            WeChat 返回的 media_id 字符串。
+        """
+        import base64
+        import hashlib
+
+        md5_val = hashlib.md5(media_bytes).hexdigest()
+        total_size = len(media_bytes)
+
+        # 微信临时素材的类型需要映射
+        # 支持普通文件（file），图片（image），语音（voice）和视频（video）
+        wechat_type = "voice" if res_type == "audio" else res_type
+
+        # 每一片大小设定为 400KB
+        chunk_size = 400 * 1024
+        chunks = []
+        for i in range(0, total_size, chunk_size):
+            chunks.append(media_bytes[i:i+chunk_size])
+
+        total_chunks = len(chunks)
+        logger.info(
+            "[BotID: {}] 开始分片上传临时素材 (type='{}', name='{}', size={} 字节, 共 {} 分片)",
+            self.bot_id,
+            wechat_type,
+            filename,
+            total_size,
+            total_chunks
+        )
+
+        # 1. 初始化上传
+        init_body = {
+            "type": wechat_type,
+            "filename": filename,
+            "total_size": total_size,
+            "total_chunks": total_chunks,
+            "md5": md5_val
+        }
+        init_resp = await self.call_api("aibot_upload_media_init", init_body)
+        if init_resp.get("errcode", 0) != 0:
+            raise RuntimeError(f"素材初始化上传失败: {init_resp.get('errmsg')}")
+
+        upload_id = init_resp.get("body", {}).get("upload_id")
+        if not upload_id:
+            raise RuntimeError("微信初始化上传响应中未返回 upload_id")
+
+        # 2. 逐片上传
+        for idx, chunk in enumerate(chunks):
+            base64_data = base64.b64encode(chunk).decode("utf-8")
+            chunk_body = {
+                "upload_id": upload_id,
+                "chunk_index": idx,
+                "base64_data": base64_data
+            }
+            chunk_resp = await self.call_api("aibot_upload_media_chunk", chunk_body)
+            if chunk_resp.get("errcode", 0) != 0:
+                raise RuntimeError(f"分片 {idx} 上传失败: {chunk_resp.get('errmsg')}")
+
+        # 3. 完成上传并返回 media_id
+        finish_body = {
+            "upload_id": upload_id
+        }
+        finish_resp = await self.call_api("aibot_upload_media_finish", finish_body)
+        if finish_resp.get("errcode", 0) != 0:
+            raise RuntimeError(f"素材上传合并失败: {finish_resp.get('errmsg')}")
+
+        media_id = finish_resp.get("body", {}).get("media_id")
+        if not media_id:
+            raise RuntimeError("微信完成上传响应中未返回 media_id")
+
+        logger.info(
+            "[BotID: {}] 素材上传成功 (upload_id='{}') -> media_id='{}'",
+            self.bot_id,
+            upload_id,
+            media_id
+        )
+        return media_id
 
     async def _main_co(self) -> None:
         """WebSocket 运行和重连的主协程。"""
@@ -154,8 +281,15 @@ class WeChatBot(BaseBot):
                 continue
 
             cmd = data.get("cmd", "")
+            headers = data.get("headers", {})
             errcode = data.get("errcode", 0)
             errmsg = data.get("errmsg", "")
+
+            # 优先检查并完成正在阻塞等待结果的 API 调用 (RPC over WebSocket)
+            req_id = headers.get("req_id")
+            if req_id and req_id in self._response_futures:
+                self._response_futures[req_id].set_result(data)
+                continue
 
             # 处理订阅或心跳的响应回包
             if cmd in ("aibot_subscribe_resp", "ping_resp") or "errcode" in data:
@@ -178,16 +312,15 @@ class WeChatBot(BaseBot):
                 event_type = event.get("eventtype", "")
 
                 # 检查是否是被踢连接事件
-                if cmd == "aibot_event_callback" and event_type == "disconnected_event":
-                    logger.warning("[BotID: {}] 收到企业微信连接断开事件（可能在其它地方建立了长连接）。", self.bot_id)
-                    # 抛出异常以主动触发断线重连
-                    raise RuntimeError("Disconnected by WeChat server")
+                if event_type == "disconnected_event":
+                    logger.warning("[BotID: {}] 收到企业微信被踢重连信号，WebSocket 物理连接正在断开。", self.bot_id)
+                    break
 
-                # 普通消息或其它事件，交由适配器翻译投递
+                # 投递给平台消息翻译适配器处理
                 self.adapter.handle_receive(data)
 
     async def _send_loop(self) -> None:
-        """发送 WebSocket 消息的协程循环。"""
+        """出站消息队列推送发送的协程循环。"""
         if self.ws is None or self._send_queue is None:
             return
 
@@ -195,23 +328,25 @@ class WeChatBot(BaseBot):
             payload = await self._send_queue.get()
             try:
                 await self.ws.send(json.dumps(payload))
+                logger.debug("[BotID: {}] 已发送 WebSocket 包: {}", self.bot_id, payload)
+            except Exception as exc:
+                logger.error("[BotID: {}] 发送 WebSocket 包失败: {}", self.bot_id, exc)
             finally:
                 self._send_queue.task_done()
 
     async def _heartbeat_loop(self) -> None:
-        """心跳保活协程循环（25秒心跳一次）。"""
-        if self._send_queue is None:
+        """心跳保活机制协程，每 25 秒定时执行 PING 指令。"""
+        if self.ws is None:
             return
 
         while self._is_running:
             await asyncio.sleep(25.0)
-            if not self._is_running:
-                break
-
             ping_payload = {
                 "cmd": "ping",
                 "headers": {
                     "req_id": str(uuid.uuid4())
-                }
+                },
+                "body": {}
             }
-            await self._send_queue.put(ping_payload)
+            if self._send_queue is not None:
+                await self._send_queue.put(ping_payload)
