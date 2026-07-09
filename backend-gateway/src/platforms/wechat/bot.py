@@ -2,11 +2,12 @@
 """企业微信 Bot 实例。
 
 基于原生的 websockets 维持与企业微信长连接的网络保活与重连逻辑，
-并实现了全双工下的 API 调用（RPC over WebSocket）和媒体资源分片上传逻辑。
+并提供基于 HTTPS 接口的 access_token 获取与临时素材上传组件。
 """
 
 import asyncio
 import json
+import urllib.request
 import uuid
 from typing import Any
 
@@ -39,8 +40,9 @@ class WeChatBot(BaseBot):
         self._loop: asyncio.AbstractEventLoop | None = None
         self._send_queue: asyncio.Queue[dict[str, Any]] | None = None
 
-        # 存储当前正阻塞等待响应的 Futures，key 为 req_id
-        self._response_futures: dict[str, asyncio.Future[dict[str, Any]]] = {}
+        # 缓存调用 API 所需的 access_token
+        self._access_token: str | None = None
+        self._token_expires_at: float = 0
 
     def inject_main_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         """注入 FastAPI 主事件循环引用至适配器。
@@ -92,128 +94,126 @@ class WeChatBot(BaseBot):
         # 跨线程安全地把数据推入子线程 asyncio.Queue
         self._loop.call_soon_threadsafe(self._send_queue.put_nowait, payload)
 
-    async def call_api(self, cmd: str, body: dict[str, Any], timeout: float = 15.0) -> dict[str, Any]:
-        """向企业微信发送 WebSocket 请求包，并等待响应返回（RPC 模式）。
-
-        Args:
-            cmd: 命令类型。
-            body: 请求体内容。
-            timeout: 超时秒数。
+    def get_access_token(self) -> str | None:
+        """获取或刷新调用企业微信 API 所需的 access_token。
 
         Returns:
-            服务端返回的响应包字典。
+            有效的 access_token 字符串，若获取失败则返回 None。
         """
-        if self.ws is None or self._loop is None:
-            raise RuntimeError("WebSocket 暂未连接，无法执行接口请求。")
+        corpid = self.config.get("corpid")
+        if not corpid:
+            logger.error(
+                "[BotID: {}] 企业微信配置中缺少 corpid，请在 bot.json 中添加该字段以启用 HTTPS 上传临时素材功能。",
+                self.bot_id,
+            )
+            return None
 
-        req_id = str(uuid.uuid4())
-        fut = self._loop.create_future()
-        self._response_futures[req_id] = fut
-
-        payload = {
-            "cmd": cmd,
-            "headers": {
-                "req_id": req_id
-            },
-            "body": body
-        }
-
-        # 写入发送队列
-        await self._send_queue.put(payload)
+        # 检查是否已有缓存且未过期
+        now = asyncio.get_event_loop().time() if self._loop and self._loop.is_running() else 0
+        if self._access_token and self._token_expires_at > now:
+            return self._access_token
 
         try:
-            # 阻塞等待响应
-            resp = await asyncio.wait_for(fut, timeout=timeout)
-            return resp
-        except Exception as exc:
-            self._response_futures.pop(req_id, None)
-            logger.error("[BotID: {}] 长连接接口调用 '{}' 异常或超时 (req_id={}): {}", self.bot_id, cmd, req_id, exc)
-            raise
+            url = f"https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid={corpid}&corpsecret={self.app_secret}"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=10) as response:
+                res = json.loads(response.read().decode("utf-8"))
 
-    async def upload_media(self, media_bytes: bytes, filename: str, res_type: str) -> str:
-        """分片上传媒体资源到微信，并获取返回的 media_id。
+            if res.get("errcode") == 0:
+                self._access_token = res["access_token"]
+                # 缓存时间设为 7000 秒 (官方有效期为 7200 秒)
+                self._token_expires_at = now + 7000 if now > 0 else 7000
+                logger.info("[BotID: {}] 成功获取/刷新企业微信 access_token。", self.bot_id)
+                return self._access_token
+            else:
+                logger.error("[BotID: {}] 获取 access_token 失败: {}", self.bot_id, res)
+                return None
+        except Exception as exc:
+            logger.error("[BotID: {}] 请求 gettoken 接口发生异常: {}", self.bot_id, exc)
+            return None
+
+    def upload_media_http(self, media_bytes: bytes, filename: str, res_type: str) -> str | None:
+        """通过官方 HTTPS 接口，使用 multipart/form-data 方式上传临时素材。
 
         Args:
-            media_bytes: 加密或解密的媒体文件二进制数据。
-            filename: 上传的文件名。
-            res_type: 资源类型，如 "image", "audio", "video", "file"。
+            media_bytes: 多媒体原始二进制数据。
+            filename: 上传的文件名称（前端展示的文件名）。
+            res_type: 媒体文件类型，如 "image", "audio", "video", "file"。
 
         Returns:
-            WeChat 返回的 media_id 字符串。
+            企业微信返回的 media_id，如果上传失败则返回 None。
         """
-        import base64
-        import hashlib
+        token = self.get_access_token()
+        if not token:
+            return None
 
-        md5_val = hashlib.md5(media_bytes).hexdigest()
-        total_size = len(media_bytes)
-
-        # 微信临时素材的类型需要映射
-        # 支持普通文件（file），图片（image），语音（voice）和视频（video）
+        # 微信支持媒体文件类型，分别有图片（image）、语音（voice）、视频（video）、普通文件（file）
         wechat_type = "voice" if res_type == "audio" else res_type
+        url = f"https://qyapi.weixin.qq.com/cgi-bin/media/upload?access_token={token}&type={wechat_type}"
 
-        # 每一片大小设定为 400KB
-        chunk_size = 400 * 1024
-        chunks = []
-        for i in range(0, total_size, chunk_size):
-            chunks.append(media_bytes[i:i+chunk_size])
-
-        total_chunks = len(chunks)
         logger.info(
-            "[BotID: {}] 开始分片上传临时素材 (type='{}', name='{}', size={} 字节, 共 {} 分片)",
+            "[BotID: {}] 正在通过 HTTPS 上传临时素材 (type='{}', filename='{}', size={} 字节)",
             self.bot_id,
             wechat_type,
             filename,
-            total_size,
-            total_chunks
+            len(media_bytes),
         )
 
-        # 1. 初始化上传
-        init_body = {
-            "type": wechat_type,
-            "filename": filename,
-            "total_size": total_size,
-            "total_chunks": total_chunks,
-            "md5": md5_val
-        }
-        init_resp = await self.call_api("aibot_upload_media_init", init_body)
-        if init_resp.get("errcode", 0) != 0:
-            raise RuntimeError(f"素材初始化上传失败: {init_resp.get('errmsg')}")
+        try:
+            # 1. 构造 multipart/form-data 分界边界线
+            boundary = f"----WebKitFormBoundary{uuid.uuid4().hex}"
 
-        upload_id = init_resp.get("body", {}).get("upload_id")
-        if not upload_id:
-            raise RuntimeError("微信初始化上传响应中未返回 upload_id")
+            # 2. 根据媒体类型确定 Content-Type
+            if res_type == "image":
+                content_type = "image/png"
+            elif res_type == "audio":
+                content_type = "audio/amr"
+            elif res_type == "video":
+                content_type = "video/mp4"
+            else:
+                content_type = "application/octet-stream"
 
-        # 2. 逐片上传
-        for idx, chunk in enumerate(chunks):
-            base64_data = base64.b64encode(chunk).decode("utf-8")
-            chunk_body = {
-                "upload_id": upload_id,
-                "chunk_index": idx,
-                "base64_data": base64_data
-            }
-            chunk_resp = await self.call_api("aibot_upload_media_chunk", chunk_body)
-            if chunk_resp.get("errcode", 0) != 0:
-                raise RuntimeError(f"分片 {idx} 上传失败: {chunk_resp.get('errmsg')}")
+            # 3. 构造 multipart 消息体字节流
+            part_headers = (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="media"; filename="{filename}"\r\n'
+                f"Content-Type: {content_type}\r\n\r\n"
+            ).encode("utf-8")
 
-        # 3. 完成上传并返回 media_id
-        finish_body = {
-            "upload_id": upload_id
-        }
-        finish_resp = await self.call_api("aibot_upload_media_finish", finish_body)
-        if finish_resp.get("errcode", 0) != 0:
-            raise RuntimeError(f"素材上传合并失败: {finish_resp.get('errmsg')}")
+            part_footers = f"\r\n--{boundary}--\r\n".encode("utf-8")
 
-        media_id = finish_resp.get("body", {}).get("media_id")
-        if not media_id:
-            raise RuntimeError("微信完成上传响应中未返回 media_id")
+            # 拼接完整的 multipart/form-data 请求体
+            body = part_headers + media_bytes + part_footers
 
-        logger.info(
-            "[BotID: {}] 素材上传成功 (upload_id='{}') -> media_id='{}'",
-            self.bot_id,
-            upload_id,
-            media_id
-        )
-        return media_id
+            # 4. 发送 POST 请求
+            req = urllib.request.Request(
+                url,
+                data=body,
+                headers={
+                    "Content-Type": f"multipart/form-data; boundary={boundary}",
+                    "Content-Length": str(len(body)),
+                },
+                method="POST",
+            )
+
+            with urllib.request.urlopen(req, timeout=20) as response:
+                res = json.loads(response.read().decode("utf-8"))
+
+            if res.get("errcode", 0) == 0:
+                media_id = res.get("media_id")
+                logger.info(
+                    "[BotID: {}] 临时素材 HTTPS 上传成功 -> media_id='{}'",
+                    self.bot_id,
+                    media_id,
+                )
+                return media_id
+            else:
+                logger.error("[BotID: {}] 临时素材 HTTPS 上传失败: {}", self.bot_id, res)
+                return None
+
+        except Exception as exc:
+            logger.error("[BotID: {}] 临时素材 HTTPS 上传接口请求异常: {}", self.bot_id, exc)
+            return None
 
     async def _main_co(self) -> None:
         """WebSocket 运行和重连的主协程。"""
@@ -281,15 +281,8 @@ class WeChatBot(BaseBot):
                 continue
 
             cmd = data.get("cmd", "")
-            headers = data.get("headers", {})
             errcode = data.get("errcode", 0)
             errmsg = data.get("errmsg", "")
-
-            # 优先检查并完成正在阻塞等待结果的 API 调用 (RPC over WebSocket)
-            req_id = headers.get("req_id")
-            if req_id and req_id in self._response_futures:
-                self._response_futures[req_id].set_result(data)
-                continue
 
             # 处理订阅或心跳的响应回包
             if cmd in ("aibot_subscribe_resp", "ping_resp") or "errcode" in data:
