@@ -345,8 +345,7 @@ class WeChatBot(BaseBot):
                 "cmd": "ping",
                 "headers": {
                     "req_id": str(uuid.uuid4())
-                },
-                "body": {}
+                }
             }
             if self._send_queue is not None:
                 await self._send_queue.put(ping_payload)
