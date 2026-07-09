@@ -407,8 +407,18 @@ class WeChatAdapter(BaseAdapter):
                 else:
                     actual_name = "file.bin"
 
-            # 2. 直接调用底层的 HTTPS 接口上传临时素材
-            media_id = self.bot.upload_media_http(media_bytes, actual_name, res_type)
+            # 2. 跨线程投递到子线程中执行分块上传
+            if self.bot._loop is None or not self.bot._loop.is_running():
+                logger.error("[BotID: {}] WeChatBot 异步事件循环未运行，无法执行素材置换。", self.bot.bot_id)
+                return None
+
+            future = asyncio.run_coroutine_threadsafe(
+                self.bot.upload_media(media_bytes, actual_name, res_type),
+                self.bot._loop
+            )
+
+            # 同步阻塞等待分块上传完成，最长等 45s
+            media_id = future.result(timeout=45.0)
             return media_id
 
         except Exception as exc:
