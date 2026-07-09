@@ -14,7 +14,7 @@ from typing import Any, Callable
 import aio_pika
 from loguru import logger
 
-from src.core.schemas import StandardMessage
+from src.core.schemas import MessageType, StandardMessage
 from src.utils.rabbitmq import mq_client
 
 
@@ -166,7 +166,7 @@ class MessageHub:
             # 深拷贝一份并修改内容
             reply_msg = msg.model_copy(deep=True)
             for item in reply_msg.content:
-                if item.msg_type == "text" and item.text:
+                if item.msg_type == MessageType.TEXT and item.text:
                     item.text = f"【TEST 异步模拟大脑】已收到指令: {item.text}"
 
             logger.debug(

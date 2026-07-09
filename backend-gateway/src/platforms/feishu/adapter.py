@@ -17,7 +17,7 @@ import lark_oapi as lark
 from loguru import logger
 
 from src.core.hub import hub
-from src.core.schemas import MessageContent, StandardMessage
+from src.core.schemas import MessageContent, MessageType, StandardMessage
 from src.platforms.base import BaseAdapter
 from src.utils.minio_client import minio_client
 
@@ -359,13 +359,13 @@ class FeishuAdapter(BaseAdapter):
 
         # 遍历所有内容区块，统一翻译并合并进富文本段落中
         for item in msg.content:
-            if item.msg_type == "text":
+            if item.msg_type == MessageType.TEXT:
                 text_content = item.text or ""
                 post_content["zh_cn"]["content"].append(
                     [{"tag": "text", "text": text_content}]
                 )
 
-            elif item.msg_type == "image":
+            elif item.msg_type == MessageType.IMAGE:
                 file_url = item.file_url or ""
                 # 从 MinIO 下载并转传至飞书，置换出飞书专用的 image_key
                 feishu_image_key = self._transfer_minio_to_feishu(file_url)
@@ -382,21 +382,21 @@ class FeishuAdapter(BaseAdapter):
                         [{"tag": "text", "text": "[图片转存失败]"}]
                     )
 
-            elif item.msg_type == "audio":
+            elif item.msg_type == MessageType.AUDIO:
                 file_url = item.file_url or ""
                 post_content["zh_cn"]["content"].append([
                     {"tag": "text", "text": "🎵 语音消息: "},
                     {"tag": "a", "href": file_url, "text": "点击播放音频"}
                 ])
 
-            elif item.msg_type == "video":
+            elif item.msg_type == MessageType.VIDEO:
                 file_url = item.file_url or ""
                 post_content["zh_cn"]["content"].append([
                     {"tag": "text", "text": "🎥 视频消息: "},
                     {"tag": "a", "href": file_url, "text": "点击观看视频"}
                 ])
 
-            elif item.msg_type == "file":
+            elif item.msg_type == MessageType.FILE:
                 file_url = item.file_url or ""
                 file_name = item.file_name or "点击下载文件"
                 post_content["zh_cn"]["content"].append([

@@ -13,7 +13,7 @@ from typing import Any
 from loguru import logger
 
 from src.core.hub import hub
-from src.core.schemas import MessageContent, StandardMessage
+from src.core.schemas import MessageContent, MessageType, StandardMessage
 from src.platforms.base import BaseAdapter
 
 
@@ -175,11 +175,11 @@ class WeChatAdapter(BaseAdapter):
         # 合并所有文本区块，组成待回复内容
         texts = []
         for item in msg.content:
-            if item.msg_type == "text" and item.text:
+            if item.msg_type == MessageType.TEXT and item.text:
                 texts.append(item.text)
-            elif item.msg_type == "image":
+            elif item.msg_type == MessageType.IMAGE:
                 texts.append(f"[图片: {item.file_url}]")
-            elif item.msg_type == "file":
+            elif item.msg_type == MessageType.FILE:
                 file_name = item.file_name or "文件"
                 texts.append(f"[文件 ({file_name}): {item.file_url}]")
             else:
