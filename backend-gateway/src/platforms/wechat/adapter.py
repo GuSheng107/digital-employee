@@ -491,10 +491,11 @@ class WeChatAdapter(BaseAdapter):
             if item.msg_type == MessageType.TEXT and item.text:
                 if cached_frame:
                     future = asyncio.run_coroutine_threadsafe(
-                        self.bot.client.reply(
+                        self.bot.client.reply_stream(
                             cached_frame,
-                            body={"markdown": {"content": item.text}},
-                            cmd="aibot_respond_msg"
+                            stream_id=uuid.uuid4().hex,
+                            content=item.text,
+                            finish=True
                         ),
                         self.bot._loop
                     )
