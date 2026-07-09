@@ -199,17 +199,19 @@ class WeChatAdapter(BaseAdapter):
         node: Any,
         parts: list[dict[str, Any]],
         seen: set[tuple[str, str]],
+        parent_key: str = "",
     ) -> None:
         """深度优先递归提取并排重收集企微推送帧内所有文本和多媒体块。"""
         if isinstance(node, list):
             for item in node:
-                self._collect_parts_recursive(item, parts, seen)
+                self._collect_parts_recursive(item, parts, seen, parent_key)
             return
 
         if not isinstance(node, dict):
             return
 
-        raw_type = node.get("type") or node.get("msgtype") or node.get("content_type") or node.get("item_type")
+        # 确定类型：使用节点自带的类型，或者父节点的 key (如 "image"、"file") 作为 fallback
+        raw_type = node.get("type") or node.get("msgtype") or node.get("content_type") or node.get("item_type") or parent_key
         normalized_type = str(raw_type or "").strip().lower()
 
         # 1. 段落文本内容提取
@@ -247,8 +249,8 @@ class WeChatAdapter(BaseAdapter):
                 return
 
         # 递归向下挖掘子字典
-        for val in node.values():
-            self._collect_parts_recursive(val, parts, seen)
+        for k, val in node.items():
+            self._collect_parts_recursive(val, parts, seen, k)
 
     def _submit_to_hub(self, msg: StandardMessage) -> None:
         """将归一化消息安全地从同步长连接线程投递至异步事件循环中枢。
