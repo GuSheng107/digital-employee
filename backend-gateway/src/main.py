@@ -57,17 +57,38 @@ async def lifespan(app: FastAPI):
             exc,
         )
 
-    # 3. 加载 Bot 配置并注入主事件循环
+    # 3. 启动后台重连与连接状态监控守护协程（每分钟执行一次检测重连）
+    async def _mq_reconnect_loop():
+        from src.core.hub import hub
+        while True:
+            try:
+                await asyncio.sleep(60.0)
+                if not mq_client.is_connected:
+                    logger.info("[MQ] 检测到 RabbitMQ 当前处于断开状态，尝试自动重连中...")
+                    outbound_queue = await mq_client.connect_and_setup()
+                    await outbound_queue.consume(hub.consume_outbound)
+                    logger.info("[MQ] RabbitMQ 自动重连成功并已重新订阅出站队列！")
+            except asyncio.CancelledError:
+                break
+            except Exception as err:
+                logger.error("[MQ] RabbitMQ 自动重连尝试失败，60秒后将再次重试: {}", err)
+
+    reconnect_task = asyncio.create_task(_mq_reconnect_loop())
+
+    # 4. 加载 Bot 配置并注入主事件循环
     main_loop = asyncio.get_running_loop()
     manager.load_from_file()
     manager.inject_main_loop_to_all(main_loop)
 
-    # 4. 启动 Watchdog
+    # 5. 启动 Watchdog
     manager.start_watchdog()
-    yield
-    # 服务关闭时清理
-    manager.shutdown()
-    await mq_client.close()
+    try:
+        yield
+    finally:
+        # 服务关闭时清理
+        reconnect_task.cancel()
+        manager.shutdown()
+        await mq_client.close()
 
 
 app: FastAPI = FastAPI(

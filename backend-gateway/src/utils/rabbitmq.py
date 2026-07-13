@@ -21,6 +21,7 @@ class RabbitMQClient:
         self.connection: aio_pika.abc.AbstractRobustConnection | None = None
         self.channel: aio_pika.abc.AbstractChannel | None = None
         self.exchange: aio_pika.abc.AbstractExchange | None = None
+        self.is_connected: bool = False
 
     async def connect_and_setup(self) -> aio_pika.abc.AbstractQueue:
         """建立长连接并声明单节点下的固定拓扑结构。
@@ -31,6 +32,7 @@ class RabbitMQClient:
         Returns:
             出站队列对象，供调用方注册消费者回调。
         """
+        self.is_connected = False
         mq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost/")
         self.connection = await aio_pika.connect_robust(mq_url)
         self.channel = await self.connection.channel()
@@ -60,6 +62,7 @@ class RabbitMQClient:
         await outbound_queue.bind(self.exchange, routing_key=outbound_routing_key)
 
         logger.info("[MQ] 单节点拓扑结构自动化构建与绑定成功")
+        self.is_connected = True
         return outbound_queue
 
     async def publish(self, routing_key: str, payload_json: str) -> None:
@@ -83,6 +86,7 @@ class RabbitMQClient:
 
     async def close(self) -> None:
         """安全关闭 RabbitMQ 连接。"""
+        self.is_connected = False
         if self.connection is not None:
             await self.connection.close()
             logger.info("[MQ] RabbitMQ 连接已安全关闭")
