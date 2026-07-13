@@ -14,7 +14,7 @@ from typing import Any, Callable
 import aio_pika
 from loguru import logger
 
-from src.core.schemas import MessageType, StandardMessage
+from src.core.schemas import MessageContent, MessageType, StandardMessage
 from src.utils.rabbitmq import mq_client
 
 
@@ -65,21 +65,31 @@ class MessageHub:
 
         elif mode == "prod":
             logger.info(
-                "[HUB-IN] 机器人 {} (Prod模式)，异步投递至 MQ",
+                "[HUB-IN] 机器人 {} (Prod模式)，准备投递至 MQ",
                 msg.bot_id,
             )
             inbound_prefix = os.getenv("RABBITMQ_INBOUND_PUBLISH_PREFIX", "msg.inbound")
             routing_key = f"{inbound_prefix}.{msg.platform}.{msg.bot_id}"
             payload = msg.model_dump_json()
             try:
+                # 若检测到 MQ 连接断开，直接主动触发异常以走降级回复逻辑
+                if not mq_client.is_connected:
+                    raise RuntimeError("RabbitMQ 客户端处于断开状态")
+
                 # 显式 await，发生网络异常时可直接被上层 try 结构捕获
                 await mq_client.publish(routing_key, payload)
             except Exception as exc:
                 logger.error(
-                    "[HUB-IN] MQ 消息投递失败 (Bot={}): {}",
+                    "[HUB-IN] MQ 消息投递失败 (Bot={}): {}。直接向正式用户返回服务不可用提示。",
                     msg.bot_id,
                     exc,
                 )
+                # 容灾回复：组装不可用回帧
+                reply_err = msg.model_copy(deep=True)
+                reply_err.content = [
+                    MessageContent(msg_type=MessageType.TEXT, text="系统繁忙，服务暂时不可用，请稍后再试。")
+                ]
+                await self.process_outbound(reply_err)
         else:
             logger.warning(
                 "[HUB-IN] 机器人 {} 配置了未知的 mode='{}'",
