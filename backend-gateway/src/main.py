@@ -44,12 +44,18 @@ async def lifespan(app: FastAPI):
     3. 从配置文件加载机器人并注入主事件循环。
     4. 启动 Watchdog 守护线程。
     """
-    # 1. 连接 RabbitMQ 并声明拓扑
-    outbound_queue = await mq_client.connect_and_setup()
-
-    # 2. 注册出站队列消费者（由 hub 处理 Agent 回复）
-    from src.core.hub import hub
-    await outbound_queue.consume(hub.consume_outbound)
+    # 1. 尝试连接 RabbitMQ 并声明拓扑，失败则容错降级
+    try:
+        outbound_queue = await mq_client.connect_and_setup()
+        # 2. 注册出站队列消费者（由 hub 处理 Agent 回复）
+        from src.core.hub import hub
+        await outbound_queue.consume(hub.consume_outbound)
+        logger.info("[MQ] RabbitMQ 消费者注册成功，生产模式就绪。")
+    except Exception as exc:
+        logger.error(
+            "[MQ] 警告：RabbitMQ 连接或初始化失败 ({})。网关将降级运行：所有 Prod 模式 Bot 的消息发送可能受阻，Test 模式 Bot 仍可正常运行。",
+            exc,
+        )
 
     # 3. 加载 Bot 配置并注入主事件循环
     main_loop = asyncio.get_running_loop()
