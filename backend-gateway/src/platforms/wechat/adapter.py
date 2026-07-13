@@ -513,7 +513,10 @@ class WeChatAdapter(BaseAdapter):
                     future = asyncio.run_coroutine_threadsafe(
                         self.bot.client.send_message(
                             msg.session_id,
-                            body={"markdown": {"content": item.text}}
+                            body={
+                                "msgtype": "markdown",
+                                "markdown": {"content": item.text},
+                            }
                         ),
                         self.bot._loop
                     )
