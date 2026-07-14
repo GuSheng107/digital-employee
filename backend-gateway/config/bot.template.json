@@ -1,0 +1,11 @@
+{
+  "bots": [
+    {
+      "bot_id": "feishu_bot_1",
+      "platform": "feishu",
+      "mode": "test",
+      "app_id": "YOUR_APP_ID",
+      "app_secret": "YOUR_APP_SECRET"
+    }
+  ]
+}
