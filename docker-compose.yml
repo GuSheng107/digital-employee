@@ -1,46 +1,32 @@
-version: "3.8"
-
 services:
-  backend-agent:
-    build:
-      context: ./backend-agent
-      dockerfile: Dockerfile
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-user}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-password}
     ports:
-      - "8000:8000"
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     volumes:
-      - ./backend-agent:/app
-      - ./data:/app/data
-    env_file:
-      - ./backend-agent/.env
-    depends_on:
-      - redis
+      - rabbitmq_data:/var/lib/rabbitmq
 
-  backend-gateway:
-    build:
-      context: ./backend-gateway
-      dockerfile: Dockerfile
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
-      - "8080:8080"
+      - "${MINIO_API_PORT:-19000}:9000"
+      - "${MINIO_CONSOLE_PORT:-19001}:9001"
     volumes:
-      - ./backend-gateway:/app
-    depends_on:
-      - backend-agent
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "3000:80"
-    depends_on:
-      - backend-agent
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
+      - minio_data:/data
 
 volumes:
-  redis_data:
+  rabbitmq_data:
+  minio_data:
