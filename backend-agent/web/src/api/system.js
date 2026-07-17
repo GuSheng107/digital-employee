@@ -1,4 +1,4 @@
-import { api, urlWithAuthToken } from './http'
+import { api, fetchWithAuth } from './http'
 
 export function getProjectLogs(params = {}) {
   const search = new URLSearchParams()
@@ -133,8 +133,12 @@ export function deleteDocument(docId) {
   return api(`/api/documents/${encodeURIComponent(docId)}?confirm=true`, { method: 'DELETE' })
 }
 
-export function getDocumentDownloadUrl(docId) {
-  return urlWithAuthToken(`/api/documents/${encodeURIComponent(docId)}/download`)
+export async function downloadDocumentBlob(docId) {
+  const response = await fetchWithAuth(`/api/documents/${encodeURIComponent(docId)}/download`)
+  if (!response.ok) {
+    throw new Error(response.statusText || '下载失败')
+  }
+  return response.blob()
 }
 
 export async function exitSystem() {

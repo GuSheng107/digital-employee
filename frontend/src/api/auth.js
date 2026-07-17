@@ -62,6 +62,13 @@ export function kickConsoleUser(username) {
   })
 }
 
+export function refreshToken(refreshTokenValue) {
+  return api('/api/auth/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ refresh_token: refreshTokenValue }),
+  })
+}
+
 export function getGuestAccount() {
   return api('/api/auth/guest-account')
 }

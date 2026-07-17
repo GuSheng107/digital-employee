@@ -72,6 +72,7 @@ def _apply_schema(conn: sqlite3.Connection) -> None:
             display_name TEXT NOT NULL DEFAULT '',
             role TEXT NOT NULL,
             password_hash TEXT NOT NULL,
+            user_type TEXT NOT NULL DEFAULT 'registered',
             is_active INTEGER NOT NULL DEFAULT 1,
             active_session_id TEXT NOT NULL DEFAULT '',
             active_session_expires_at INTEGER NOT NULL DEFAULT 0,
@@ -82,6 +83,71 @@ def _apply_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_console_users_role
             ON console_users(role);
+
+        CREATE TABLE IF NOT EXISTS auth_roles (
+            role_key TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS auth_permissions (
+            permission_key TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS auth_user_roles (
+            username TEXT NOT NULL,
+            role_key TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (username, role_key),
+            FOREIGN KEY (username) REFERENCES console_users(username) ON DELETE CASCADE,
+            FOREIGN KEY (role_key) REFERENCES auth_roles(role_key) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS auth_role_permissions (
+            role_key TEXT NOT NULL,
+            permission_key TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (role_key, permission_key),
+            FOREIGN KEY (role_key) REFERENCES auth_roles(role_key) ON DELETE CASCADE,
+            FOREIGN KEY (permission_key) REFERENCES auth_permissions(permission_key) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS auth_route_permissions (
+            id TEXT PRIMARY KEY,
+            method TEXT NOT NULL,
+            path_pattern TEXT NOT NULL,
+            permission_key TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (method, path_pattern),
+            FOREIGN KEY (permission_key) REFERENCES auth_permissions(permission_key) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS auth_permission_audit_logs (
+            id TEXT PRIMARY KEY,
+            trace_id TEXT NOT NULL DEFAULT '',
+            username TEXT NOT NULL DEFAULT '',
+            role_key TEXT NOT NULL DEFAULT '',
+            permission_key TEXT NOT NULL DEFAULT '',
+            method TEXT NOT NULL DEFAULT '',
+            path TEXT NOT NULL DEFAULT '',
+            decision TEXT NOT NULL DEFAULT '',
+            reason TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_auth_permission_audit_logs_trace
+            ON auth_permission_audit_logs(trace_id);
+
+        CREATE INDEX IF NOT EXISTS idx_auth_permission_audit_logs_created
+            ON auth_permission_audit_logs(created_at);
 
         CREATE TABLE IF NOT EXISTS conversations (
             chat_id TEXT PRIMARY KEY,
@@ -430,6 +496,31 @@ def _apply_schema(conn: sqlite3.Connection) -> None:
         """
     )
 
+    # ── user_type 列迁移（旧表补充）──
+    # CREATE TABLE IF NOT EXISTS 不会为已存在的旧表补充新列，
+    # 因此对旧库需要显式 ALTER TABLE，再创建索引。
+    cols = {row[1] for row in conn.execute(f"PRAGMA table_info(console_users)").fetchall()}
+    if "user_type" not in cols:
+        conn.execute(
+            "ALTER TABLE console_users ADD COLUMN user_type TEXT NOT NULL DEFAULT 'registered'"
+        )
+        if "caller_type" in cols:
+            conn.execute(
+                """
+                UPDATE console_users
+                SET user_type = CASE
+                    WHEN caller_type = 'internal' THEN 'internal'
+                    ELSE 'registered'
+                END
+                """
+            )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_console_users_user_type
+            ON console_users(user_type)
+        """
+    )
+
     conn.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_bot_config_unique_active_name
@@ -472,4 +563,122 @@ def _apply_schema(conn: sqlite3.Connection) -> None:
         SET role = CASE WHEN username = 'admin' THEN 'admin' ELSE 'user' END
         WHERE role != CASE WHEN username = 'admin' THEN 'admin' ELSE 'user' END
         """
+    )
+
+    roles = [
+        ("admin", "管理员", "系统管理员"),
+        ("user", "普通用户", "已注册控制台用户"),
+        ("guest", "游客", "游客模式 1.0，只读访问"),
+        ("internal", "内部调用方", "OAS 后台等内部服务调用"),
+    ]
+    for role_key, name, description in roles:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO auth_roles (role_key, name, description, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (role_key, name, description, now, now),
+        )
+
+    permissions = [
+        ("system.read", "系统只读访问", "读取控制台状态、列表和详情"),
+        ("auth.manage", "认证管理", "用户和权限管理"),
+    ]
+    for permission_key, name, description in permissions:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO auth_permissions (
+                permission_key, name, description, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (permission_key, name, description, now, now),
+        )
+
+    role_permissions = [
+        ("admin", "system.read"),
+        ("admin", "auth.manage"),
+        ("user", "system.read"),
+        ("guest", "system.read"),
+        ("internal", "system.read"),
+        ("internal", "auth.manage"),
+    ]
+    for role_key, permission_key in role_permissions:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO auth_role_permissions (role_key, permission_key, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (role_key, permission_key, now),
+        )
+
+    route_permissions = [
+        ("GET", "/api/auth/session", "system.read", "当前会话"),
+        ("POST", "/api/auth/logout", "system.read", "退出登录"),
+        ("GET", "/api/status", "system.read", "系统状态"),
+        ("GET", "/api/bots", "system.read", "Bot 列表"),
+        ("GET", "/api/agents", "system.read", "Agent 列表"),
+        ("GET", "/api/agents/capabilities", "system.read", "模型能力"),
+        ("GET", "/api/agents/provider-schemas", "system.read", "Provider 字段"),
+        ("GET", "/api/skills", "system.read", "技能列表"),
+        ("GET", "/api/mcp/tools", "system.read", "MCP 工具列表"),
+        ("GET", "/api/mcp/servers", "system.read", "MCP 服务列表"),
+        ("GET", "/api/mcp/servers/{server_id}", "system.read", "MCP 服务详情"),
+        ("GET", "/api/chats", "system.read", "会话列表"),
+        ("GET", "/api/chats/{chat_id}", "system.read", "会话详情"),
+        ("GET", "/api/ai/status", "system.read", "AI 任务状态"),
+        ("GET", "/api/ai/status/stream", "system.read", "AI 任务状态流"),
+        ("GET", "/api/manual-replies/{command_id}", "system.read", "手动回复状态"),
+        ("GET", "/api/manual-reply-attachments/{storage_name}", "system.read", "手动回复附件"),
+        ("GET", "/api/documents", "system.read", "文档列表"),
+        ("GET", "/api/documents/config", "system.read", "文档配置"),
+        ("GET", "/api/documents/{doc_id}/download", "system.read", "文档下载"),
+        ("GET", "/api/platform-settings", "system.read", "平台设置"),
+        ("GET", "/api/data/overview", "system.read", "数据概览"),
+        ("GET", "/api/data/token-usage", "system.read", "Token 使用统计"),
+        ("GET", "/api/project-logs", "system.read", "项目日志"),
+        ("GET", "/api/tasks", "system.read", "任务列表"),
+        ("GET", "/api/tasks/periodic", "system.read", "周期任务列表"),
+        ("GET", "/api/tasks/one-time", "system.read", "一次性任务列表"),
+        ("GET", "/api/tasks/executors", "system.read", "任务执行器列表"),
+        ("GET", "/api/tasks/{task_key}", "system.read", "任务详情"),
+        ("GET", "/api/feedback/stats", "system.read", "反馈统计"),
+        ("GET", "/api/feedback/list", "system.read", "反馈列表"),
+        ("GET", "/api/feedback/list-by-message", "system.read", "消息反馈列表"),
+        ("GET", "/api/feedback/alerts", "system.read", "反馈告警"),
+    ]
+    for method, path_pattern, permission_key, description in route_permissions:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO auth_route_permissions (
+                id, method, path_pattern, permission_key, description, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"{method}:{path_pattern}",
+                method,
+                path_pattern,
+                permission_key,
+                description,
+                now,
+                now,
+            ),
+        )
+
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO auth_user_roles (username, role_key, created_at)
+        VALUES ('admin', 'admin', ?)
+        """,
+        (now,),
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO auth_user_roles (username, role_key, created_at)
+        SELECT username, role, ?
+        FROM console_users
+        WHERE role IN ('admin', 'user', 'guest', 'internal')
+        """,
+        (now,),
     )

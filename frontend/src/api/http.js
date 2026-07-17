@@ -19,12 +19,63 @@ const RETRYABLE_STATUS_CODES = new Set([502, 503, 504])
 let authTokenProvider = () => ''
 let authFailureHandler = null
 
+// 鈹€鈹€ 鍙?Token 鑷姩鍒锋柊 鈹€鈹€
+let refreshTokenProvider = () => ''
+let onTokensRefreshed = null  // callback({ access_token, refresh_token, expires_in })
+let _refreshPromise = null    // mutex: 闃叉骞跺彂鍒锋柊
+
 export function setAuthTokenProvider(provider) {
   authTokenProvider = typeof provider === 'function' ? provider : () => ''
 }
 
+export function setRefreshTokenProvider(provider) {
+  refreshTokenProvider = typeof provider === 'function' ? provider : () => ''
+}
+
+export function setOnTokensRefreshed(callback) {
+  onTokensRefreshed = typeof callback === 'function' ? callback : null
+}
+
 export function setAuthFailureHandler(handler) {
   authFailureHandler = typeof handler === 'function' ? handler : null
+}
+
+async function tryAutoRefresh() {
+  const rt = String(refreshTokenProvider() || '').trim()
+  if (!rt) return false
+
+  // 闃叉骞跺彂鍒锋柊
+  if (_refreshPromise) {
+    return await _refreshPromise
+  }
+
+  _refreshPromise = (async () => {
+    try {
+      const response = await fetch(resolveApiUrl('/api/auth/refresh'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: rt }),
+      })
+      if (!response.ok) return false
+      const data = await response.json()
+      if (data.access_token && onTokensRefreshed) {
+        onTokensRefreshed({
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+          expires_in: data.expires_in,
+        })
+      }
+      return true
+    } catch {
+      return false
+    }
+  })()
+
+  try {
+    return await _refreshPromise
+  } finally {
+    _refreshPromise = null
+  }
 }
 
 export function authHeaders(headers = {}) {
@@ -36,37 +87,24 @@ export function authHeaders(headers = {}) {
   return next
 }
 
-export function fetchWithAuth(url, options = {}) {
-  return fetch(resolveApiUrl(url), {
+export async function fetchWithAuth(url, options = {}) {
+  const request = () => fetch(resolveApiUrl(url), {
     ...options,
     headers: authHeaders(options.headers || {}),
-  }).then((response) => {
-    if (response.status === 401 && typeof authFailureHandler === 'function') {
-      authFailureHandler(new Error('登录已过期，请重新登录'))
-    }
-    return response
   })
-}
 
-export function urlWithAuthToken(url) {
-  const resolvedUrl = resolveApiUrl(url)
-  const token = String(authTokenProvider() || '').trim()
-  if (!token) return resolvedUrl
-  try {
-    const parsed = new URL(resolvedUrl, window.location.origin)
-    if (!parsed.pathname.startsWith('/api/')) {
-      return resolvedUrl
-    }
-    parsed.searchParams.set('session_token', token)
-    if (!API_BASE && parsed.origin === window.location.origin) {
-      return `${parsed.pathname}${parsed.search}${parsed.hash}`
-    }
-    return parsed.toString()
-  } catch {
-    return resolvedUrl
+  let response = await request()
+  if (response.status === 401 && await tryAutoRefresh()) {
+    response = await request()
   }
+  if (response.status === 401 && typeof authFailureHandler === 'function') {
+    authFailureHandler(new Error('登录已过期，请重新登录'))
+  }
+  return response
 }
-
+export function urlWithAuthToken(url) {
+  return resolveApiUrl(url)
+}
 function isRetryableError(error) {
   if (error.name === 'AbortError') return false
   if (error.status && RETRYABLE_STATUS_CODES.has(error.status)) return true
@@ -104,7 +142,7 @@ export async function api(url, options = {}) {
           const text = await response.text().catch(() => '')
           body = { message: text || response.statusText }
         }
-        const message = body.message || response.statusText || '请求失败'
+        const message = body.message || response.statusText || '璇锋眰澶辫触'
         const traceId = body.trace_id || ''
         const error = new Error(message)
         error.status = response.status
@@ -116,8 +154,16 @@ export async function api(url, options = {}) {
           await delay(RETRY_DELAY_MS * (attempt + 1))
           continue
         }
-        if (response.status === 401 && typeof authFailureHandler === 'function') {
-          authFailureHandler(error)
+        if (response.status === 401) {
+          // 灏濊瘯鑷姩鍒锋柊 (鍙?Token)
+          if (await tryAutoRefresh()) {
+            // 鍒锋柊鎴愬姛 鈥?鐢ㄦ柊 token 閲嶈瘯
+            headers.Authorization = `Bearer ${authTokenProvider()}`
+            continue
+          }
+          if (typeof authFailureHandler === 'function') {
+            authFailureHandler(error)
+          }
         }
         throw error
       }

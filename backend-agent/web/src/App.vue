@@ -33,6 +33,8 @@ const {
   initializeSession,
   login,
   logout,
+  setRedirectTarget,
+  consumeRedirectTarget,
 } = authSession
 const {
   activeBotKey,
@@ -182,6 +184,10 @@ watch(activeView, (newView) => {
 
 watch(isAuthenticated, (authenticated) => {
   if (!authenticated) {
+    // 会话失效：记录当前视图作为登录后重定向目标，停止轮询
+    if (activeView.value) {
+      setRedirectTarget(activeView.value)
+    }
     stopPolling()
   }
 })
@@ -192,6 +198,11 @@ async function handleLogin(payload) {
     await login(payload.username, payload.password)
     ElMessage.success('登录成功')
     await initialize()
+    // 登录成功后回跳到失效前的视图（重定向）
+    const target = consumeRedirectTarget()
+    if (target && target !== activeView.value) {
+      activeView.value = target
+    }
   } catch (error) {
     const status = error?.status
     const detail = error?.message || '登录失败'
@@ -207,6 +218,8 @@ async function handleLogin(payload) {
 
 async function handleLogout() {
   stopPolling()
+  // 主动登出：清除重定向目标，避免下次登录被回跳到旧视图
+  setRedirectTarget(null)
   await logout()
   ElMessage.success('已退出登录')
 }

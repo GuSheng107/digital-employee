@@ -11,7 +11,7 @@ import {
   getDocumentsConfig,
   uploadDocuments,
   deleteDocument,
-  getDocumentDownloadUrl,
+  downloadDocumentBlob,
 } from '../api/runtime'
 import { useRuntimeConsole } from '../composables/useRuntimeConsole'
 
@@ -472,14 +472,20 @@ async function handleDeleteDocument(doc) {
   }
 }
 
-function handleDownloadDocument(doc) {
-  const url = getDocumentDownloadUrl(doc.id)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = doc.filename
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+async function handleDownloadDocument(doc) {
+  try {
+    const blob = await downloadDocumentBlob(doc.id)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = doc.filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    ElMessage.error(error?.message || String(error))
+  }
 }
 
 function formatFileSize(bytes) {

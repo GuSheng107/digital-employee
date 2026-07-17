@@ -3,7 +3,7 @@ import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref }
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import { getAiStatus, cancelAiWork, clearAiWork } from '../api/runtime'
-import { urlWithAuthToken } from '../api/http'
+import { fetchWithAuth } from '../api/http'
 import { getAgentLabel, formatTimeOnly } from '../utils/format'
 
 const props = defineProps({
@@ -52,7 +52,7 @@ const emit = defineEmits(['start-bot', 'stop-bot'])
 const enabledBots = computed(() => props.bots.filter((bot) => Boolean(bot.is_active)))
 
 const aiStatus = ref({ busy: false, active: [], recent: [] })
-let aiStatusSource = null
+let aiStatusController = null
 let reconnectTimer = null
 let streamStopped = false
 const cancellingTasks = ref(new Set())
@@ -168,9 +168,9 @@ function reasoningPreview(task) {
 }
 
 function closeAiStatusStream() {
-  if (aiStatusSource) {
-    aiStatusSource.close()
-    aiStatusSource = null
+  if (aiStatusController) {
+    aiStatusController.abort()
+    aiStatusController = null
   }
 }
 
@@ -184,28 +184,48 @@ function scheduleReconnect() {
   }, 3000)
 }
 
-function startAiStatusStream() {
+async function startAiStatusStream() {
   closeAiStatusStream()
-  if (typeof EventSource === 'undefined') {
-    loadAiStatus()
-    scheduleReconnect()
-    return
-  }
+  const controller = new AbortController()
+  aiStatusController = controller
   try {
-    aiStatusSource = new EventSource(urlWithAuthToken('/api/ai/status/stream'))
-    aiStatusSource.onmessage = (event) => {
-      try {
-        aiStatus.value = JSON.parse(event.data)
-      } catch {
-        // Ignore malformed frames and keep the last good payload.
+    const response = await fetchWithAuth('/api/ai/status/stream', {
+      headers: { Accept: 'text/event-stream' },
+      signal: controller.signal,
+    })
+    if (!response.ok || !response.body) {
+      throw new Error(`AI status stream failed: ${response.status}`)
+    }
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    while (!controller.signal.aborted) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let frameEnd = buffer.indexOf('\n\n')
+      while (frameEnd !== -1) {
+        const frame = buffer.slice(0, frameEnd)
+        buffer = buffer.slice(frameEnd + 2)
+        const dataLine = frame.split(/\r?\n/).find((line) => line.startsWith('data:'))
+        if (dataLine) {
+          try {
+            aiStatus.value = JSON.parse(dataLine.slice(5).trim())
+          } catch {
+            // Ignore malformed frames and keep the last good payload.
+          }
+        }
+        frameEnd = buffer.indexOf('\n\n')
       }
     }
-    aiStatusSource.onerror = () => {
-      closeAiStatusStream()
+  } catch {
+    if (!controller.signal.aborted) {
       scheduleReconnect()
     }
-  } catch {
-    scheduleReconnect()
+  } finally {
+    if (aiStatusController === controller) {
+      aiStatusController = null
+    }
   }
 }
 

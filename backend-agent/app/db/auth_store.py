@@ -20,6 +20,38 @@ _PASSWORD_ITERATIONS = 210_000
 _SALT_BYTES = 16
 _PASSWORD_PATTERN = re.compile(r"^[A-Za-z0-9]+$")
 
+# 用户类型：区分正式注册用户、游客和内部调用主体
+USER_TYPE_REGISTERED = "registered"
+USER_TYPE_GUEST = "guest"
+USER_TYPE_INTERNAL = "internal"
+_VALID_USER_TYPES = (USER_TYPE_REGISTERED, USER_TYPE_GUEST, USER_TYPE_INTERNAL)
+
+
+def _ensure_user_type_column(conn: sqlite3.Connection) -> None:
+    """幂等迁移：为旧表补充 user_type 列。"""
+    cols = {row[1] for row in conn.execute(f"PRAGMA table_info({AUTH_TABLE})").fetchall()}
+    if "user_type" not in cols:
+        conn.execute(
+            f"ALTER TABLE {AUTH_TABLE} ADD COLUMN user_type TEXT NOT NULL DEFAULT '{USER_TYPE_REGISTERED}'"
+        )
+        if "caller_type" in cols:
+            conn.execute(
+                f"""
+                UPDATE {AUTH_TABLE}
+                SET user_type = CASE
+                    WHEN caller_type = 'internal' THEN '{USER_TYPE_INTERNAL}'
+                    ELSE '{USER_TYPE_REGISTERED}'
+                END
+                """
+            )
+
+
+def normalize_user_type(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if text not in _VALID_USER_TYPES:
+        return USER_TYPE_REGISTERED
+    return text
+
 
 def ensure_auth_schema(database_path: Path) -> None:
     initialize_database(database_path)
@@ -31,6 +63,7 @@ def ensure_auth_schema(database_path: Path) -> None:
                 display_name TEXT NOT NULL DEFAULT '',
                 role TEXT NOT NULL,
                 password_hash TEXT NOT NULL,
+                user_type TEXT NOT NULL DEFAULT 'registered',
                 is_active INTEGER NOT NULL DEFAULT 1,
                 active_session_id TEXT NOT NULL DEFAULT '',
                 active_session_expires_at INTEGER NOT NULL DEFAULT 0,
@@ -41,6 +74,13 @@ def ensure_auth_schema(database_path: Path) -> None:
 
             CREATE INDEX IF NOT EXISTS idx_console_users_role
                 ON console_users(role);
+            """
+        )
+        _ensure_user_type_column(conn)
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_console_users_user_type
+                ON console_users(user_type)
             """
         )
 
@@ -143,6 +183,7 @@ def _public_user(row: sqlite3.Row | dict[str, Any] | None) -> dict[str, Any] | N
         "username": username,
         "display_name": str(data.get("display_name") or ""),
         "role": role_for_username(username),
+        "user_type": str(data.get("user_type") or USER_TYPE_REGISTERED),
         "is_active": bool(data.get("is_active")),
         "is_online": is_online,
         "last_login_at": str(data.get("last_login_at") or ""),
@@ -156,7 +197,7 @@ def list_console_users(database_path: Path) -> list[dict[str, Any]]:
     with connect_database(database_path) as conn:
         rows = conn.execute(
             """
-            SELECT username, display_name, role, is_active, active_session_expires_at,
+            SELECT username, display_name, role, user_type, is_active, active_session_expires_at,
                    last_login_at, created_at, updated_at
             FROM console_users
             ORDER BY username = 'admin' DESC, username COLLATE NOCASE
@@ -171,7 +212,7 @@ def get_console_user(database_path: Path, username: str) -> dict[str, Any] | Non
     with connect_database(database_path) as conn:
         row = conn.execute(
             """
-            SELECT username, display_name, role, is_active, active_session_expires_at,
+            SELECT username, display_name, role, user_type, is_active, active_session_expires_at,
                    last_login_at, created_at, updated_at
             FROM console_users
             WHERE username = ?
@@ -187,7 +228,7 @@ def get_console_user_for_auth(database_path: Path, username: str) -> dict[str, A
     with connect_database(database_path) as conn:
         row = conn.execute(
             """
-            SELECT username, display_name, role, password_hash, is_active, last_login_at, created_at, updated_at
+            SELECT username, display_name, role, user_type, password_hash, is_active, last_login_at, created_at, updated_at
             FROM console_users
             WHERE username = ?
             """,
@@ -210,97 +251,6 @@ def authenticate_console_user(
     return _public_user(user)
 
 
-def activate_console_user_session(
-    database_path: Path,
-    *,
-    username: str,
-    session_id: str,
-    expires_at: int,
-) -> None:
-    _require_schema(database_path)
-    clean_username = normalize_username(username)
-    clean_session_id = str(session_id or "").strip()
-    if not clean_session_id:
-        raise ValidationError("会话 ID 不能为空")
-    now = utc_now()
-    with connect_database(database_path) as conn:
-        conn.execute(
-            """
-            UPDATE console_users
-            SET active_session_id = ?,
-                active_session_expires_at = ?,
-                last_login_at = ?,
-                updated_at = ?
-            WHERE username = ?
-            """,
-            (clean_session_id, int(expires_at or 0), now, now, clean_username),
-        )
-
-
-def clear_console_user_session(
-    database_path: Path,
-    *,
-    username: str,
-    session_id: str = "",
-) -> None:
-    _require_schema(database_path)
-    clean_username = normalize_username(username)
-    clean_session_id = str(session_id or "").strip()
-    now = utc_now()
-    if clean_session_id:
-        with connect_database(database_path) as conn:
-            conn.execute(
-                """
-                UPDATE console_users
-                SET active_session_id = '',
-                    active_session_expires_at = 0,
-                    updated_at = ?
-                WHERE username = ? AND active_session_id = ?
-                """,
-                (now, clean_username, clean_session_id),
-            )
-        return
-    with connect_database(database_path) as conn:
-        conn.execute(
-            """
-            UPDATE console_users
-            SET active_session_id = '',
-                active_session_expires_at = 0,
-                updated_at = ?
-            WHERE username = ?
-            """,
-            (now, clean_username),
-        )
-
-
-def get_console_user_for_session(
-    database_path: Path,
-    *,
-    username: str,
-    session_id: str,
-    now_seconds: int,
-) -> dict[str, Any] | None:
-    _require_schema(database_path)
-    clean_username = normalize_username(username)
-    clean_session_id = str(session_id or "").strip()
-    if not clean_session_id:
-        return None
-    with connect_database(database_path) as conn:
-        row = conn.execute(
-            """
-            SELECT username, display_name, role, is_active, active_session_expires_at,
-                   last_login_at, created_at, updated_at
-            FROM console_users
-            WHERE username = ?
-              AND is_active = 1
-              AND active_session_id = ?
-              AND active_session_expires_at > ?
-            """,
-            (clean_username, clean_session_id, int(now_seconds or 0)),
-        ).fetchone()
-    return _public_user(row)
-
-
 def create_console_user(
     database_path: Path,
     *,
@@ -308,24 +258,36 @@ def create_console_user(
     password: str,
     role: str = "user",
     display_name: str = "",
+    user_type: str = USER_TYPE_REGISTERED,
 ) -> dict[str, Any]:
     _require_schema(database_path)
     clean_username = normalize_username(username)
     clean_role = role_for_username(clean_username)
     clean_password_hash = hash_password(validate_password(password))
     clean_display_name = str(display_name or "").strip()[:80]
+    clean_user_type = normalize_user_type(user_type)
     now = utc_now()
     try:
         with connect_database(database_path) as conn:
             conn.execute(
                 """
                 INSERT INTO console_users (
-                    username, display_name, role, password_hash,
+                    username, display_name, role, password_hash, user_type,
                     is_active, last_login_at, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, 1, '', ?, ?)
+                VALUES (?, ?, ?, ?, ?, 1, '', ?, ?)
                 """,
-                (clean_username, clean_display_name, clean_role, clean_password_hash, now, now),
+                (
+                    clean_username, clean_display_name, clean_role,
+                    clean_password_hash, clean_user_type, now, now,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO auth_user_roles (username, role_key, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (clean_username, clean_role, now),
             )
     except sqlite3.IntegrityError as exc:
         raise ConflictError("用户名已存在") from exc
@@ -341,6 +303,7 @@ def update_console_user(
     username: str,
     role: str = "user",
     display_name: str = "",
+    user_type: str | None = None,
 ) -> dict[str, Any]:
     _require_schema(database_path)
     clean_username = normalize_username(username)
@@ -351,13 +314,32 @@ def update_console_user(
     clean_display_name = str(display_name or "").strip()[:80]
     now = utc_now()
     with connect_database(database_path) as conn:
+        if user_type is not None:
+            clean_user_type = normalize_user_type(user_type)
+            conn.execute(
+                """
+                UPDATE console_users
+                SET role = ?, display_name = ?, user_type = ?, updated_at = ?
+                WHERE username = ?
+                """,
+                (clean_role, clean_display_name, clean_user_type, now, clean_username),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE console_users
+                SET role = ?, display_name = ?, updated_at = ?
+                WHERE username = ?
+                """,
+                (clean_role, clean_display_name, now, clean_username),
+            )
+        conn.execute("DELETE FROM auth_user_roles WHERE username = ?", (clean_username,))
         conn.execute(
             """
-            UPDATE console_users
-            SET role = ?, display_name = ?, updated_at = ?
-            WHERE username = ?
+            INSERT OR IGNORE INTO auth_user_roles (username, role_key, created_at)
+            VALUES (?, ?, ?)
             """,
-            (clean_role, clean_display_name, now, clean_username),
+            (clean_username, clean_role, now),
         )
     updated = get_console_user(database_path, clean_username)
     if updated is None:
@@ -453,6 +435,7 @@ def authenticate_guest_user(*, username: str, password: str) -> dict[str, Any] |
         "username": guest_user,
         "display_name": "游客",
         "role": "guest",
+        "user_type": USER_TYPE_GUEST,
         "is_active": True,
         "last_login_at": "",
         "created_at": "",

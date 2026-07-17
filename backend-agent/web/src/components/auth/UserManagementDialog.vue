@@ -48,6 +48,7 @@ const userForm = reactive({
   username: '',
   display_name: '',
   password: '',
+  user_type: 'registered',
 })
 
 const passwordForm = reactive({
@@ -140,6 +141,7 @@ function openCreate() {
     username: '',
     display_name: '',
     password: '',
+    user_type: 'registered',
   })
   editorVisible.value = true
 }
@@ -150,6 +152,7 @@ function openEdit(row) {
     username: row.username,
     display_name: row.display_name || '',
     password: '',
+    user_type: row.user_type || 'registered',
   })
   editorVisible.value = true
 }
@@ -161,6 +164,7 @@ async function saveUser() {
     if (isEditing.value) {
       await updateConsoleUser(editingUsername.value, {
         display_name: userForm.display_name,
+        user_type: userForm.user_type,
       })
       ElMessage.success('用户已更新')
     } else {
@@ -168,6 +172,7 @@ async function saveUser() {
         username: userForm.username,
         display_name: userForm.display_name,
         password: userForm.password,
+        user_type: userForm.user_type,
       })
       ElMessage.success('用户已添加')
     }
@@ -279,6 +284,13 @@ async function kickGuest() {
           </el-tag>
         </template>
       </el-table-column>
+      <el-table-column prop="user_type" label="用户类型" width="110">
+        <template #default="{ row }">
+          <el-tag :type="row.user_type === 'internal' ? 'success' : 'info'" size="small" effect="plain">
+            {{ row.user_type === 'internal' ? '内部主体' : '注册用户' }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="is_online" label="状态" width="90">
         <template #default="{ row }">
           <span class="online-status" :class="{ online: row.is_online }">
@@ -315,6 +327,12 @@ async function kickGuest() {
         </el-form-item>
         <el-form-item label="显示名">
           <el-input v-model="userForm.display_name" maxlength="80" />
+        </el-form-item>
+        <el-form-item label="用户类型">
+          <el-select v-model="userForm.user_type" placeholder="选择用户类型">
+            <el-option label="注册用户" value="registered" />
+            <el-option label="内部主体" value="internal" />
+          </el-select>
         </el-form-item>
         <el-form-item v-if="!isEditing" label="初始密码" prop="password">
           <el-input v-model="userForm.password" type="password" show-password autocomplete="new-password" />

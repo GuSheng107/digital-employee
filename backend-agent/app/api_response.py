@@ -101,7 +101,14 @@ def install_api_exception_handlers(
 
         trace_id = str(uuid4())
         request.state.trace_id = trace_id
-        response = await call_next(request)
+        # 绑定当前异步上下文的 trace_id，使请求处理过程中的所有日志
+        # 自动携带同一 trace_id（由 TraceIdFilter 注入）。
+        from app.logger import set_trace_id, reset_trace_id
+        set_trace_id(trace_id)
+        try:
+            response = await call_next(request)
+        finally:
+            reset_trace_id()
         fallback_trace_id = str(getattr(request.state, "trace_id", trace_id))
 
         content_type = response.headers.get("content-type", "")

@@ -1,7 +1,7 @@
 <script setup>
-import { computed, reactive } from 'vue'
+import { computed, onBeforeUnmount, reactive } from 'vue'
 import { Edit } from '@element-plus/icons-vue'
-import { urlWithAuthToken } from '../../api/http'
+import { fetchWithAuth, resolveApiUrl } from '../../api/http'
 import { displayUserName, formatTime } from '../../utils/format'
 
 const props = defineProps({
@@ -61,6 +61,8 @@ const feedbackTag = computed(() => {
 })
 
 const imageErrors = reactive(new Set())
+const objectUrls = reactive({})
+const loadingUrls = new Set()
 
 function onImageError(index) {
   imageErrors.add(index)
@@ -71,31 +73,31 @@ function isImageFailed(part, index) {
 }
 
 const FILE_ICON_MAP = {
-  'application/pdf': '📄',
-  'application/msword': '📝',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '📝',
-  'application/vnd.ms-excel': '📊',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '📊',
-  'application/vnd.ms-powerpoint': '📊',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation': '📊',
-  'application/zip': '🗜️',
-  'application/x-rar-compressed': '🗜️',
-  'application/x-7z-compressed': '🗜️',
-  'application/gzip': '🗜️',
-  'application/x-tar': '🗜️',
+  'application/pdf': 'PDF',
+  'application/msword': 'DOC',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'DOC',
+  'application/vnd.ms-excel': 'XLS',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'XLS',
+  'application/vnd.ms-powerpoint': 'PPT',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PPT',
+  'application/zip': 'ZIP',
+  'application/x-rar-compressed': 'ZIP',
+  'application/x-7z-compressed': 'ZIP',
+  'application/gzip': 'ZIP',
+  'application/x-tar': 'ZIP',
 }
 
 function fileIcon(mime) {
-  if (!mime) return '📎'
+  if (!mime) return 'FILE'
   const lower = mime.toLowerCase()
   for (const [key, icon] of Object.entries(FILE_ICON_MAP)) {
     if (lower === key) return icon
   }
-  if (lower.startsWith('text/')) return '📝'
-  if (lower.startsWith('image/')) return '🖼️'
-  if (lower.startsWith('video/')) return '🎬'
-  if (lower.startsWith('audio/')) return '🎵'
-  return '📎'
+  if (lower.startsWith('text/')) return 'TXT'
+  if (lower.startsWith('image/')) return 'IMG'
+  if (lower.startsWith('video/')) return 'VIDEO'
+  if (lower.startsWith('audio/')) return 'AUDIO'
+  return 'FILE'
 }
 
 function formatFileSize(bytes) {
@@ -118,9 +120,46 @@ function handleRenameUser() {
   })
 }
 
-function authUrl(url) {
-  return url ? urlWithAuthToken(url) : ''
+function isApiUrl(url) {
+  if (!url) return false
+  try {
+    const parsed = new URL(resolveApiUrl(url), window.location.origin)
+    return parsed.pathname.startsWith('/api/')
+  } catch {
+    return String(url).startsWith('/api/')
+  }
 }
+
+async function loadObjectUrl(url) {
+  if (!url || loadingUrls.has(url) || objectUrls[url]) return
+  loadingUrls.add(url)
+  try {
+    const response = await fetchWithAuth(url)
+    if (!response.ok) {
+      throw new Error(`media request failed: ${response.status}`)
+    }
+    objectUrls[url] = URL.createObjectURL(await response.blob())
+  } catch {
+    objectUrls[url] = ''
+  } finally {
+    loadingUrls.delete(url)
+  }
+}
+
+function authUrl(url) {
+  if (!url) return ''
+  if (!isApiUrl(url)) return resolveApiUrl(url)
+  if (!objectUrls[url]) {
+    loadObjectUrl(url)
+  }
+  return objectUrls[url] || ''
+}
+
+onBeforeUnmount(() => {
+  for (const url of Object.values(objectUrls)) {
+    if (url) URL.revokeObjectURL(url)
+  }
+})
 </script>
 
 <template>
@@ -158,11 +197,13 @@ function authUrl(url) {
         <div v-else-if="part.type === 'image'" class="bubble-image-block">
           <template v-if="!isImageFailed(part, index)">
             <img
+              v-if="authUrl(part.preview_url || part.url)"
               class="bubble-image"
               :src="authUrl(part.preview_url || part.url)"
-              :alt="`图片 ${index + 1}`"
+              :alt="`鍥剧墖 ${index + 1}`"
               @error="onImageError(index)"
             />
+            <div v-else class="bubble-image-fallback">加载中...</div>
           </template>
           <div v-else class="bubble-image-fallback">
             {{ part.oversized ? '图片过大，无法预览' : '图片加载失败' }}
@@ -170,7 +211,7 @@ function authUrl(url) {
         </div>
         <div v-else-if="part.type === 'video'" class="bubble-video-block">
           <video
-            v-if="part.url && !part.oversized"
+            v-if="part.url && !part.oversized && authUrl(part.url)"
             class="bubble-video"
             :src="authUrl(part.url)"
             controls
@@ -180,7 +221,7 @@ function authUrl(url) {
         </div>
         <div v-else-if="part.type === 'audio'" class="bubble-audio-block">
           <audio
-            v-if="part.url && !part.oversized"
+            v-if="part.url && !part.oversized && authUrl(part.url)"
             class="bubble-audio"
             :src="authUrl(part.url)"
             controls
@@ -193,20 +234,20 @@ function authUrl(url) {
             v-if="part.url"
             class="bubble-file-card"
             :href="authUrl(part.url)"
-            target="_blank"
+            :target="authUrl(part.url) ? '_blank' : '_self'"
             rel="noopener noreferrer"
           >
             <span class="bubble-file-icon">{{ fileIcon(part.mime_type) }}</span>
             <span class="bubble-file-info">
-              <span class="bubble-file-name">{{ part.filename || '附件' }}</span>
+              <span class="bubble-file-name">{{ part.filename || '闄勪欢' }}</span>
               <span v-if="formatFileSize(part.size)" class="bubble-file-size">{{ formatFileSize(part.size) }}</span>
             </span>
           </a>
           <div v-else class="bubble-image-fallback">文件链接不可用</div>
         </div>
         <div v-else class="bubble-unknown-attachment">
-          <span class="bubble-unknown-icon">📎</span>
-          <span>未知附件</span>
+          <span class="bubble-unknown-icon">馃搸</span>
+          <span>鏈煡闄勪欢</span>
         </div>
       </template>
     </div>
