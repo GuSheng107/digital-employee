@@ -148,11 +148,13 @@
 
 ### 前置依赖
 
-| 工具   | 版本要求 | 用途                          |
-|--------|----------|-------------------------------|
-| Python | 3.10+    | Backend Agent                 |
-| Node   | 18+      | 前端构建（静态）              |
-| Go     | 1.21+    | Backend Gateway（仅参考）     |
+| 工具 | 版本要求 | 用途 |
+|------|----------|------|
+| Python | 3.10+ | Backend Agent |
+| Python | 3.11+ | Backend Gateway |
+| Node.js | 22.14.x | 根目录 React 前端（以 `frontend/package.json` 为准） |
+| uv | 当前稳定版 | Backend Gateway 依赖与命令管理 |
+| Docker Compose | 可选 | 启动 RabbitMQ 与 MinIO 本地依赖 |
 
 ### 克隆与安装
 
@@ -160,35 +162,57 @@
 git clone https://github.com/GuSheng107/digital-employee.git
 cd digital-employee
 
-# Backend Agent
+# Backend Agent 与当前 Vue 管理端
 cd backend-agent
 python -m venv .venv
 source .venv/bin/activate   # Windows 用 .venv\Scripts\activate
-pip install -e ".[dev]"
+pip install -e . pytest
+cd web
+npm ci
+npm run build
+cd ../..
+
+# Backend Gateway
+cd backend-gateway
+python -m pip install uv
+python -m uv sync
+cp .env.example .env
+cp config/bot.template.json config/bot.json
 cd ..
 
-# 前端（仅在构建时需要）
+# React 新管理端脚手架
 cd frontend
-npm install
-npm run build               # 输出到 backend-agent 的 web 目录
+npm ci
+npm run build
 cd ..
 
-# 或使用 Make（Linux/macOS）
-make install-agent
-make build-frontend
+# 或在已安装 GNU Make 的环境使用统一命令
+make install
+make build
 ```
 
 ### 启动项目
 
 ```bash
-# Linux / macOS
+# 启动 Backend Agent（Linux / macOS）
 ./scripts/start-web.sh
 
-# Windows
+# 启动 Backend Agent（Windows）
 scripts\start-web.cmd
+
+# 启动代码当前依赖的 RabbitMQ 与 MinIO
+docker compose up -d
+
+# 启动 Backend Gateway（另开终端）
+cd backend-gateway
+python -m uv run python -m src.main
+
+# 启动 React 新管理端开发服务器（另开终端）
+cd frontend
+npm run dev
 ```
 
-Web 控制台将在 <http://localhost:8765> 启动。
+Backend Agent 及当前 Vue 控制台默认监听 <http://localhost:8765>，Backend Gateway 默认监听 <http://localhost:8000>。根目录 React 前端目前是独立脚手架，尚未替代 `backend-agent/web`。
 
 ---
 
@@ -258,9 +282,9 @@ BREAKING CHANGE: webhook platform configs must be migrated to grpc
 
 简要总结：
 
-- **Python**：`black` + `isort` + type hints；遵循 PEP 8；snake_case；公开 API 必须有 docstring
-- **Vue/JS**：ESLint + Prettier；2 空格缩进；单引号；无分号
-- **Go**（gateway）：`gofmt` + `golangci-lint`；显式错误处理
+- **Python**：遵循 PEP 8；snake_case；公共 API 使用 type hints 与 docstring；Gateway 使用 Ruff 检查
+- **React/TypeScript**：遵循 `frontend/docs/frontend-development-spec.md`，使用 ESLint、CSS Modules 和严格类型约束
+- **Vue/JavaScript**：`backend-agent/web` 保持 2 空格缩进、单引号、无分号，并沿用现有组件与 composable 结构
 
 ### 测试要求
 
@@ -270,13 +294,27 @@ BREAKING CHANGE: webhook platform configs must be migrated to grpc
 - ✅ 关注行为覆盖，不追求覆盖率数字
 - ❌ 不要通过禁用或跳过已有测试来让改动通过
 
-提交前运行测试套件：
+提交前按改动范围运行对应检查：
 
 ```bash
-cd backend-agent
-.venv/Scripts/activate   # 或 source .venv/bin/activate
-python -m pytest
+# Backend Agent
+backend-agent/.venv/Scripts/python.exe -m pytest backend-agent/tests
+
+# Backend Gateway
+cd backend-gateway
+python -m uv run ruff check src
+
+# React 新管理端
+cd ../frontend
+npm run lint
+npm run build
+
+# 当前 Vue 管理端
+cd ../backend-agent/web
+npm run build
 ```
+
+也可以在已安装 GNU Make 的环境运行 `make check`。Gateway 当前没有提交自动化测试；修改其行为时应随功能补充测试，而不是把 Ruff 当作测试替代品。
 
 ### 数据库变更
 
