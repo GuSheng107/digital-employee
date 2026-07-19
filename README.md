@@ -1,121 +1,168 @@
 # Digital Employee - 数字员工
 
-多平台 AI 数字员工系统，支持企微、飞书、钉钉、微信公众号、Telegram 等多平台接入，提供智能对话、任务编排、多模态交互等能力。
+Digital Employee 是一个面向企业 IM 场景的数字员工项目。仓库当前包含一套可独立运行的企业微信 Agent 服务、一套正在重写的飞书消息网关，以及新旧两套管理端前端。
 
-## 贡献者
+## 当前实现
 
-- [@GuSheng107](https://github.com/GuSheng107) - 项目发起人 & 主要维护者
+| 模块 | 技术栈 | 当前职责与状态 |
+| --- | --- | --- |
+| `backend-agent/` | Python 3.10+、FastAPI、LangChain、SQLite | 企业微信长连接、Agent 运行时、Skills/MCP、记忆、任务、日志和现有管理 API |
+| `backend-agent/web/` | Vue 3、Element Plus、Vite | `backend-agent` 当前实际托管的管理控制台 |
+| `backend-gateway/` | Python 3.11+、FastAPI、lark-oapi、RabbitMQ、MinIO | 飞书多 Bot 长连接、消息归一化、多模态转存、Test/Prod 双模式路由和 Admin API |
+| `frontend/` | React 19、TypeScript、Ant Design 6、Vite 8 | 新管理端脚手架；目前只有布局和示例页面，尚未替代现有 Vue 控制台 |
 
-## 项目架构
+当前可确认的平台实现：
 
+- 企业微信：由 `backend-agent/wecom_bot/` 直接接入并调用 Agent Runtime。
+- 飞书：由 `backend-gateway/src/platforms/feishu/` 接入。
+- 其他平台：当前代码中没有可运行的适配器。
+
+## 架构现状
+
+```text
+企业微信 <-> backend-agent/wecom_bot
+                    |
+                    v
+             Agent Runtime
+          Skills / MCP / Memory
+                    |
+                 SQLite
+
+飞书 <-> backend-gateway <-> MinIO（多模态文件）
+                    |
+          test: 内存 Mock 回显
+          prod: RabbitMQ 入站/出站队列
+                    |
+          Agent 侧 MQ 消费者尚未在本仓库实现
 ```
+
+`backend-agent` 与 `backend-gateway` 目前是两个独立服务。网关的生产模式会把标准消息发布到 RabbitMQ，但 `backend-agent` 尚未实现对应的 MQ 消费与回复发布链路，因此生产模式还不能在本仓库内完成端到端闭环。
+
+## 目录结构
+
+```text
 digital-employee/
-├── backend-agent/      # Python/FastAPI - 数字员工核心（Agent 运行时、技能系统、记忆管理）
-├── backend-gateway/    # Go - 多平台消息网关（参考用，后续将替换为 Python 自研）
-├── frontend/           # Vue3 + Element Plus - 管理控制台（静态构建）
-├── scripts/            # 启动脚本
-├── docker-compose.yml  # 一键启动
-└── Makefile            # 统一构建入口
+├── backend-agent/       # 企业微信 Agent 服务与现有 Vue 管理端
+├── backend-gateway/     # Python 飞书消息网关
+├── frontend/            # React + TypeScript 新管理端脚手架
+├── scripts/             # backend-agent 启动与清理脚本
+├── docker-compose.yml   # RabbitMQ、MinIO 本地依赖
+└── Makefile             # 可选的统一开发命令
 ```
 
-## 核心模块
+## 环境要求
 
-- **Agent Runtime**: 支持 single/routing/pipeline/fan_out/review 多种编排模式
-- **Platform Gateway**: 统一平台接口，抽象 PlatformBase 基类（WEBHOOK/WEBSOCKET/LONG_POLL/STREAM）
-- **Skills System**: 可扩展技能框架，支持 MCP 协议
-- **Memory System**: 多层记忆管理（短期/长期/文档）
-- **Multi-modal**: 支持图片、文件、音频收发
+- `backend-agent`：Python 3.10+
+- `backend-gateway`：Python 3.11+、[uv](https://docs.astral.sh/uv/)
+- `frontend`：`package.json` 当前声明 Node.js 22.14.x
+- 前端依赖安装：npm
+- 网关联调：RabbitMQ；处理图片、音频、视频或文件时还需要 MinIO
+- 可选：Docker Compose，用于启动 RabbitMQ 和 MinIO
 
-## 快速开始
+## 启动 backend-agent
 
-### 环境要求
+在 `backend-agent` 中创建虚拟环境并安装依赖：
 
-- Python 3.10+
-- Node.js 18+（仅构建前端时需要）
-
-### 安装
-
-```bash
-# 安装 backend-agent 依赖
+```powershell
 cd backend-agent
 python -m venv .venv
-
-# Windows
-.venv\Scripts\activate
-
-# macOS / Linux
-source .venv/bin/activate
-
-pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pip install -e . pytest
 ```
 
-或使用 Makefile：
+构建当前 Vue 管理端：
 
-```bash
-make install-agent
+```powershell
+cd web
+npm ci
+npm run build
+cd ..
 ```
 
-### 启动
+启动服务：
 
-```bash
-# 使用启动脚本（推荐）
-scripts\start-web.cmd        # Windows
-./scripts/start-web.sh       # macOS / Linux
-
-# 或手动启动
-cd backend-agent
-.venv\Scripts\activate       # Windows
-source .venv/bin/activate    # macOS / Linux
-python main.py
+```powershell
+.\.venv\Scripts\python.exe .\main.py
 ```
 
-启动后访问 http://localhost:8765
+也可以在仓库根目录运行 `scripts\start-web.cmd`。默认访问地址为 <http://localhost:8765>，OpenAPI 文档位于 <http://localhost:8765/docs>。
 
-### 构建前端
+## 启动 backend-gateway
 
-前端为静态页面，由 backend-agent 直接托管，无需单独启动：
+先在仓库根目录启动代码当前使用的基础依赖：
 
-```bash
-make build-frontend
+```powershell
+docker compose up -d
 ```
 
-### Docker
+RabbitMQ 管理端默认位于 <http://localhost:15672>，账号和密码均可通过 Compose 环境变量覆盖。MinIO API 默认映射到 `19000`，控制台默认映射到 `19001`。
 
-```bash
-docker compose up --build
+安装并配置网关：
+
+```powershell
+cd backend-gateway
+python -m pip install uv
+python -m uv sync
+Copy-Item .env.example .env
+Copy-Item config\bot.template.json config\bot.json
+python -m uv run python -m src.main
 ```
 
-## 平台支持
+在 `.env` 中设置 RabbitMQ、MinIO 连接信息，并在 `config/bot.json` 中填写飞书应用凭证。网关默认监听 <http://localhost:8000>，健康检查为 `GET /api/v1/health`。
 
-| 平台 | 连接方式 | 状态 |
-|------|---------|------|
-| 企业微信 | WebSocket 长连接 | ✅ 已实现 |
-| 飞书 | WebSocket | 🔲 规划中 |
-| 钉钉 | Stream 长连接 | 🔲 规划中 |
-| 微信公众号 | HTTP 长轮询 | 🔲 规划中 |
-| Telegram | Webhook | 🔲 规划中 |
+即使 Bot 使用 `test` 模式，网关启动阶段仍会连接 RabbitMQ；媒体消息只有在实际收发时才会访问 MinIO。
 
-## 技术栈
+## 新 React 管理端
 
-- **Backend Agent**: Python 3.10, FastAPI, SQLAlchemy, LangChain
-- **Backend Gateway**: Go (参考), 计划迁移至 Python 自研
-- **Frontend**: Vue 3, Element Plus, Vite（静态构建）
-- **Storage**: SQLite / PostgreSQL, Redis
+根目录下的 `frontend/` 当前是独立脚手架，不会被 `backend-agent` 托管，也尚未包含实际业务页面：
+
+```powershell
+cd frontend
+npm ci
+npm run dev
+```
+
+可通过 `VITE_API_BASE_URL` 指定后端 API 前缀。生产构建命令为 `npm run build`。
+
+## Makefile
+
+安装了 GNU Make 的环境可以使用以下统一命令：
+
+```text
+make install          # 安装 Agent、Gateway 和两套前端依赖
+make infra-up         # 启动 RabbitMQ 与 MinIO
+make dev-agent        # 启动 backend-agent
+make dev-gateway      # 启动 backend-gateway
+make dev-frontend     # 启动 React 管理端开发服务器
+make build            # 构建两套前端
+make check            # 运行现有测试、lint 和构建检查
+```
+
+Windows 环境不要求安装 Make，可直接执行上文的 PowerShell 命令或 `scripts\start-web.cmd`。
+
+## 验证
+
+```powershell
+# backend-agent 测试
+.\backend-agent\.venv\Scripts\python.exe -m pytest backend-agent\tests
+
+# backend-gateway lint
+cd backend-gateway
+python -m uv run ruff check src
+
+# React 管理端
+cd ..\frontend
+npm run lint
+npm run build
+
+# 当前 Vue 管理端
+cd ..\backend-agent\web
+npm run build
+```
 
 ## 贡献
 
-我们欢迎所有形式的贡献 — 提交 bug 报告、提出功能建议、改进文档或贡献代码。
-
-📖 请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 了解完整的协作流程。
-
-> **注意**：`master` 分支已受保护，所有改动必须通过 Pull Request 流程合入。
-> 当前要求：必须通过 PR、推送新 commit 后旧 review 自动失效、管理员不可绕过。
+所有进入 `master` 的改动都应通过 Pull Request 合入。分支命名、提交格式、测试与 Review 要求见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 许可证
 
 [MIT License](LICENSE)
-
-## 致谢
-
-- [wecom-bot-agent](https://github.com/GuSheng107/wecom-bot-agent) - 企微 AI 机器人核心
-- [cc-connect](https://github.com/agent-api/cc-connect) - 多平台消息网关参考

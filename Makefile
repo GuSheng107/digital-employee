@@ -1,49 +1,94 @@
-.PHONY: help dev dev-agent dev-gateway install install-agent build build-frontend clean
+.PHONY: help install install-agent install-agent-web install-gateway install-frontend \
+	dev dev-agent dev-gateway dev-frontend dev-agent-web \
+	infra-up infra-down infra-status build build-agent-web build-frontend \
+	test-agent lint-gateway lint-frontend check clean
 
-help: ## Show this help
+PYTHON ?= python
+NPM ?= npm
+UV ?= $(PYTHON) -m uv
+
+ifeq ($(OS),Windows_NT)
+AGENT_PYTHON := backend-agent/.venv/Scripts/python.exe
+else
+AGENT_PYTHON := backend-agent/.venv/bin/python
+endif
+
+help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-# ========================
 # Development
-# ========================
 
-dev: ## Start all services (docker)
-	docker compose up --build
+dev: infra-up ## Start local infrastructure and print service commands
+	@echo "Infrastructure is running. Start app services in separate terminals:"
+	@echo "  make dev-agent"
+	@echo "  make dev-gateway"
+	@echo "  make dev-frontend"
 
-VENV := backend-agent/.venv
-PYTHON := $(VENV)/Scripts/python.exe
+dev-agent: ## Start backend-agent on port 8765
+	$(AGENT_PYTHON) backend-agent/main.py --project-root backend-agent
 
-dev-agent: ## Start backend-agent only
-	cd backend-agent && $(PYTHON) main.py
+dev-gateway: ## Start backend-gateway on port 8000
+	cd backend-gateway && $(UV) run python -m src.main
 
-dev-gateway: ## Start backend-gateway only
-	cd backend-gateway/cmd/cc-connect && go run .
+dev-frontend: ## Start the React frontend development server
+	cd frontend && $(NPM) run dev
 
-# ========================
-# Install
-# ========================
+dev-agent-web: ## Start the current Vue console development server
+	cd backend-agent/web && $(NPM) run dev
 
-install: install-agent ## Install all dependencies
+# Infrastructure
 
-install-agent: ## Install Python dependencies in .venv
-	cd backend-agent && python -m venv .venv && $(PYTHON) -m pip install -e ".[dev]"
+infra-up: ## Start RabbitMQ and MinIO
+	docker compose up -d
 
-# ========================
+infra-down: ## Stop RabbitMQ and MinIO
+	docker compose down
+
+infra-status: ## Show infrastructure status
+	docker compose ps
+
+# Installation
+
+install: install-agent install-agent-web install-gateway install-frontend ## Install all dependencies
+
+install-agent: ## Create backend-agent virtualenv and install runtime/test dependencies
+	$(PYTHON) -m venv backend-agent/.venv
+	$(AGENT_PYTHON) -m pip install -e backend-agent pytest
+
+install-agent-web: ## Install the current Vue console dependencies
+	cd backend-agent/web && $(NPM) ci
+
+install-gateway: ## Install backend-gateway dependencies with uv
+	cd backend-gateway && $(UV) sync
+
+install-frontend: ## Install the React frontend dependencies
+	cd frontend && $(NPM) ci
+
 # Build
-# ========================
 
-build: build-frontend ## Build all
+build: build-agent-web build-frontend ## Build both frontend applications
 
-build-frontend: ## Build frontend static files
-	cd frontend && npm install && npm run build
+build-agent-web: ## Build the current Vue console
+	cd backend-agent/web && $(NPM) run build
 
-# ========================
-# Clean
-# ========================
+build-frontend: ## Build the React frontend scaffold
+	cd frontend && $(NPM) run build
 
-clean: ## Remove build artifacts
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	find . -type d -name node_modules -exec rm -rf {} + 2>/dev/null || true
-	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
-	find . -type d -name .venv -exec rm -rf {} + 2>/dev/null || true
-	rm -rf frontend/dist
+# Verification
+
+test-agent: ## Run backend-agent tests
+	$(AGENT_PYTHON) -m pytest backend-agent/tests
+
+lint-gateway: ## Run ruff against backend-gateway
+	cd backend-gateway && $(UV) run ruff check src
+
+lint-frontend: ## Run ESLint against the React frontend
+	cd frontend && $(NPM) run lint
+
+check: test-agent lint-gateway lint-frontend build-agent-web build-frontend ## Run repository checks available today
+
+# Cleanup
+
+clean: ## Remove generated caches and frontend build output
+	$(PYTHON) scripts/clean-pycache.py
+	$(PYTHON) -c "import shutil; [shutil.rmtree(path, ignore_errors=True) for path in ('backend-agent/.pytest_cache', 'backend-gateway/.pytest_cache', 'backend-agent/web/dist', 'frontend/dist')]"
