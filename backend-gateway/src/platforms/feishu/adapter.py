@@ -14,6 +14,10 @@ from typing import Any
 from urllib.parse import urlparse
 
 import lark_oapi as lark
+from lark_oapi.event.callback.model.p2_card_action_trigger import (
+    P2CardActionTrigger,
+    P2CardActionTriggerResponse,
+)
 from loguru import logger
 
 from src.core.hub import hub
@@ -437,14 +441,18 @@ class FeishuAdapter(BaseAdapter):
         elif msg.chat_type == "group":
             self._reply_post_group(msg.message_id, raw_post_content)
 
-    def handle_card_action(self, data: Any) -> Any:
+    def handle_card_action(
+        self, data: P2CardActionTrigger
+    ) -> P2CardActionTriggerResponse:
         """处理飞书交互卡片动作（Card Action）回调事件，归一化为 StandardMessage 文本消息。
 
+        根据飞书卡片回调官方响应规范，返回包装了 Toast 的 P2CardActionTriggerResponse 对象。
+
         Args:
-            data: 飞书推送的卡片交互动作事件实体。
+            data: 飞书推送的卡片交互动作事件实体 (P2CardActionTrigger)。
 
         Returns:
-            符合飞书 API 期望的响应响应对象。
+            符合飞书 SDK 规范的 P2CardActionTriggerResponse 响应实体。
         """
         try:
             event = getattr(data, "event", None) or data
@@ -461,6 +469,7 @@ class FeishuAdapter(BaseAdapter):
             action_value = getattr(action, "value", {}) if action else {}
             form_value = getattr(action, "form_value", {}) if action else {}
             option_val = getattr(action, "option", "") if action else ""
+            input_val = getattr(action, "input_value", "") if action else ""
 
             logger.info(
                 "[BotID: {}] 收到飞书卡片交互事件 -> open_id='{}', action_value='{}', form_value='{}', option='{}'",
@@ -472,7 +481,7 @@ class FeishuAdapter(BaseAdapter):
             )
 
             user_choices: list[str] = []
-            if isinstance(form_value, dict):
+            if isinstance(form_value, dict) and form_value:
                 abc_val = form_value.get("option_abc")
                 if abc_val:
                     user_choices.append(f"单选结果: {abc_val}")
@@ -483,7 +492,10 @@ class FeishuAdapter(BaseAdapter):
             if not user_choices and option_val:
                 user_choices.append(f"单选结果: {option_val}")
 
-            if not user_choices and isinstance(action_value, dict):
+            if not user_choices and input_val:
+                user_choices.append(f"输入内容: {input_val}")
+
+            if not user_choices and isinstance(action_value, dict) and action_value:
                 val_action = action_value.get("action")
                 if val_action:
                     user_choices.append(f"卡片动作: {val_action}")
@@ -508,10 +520,23 @@ class FeishuAdapter(BaseAdapter):
             )
             self._submit_to_hub(standard_msg)
 
-            return {"toast": {"type": "info", "content": "提交成功！"}}
+            return P2CardActionTriggerResponse(
+                {
+                    "toast": {
+                        "type": "info",
+                        "content": "提交成功！",
+                        "i18n": {
+                            "zh_cn": "提交成功！",
+                            "en_us": "Submitted successfully!",
+                        },
+                    }
+                }
+            )
         except Exception as exc:
             logger.error("[BotID: {}] 处理卡片交互事件发生异常: {}", self.bot.bot_id, exc)
-            return None
+            return P2CardActionTriggerResponse(
+                {"toast": {"type": "error", "content": "提交处理异常"}}
+            )
 
     # ==========================================
     # 多模态资源置换核心逻辑（MinIO <--> 飞书）
