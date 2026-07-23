@@ -481,9 +481,14 @@ class FeishuAdapter(BaseAdapter):
             )
 
             user_choices: list[str] = []
+            if isinstance(action_value, dict) and action_value:
+                abc_btn = action_value.get("option_abc")
+                if abc_btn:
+                    user_choices.append(f"单选结果: {abc_btn}")
+
             if isinstance(form_value, dict) and form_value:
                 abc_val = form_value.get("option_abc")
-                if abc_val:
+                if abc_val and f"单选结果: {abc_val}" not in user_choices:
                     user_choices.append(f"单选结果: {abc_val}")
                 custom_d = form_value.get("custom_option_d")
                 if custom_d:

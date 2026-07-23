@@ -209,35 +209,40 @@ class MessageHub:
                                 "name": "question_form",
                                 "elements": [
                                     {
-                                        "tag": "select_static",
-                                        "name": "option_abc",
-                                        "placeholder": {
+                                        "tag": "button",
+                                        "name": "btn_option_a",
+                                        "text": {
                                             "tag": "plain_text",
-                                            "content": "请选择 A/B/C 选项"
+                                            "content": "A: 方案一 (RabbitMQ 纯异步)"
                                         },
-                                        "options": [
-                                            {
-                                                "text": {
-                                                    "tag": "plain_text",
-                                                    "content": "A: 方案一 (RabbitMQ 纯异步)"
-                                                },
-                                                "value": "A: 方案一 (RabbitMQ 纯异步)"
-                                            },
-                                            {
-                                                "text": {
-                                                    "tag": "plain_text",
-                                                    "content": "B: 方案二 (HTTP 直连)"
-                                                },
-                                                "value": "B: 方案二 (HTTP 直连)"
-                                            },
-                                            {
-                                                "text": {
-                                                    "tag": "plain_text",
-                                                    "content": "C: 方案三 (WebSocket 长连接)"
-                                                },
-                                                "value": "C: 方案三 (WebSocket 长连接)"
-                                            }
-                                        ]
+                                        "type": "default",
+                                        "value": {
+                                            "option_abc": "A: 方案一 (RabbitMQ 纯异步)"
+                                        }
+                                    },
+                                    {
+                                        "tag": "button",
+                                        "name": "btn_option_b",
+                                        "text": {
+                                            "tag": "plain_text",
+                                            "content": "B: 方案二 (HTTP 直连)"
+                                        },
+                                        "type": "default",
+                                        "value": {
+                                            "option_abc": "B: 方案二 (HTTP 直连)"
+                                        }
+                                    },
+                                    {
+                                        "tag": "button",
+                                        "name": "btn_option_c",
+                                        "text": {
+                                            "tag": "plain_text",
+                                            "content": "C: 方案三 (WebSocket 长连接)"
+                                        },
+                                        "type": "default",
+                                        "value": {
+                                            "option_abc": "C: 方案三 (WebSocket 长连接)"
+                                        }
                                     },
                                     {
                                         "tag": "input",
