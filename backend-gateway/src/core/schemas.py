@@ -62,6 +62,8 @@ class MessageType(str, Enum):
     AUDIO = "audio"
     VIDEO = "video"
     FILE = "file"
+    CARD = "card"
+    INTERACTIVE = "interactive"
 
     def __str__(self) -> str:
         return self.value
@@ -74,6 +76,8 @@ class MessageContent(BaseModel):
     text: str | None = Field(default=None, description="文本内容")
     file_url: str | None = Field(default=None, description="已转存至本地 MinIO 的统一对象 URL")
     file_name: str | None = Field(default=None, description="文件原始名称（可选）")
+    card_json: str | dict | None = Field(default=None, description="交互卡片 JSON 结构或对象")
+
 
 
 

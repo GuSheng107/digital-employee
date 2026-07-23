@@ -349,6 +349,25 @@ class FeishuAdapter(BaseAdapter):
             len(msg.content),
         )
 
+        # 检查是否包含卡片消息（MessageType.CARD 或 MessageType.INTERACTIVE）
+        for item in msg.content:
+            if item.msg_type in (MessageType.CARD, MessageType.INTERACTIVE) and item.card_json:
+                card_str = (
+                    item.card_json
+                    if isinstance(item.card_json, str)
+                    else json.dumps(item.card_json, ensure_ascii=False)
+                )
+                logger.info(
+                    "[BotID: {}] 准备发送交互卡片消息 JSON: {}",
+                    self.bot.bot_id,
+                    card_str,
+                )
+                if msg.chat_type == "p2p":
+                    self._send_card_p2p(msg.session_id, card_str)
+                elif msg.chat_type == "group":
+                    self._reply_card_group(msg.message_id, card_str)
+                return
+
         # 构造统一的富文本骨架
         post_content: dict[str, Any] = {
             "zh_cn": {
@@ -404,8 +423,6 @@ class FeishuAdapter(BaseAdapter):
                     {"tag": "a", "href": file_url, "text": "点击下载"}
                 ])
 
-
-
         # 飞书 V1 发送/回复消息接口中，msg_type="post" 的 content 字符串最外层绝对不能包含 "post" 键
         # 必须直接以多语言节点（如 zh_cn）为根，格式为：{"zh_cn": {"title": "", "content": ...}}
         raw_post_content = lark.JSON.marshal(post_content)
@@ -419,6 +436,82 @@ class FeishuAdapter(BaseAdapter):
             self._send_post_p2p(msg.session_id, raw_post_content)
         elif msg.chat_type == "group":
             self._reply_post_group(msg.message_id, raw_post_content)
+
+    def handle_card_action(self, data: Any) -> Any:
+        """处理飞书交互卡片动作（Card Action）回调事件，归一化为 StandardMessage 文本消息。
+
+        Args:
+            data: 飞书推送的卡片交互动作事件实体。
+
+        Returns:
+            符合飞书 API 期望的响应响应对象。
+        """
+        try:
+            event = getattr(data, "event", None) or data
+            operator = getattr(event, "operator", None)
+            open_id = getattr(operator, "open_id", "") if operator else ""
+            context = getattr(event, "context", None)
+            open_message_id = getattr(context, "open_message_id", "") if context else ""
+            open_chat_id = getattr(context, "open_chat_id", "") if context else ""
+
+            chat_type = "group" if open_chat_id else "p2p"
+            session_id = open_chat_id if chat_type == "group" else open_id
+
+            action = getattr(event, "action", None)
+            action_value = getattr(action, "value", {}) if action else {}
+            form_value = getattr(action, "form_value", {}) if action else {}
+            option_val = getattr(action, "option", "") if action else ""
+
+            logger.info(
+                "[BotID: {}] 收到飞书卡片交互事件 -> open_id='{}', action_value='{}', form_value='{}', option='{}'",
+                self.bot.bot_id,
+                open_id,
+                action_value,
+                form_value,
+                option_val,
+            )
+
+            user_choices: list[str] = []
+            if isinstance(form_value, dict):
+                abc_val = form_value.get("option_abc")
+                if abc_val:
+                    user_choices.append(f"单选结果: {abc_val}")
+                custom_d = form_value.get("custom_option_d")
+                if custom_d:
+                    user_choices.append(f"D选项自填: {custom_d}")
+
+            if not user_choices and option_val:
+                user_choices.append(f"单选结果: {option_val}")
+
+            if not user_choices and isinstance(action_value, dict):
+                val_action = action_value.get("action")
+                if val_action:
+                    user_choices.append(f"卡片动作: {val_action}")
+
+            summary_text = "；".join(user_choices) if user_choices else "提交卡片选项"
+            norm_text = f"[卡片提交结果] {summary_text}"
+
+            standard_msg = StandardMessage(
+                message_id=open_message_id,
+                platform="feishu",
+                bot_id=self.bot.bot_id,
+                chat_type=chat_type,
+                session_id=session_id,
+                sender_id=open_id,
+                content=[MessageContent(msg_type=MessageType.TEXT, text=norm_text)],
+            )
+
+            logger.info(
+                "[BotID: {}] 卡片交互成功归一化为文本消息: {}",
+                self.bot.bot_id,
+                norm_text,
+            )
+            self._submit_to_hub(standard_msg)
+
+            return {"toast": {"type": "info", "content": "提交成功！"}}
+        except Exception as exc:
+            logger.error("[BotID: {}] 处理卡片交互事件发生异常: {}", self.bot.bot_id, exc)
+            return None
 
     # ==========================================
     # 多模态资源置换核心逻辑（MinIO <--> 飞书）
@@ -658,3 +751,55 @@ class FeishuAdapter(BaseAdapter):
                 )
         except Exception as exc:
             logger.error("[BotID: {}] 群聊富文本回复异常: {}", self.bot.bot_id, exc)
+
+    def _send_card_p2p(self, open_id: str, card_content: str) -> None:
+        """单聊发送交互卡片消息。"""
+        try:
+            req = (
+                lark.im.v1.CreateMessageRequest.builder()
+                .receive_id_type("open_id")
+                .request_body(
+                    lark.im.v1.CreateMessageRequestBody.builder()
+                    .receive_id(open_id)
+                    .msg_type("interactive")
+                    .content(card_content)
+                    .build()
+                )
+                .build()
+            )
+            resp = self.bot.api_client.im.v1.message.create(req)
+            if not resp.success():
+                logger.error(
+                    "[BotID: {}] 单聊交互卡片发送失败: code={}, msg={}",
+                    self.bot.bot_id,
+                    resp.code,
+                    resp.msg,
+                )
+        except Exception as exc:
+            logger.error("[BotID: {}] 单聊交互卡片发送异常: {}", self.bot.bot_id, exc)
+
+    def _reply_card_group(self, message_id: str, card_content: str) -> None:
+        """群聊回复交互卡片消息。"""
+        try:
+            req = (
+                lark.im.v1.ReplyMessageRequest.builder()
+                .message_id(message_id)
+                .request_body(
+                    lark.im.v1.ReplyMessageRequestBody.builder()
+                    .content(card_content)
+                    .msg_type("interactive")
+                    .build()
+                )
+                .build()
+            )
+            resp = self.bot.api_client.im.v1.message.reply(req)
+            if not resp.success():
+                logger.error(
+                    "[BotID: {}] 群聊交互卡片回复失败: code={}, msg={}",
+                    self.bot.bot_id,
+                    resp.code,
+                    resp.msg,
+                )
+        except Exception as exc:
+            logger.error("[BotID: {}] 群聊交互卡片回复异常: {}", self.bot.bot_id, exc)
+

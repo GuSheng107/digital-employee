@@ -173,11 +173,108 @@ class MessageHub:
             # 非阻塞切换，释放协程控制权
             await asyncio.sleep(1.0)
 
-            # 深拷贝一份并修改内容
-            reply_msg = msg.model_copy(deep=True)
-            for item in reply_msg.content:
+            # 检查是否为 /card 或 !card 卡片指令
+            is_card_cmd = False
+            for item in msg.content:
                 if item.msg_type == MessageType.TEXT and item.text:
-                    item.text = f"【TEST 异步模拟大脑】已收到指令: {item.text}"
+                    text_strip = item.text.strip().lower()
+                    if text_strip in ("/card", "!card", "card"):
+                        is_card_cmd = True
+                        break
+
+            reply_msg = msg.model_copy(deep=True)
+
+            if is_card_cmd:
+                logger.info("[MockAgent] 检测到卡片指令，构建符合 Schema 2.0 规范的交互卡片。")
+                card_dict = {
+                    "schema": "2.0",
+                    "header": {
+                        "title": {
+                            "tag": "plain_text",
+                            "content": "【测试题目】请选择您的首选方案："
+                        },
+                        "template": "blue"
+                    },
+                    "body": {
+                        "elements": [
+                            {
+                                "tag": "div",
+                                "text": {
+                                    "tag": "lark_md",
+                                    "content": "**题目：** 在智能员工系统中，您倾向采用哪种底层通信链路？"
+                                }
+                            },
+                            {
+                                "tag": "form",
+                                "name": "question_form",
+                                "elements": [
+                                    {
+                                        "tag": "select_static",
+                                        "name": "option_abc",
+                                        "placeholder": {
+                                            "tag": "plain_text",
+                                            "content": "请选择 A/B/C 选项"
+                                        },
+                                        "options": [
+                                            {
+                                                "text": {
+                                                    "tag": "plain_text",
+                                                    "content": "A: 方案一 (RabbitMQ 纯异步)"
+                                                },
+                                                "value": "A: 方案一 (RabbitMQ 纯异步)"
+                                            },
+                                            {
+                                                "text": {
+                                                    "tag": "plain_text",
+                                                    "content": "B: 方案二 (HTTP 直连)"
+                                                },
+                                                "value": "B: 方案二 (HTTP 直连)"
+                                            },
+                                            {
+                                                "text": {
+                                                    "tag": "plain_text",
+                                                    "content": "C: 方案三 (WebSocket 长连接)"
+                                                },
+                                                "value": "C: 方案三 (WebSocket 长连接)"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "tag": "input",
+                                        "name": "custom_option_d",
+                                        "placeholder": {
+                                            "tag": "plain_text",
+                                            "content": "D 选项：请在此处自定义输入选项内容"
+                                        }
+                                    },
+                                    {
+                                        "tag": "button",
+                                        "name": "submit_btn",
+                                        "text": {
+                                            "tag": "plain_text",
+                                            "content": "提交选择"
+                                        },
+                                        "type": "primary",
+                                        "action_type": "form_submit",
+                                        "value": {
+                                            "action": "submit_question_card"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+                reply_msg.content = [
+                    MessageContent(
+                        msg_type=MessageType.CARD,
+                        card_json=json.dumps(card_dict, ensure_ascii=False)
+                    )
+                ]
+            else:
+                for item in reply_msg.content:
+                    if item.msg_type == MessageType.TEXT and item.text:
+                        item.text = f"【TEST 异步模拟大脑】已收到指令: {item.text}"
 
             logger.debug(
                 "[MockAgent] 处理完成，投递至出站切面 (SessionID: {}).",

@@ -48,6 +48,7 @@ class FeishuBot(BaseBot):
         self.event_handler: lark.EventDispatcherHandler = (
             lark.EventDispatcherHandler.builder("", "")
             .register_p2_im_message_receive_v1(self._handle_message)
+            .register_p2_card_action_trigger(self._handle_card_action)
             .build()
         )
 
@@ -126,3 +127,12 @@ class FeishuBot(BaseBot):
         """
         # 直接交由绑定的适配器处理翻译和入站
         self.adapter.handle_receive(data)
+
+    def _handle_card_action(self, data: Any) -> Any:
+        """接收卡片交互动作事件，交付适配器处理并归一化出站。
+
+        Args:
+            data: 飞书卡片交互动作事件体。
+        """
+        return self.adapter.handle_card_action(data)
+
