@@ -8,18 +8,24 @@
 import asyncio
 import base64
 import concurrent.futures
-from collections import OrderedDict
 import io
+import json
 import urllib.request
-from urllib.parse import urlparse
 import uuid
+from collections import OrderedDict
 from typing import Any
+from urllib.parse import urlparse
 
 from Crypto.Cipher import AES
 from loguru import logger
 
 from src.core.hub import hub
-from src.core.schemas import MessageContent, MessageType, StandardMessage
+from src.core.schemas import (
+    MessageContent,
+    MessageType,
+    QuestionCardData,
+    StandardMessage,
+)
 from src.platforms.base import BaseAdapter
 from src.utils.minio_client import minio_client
 
@@ -107,6 +113,41 @@ class WeChatAdapter(BaseAdapter):
             session_id=session_id,
             sender_id=sender_id,
         )
+
+        # 0. 优先检测企微模板卡片按钮点击回调事件 (template_card_event)
+        event_type = str(body.get("event") or body.get("event_type") or body.get("Event") or "")
+        event_key = str(
+            body.get("event_key")
+            or body.get("EventKey")
+            or body.get("key")
+            or (
+                body.get("selected_items", [{}])[0].get("question_key", "")
+                if isinstance(body.get("selected_items"), list) and body.get("selected_items")
+                else ""
+            )
+        )
+        cb_task_id = str(body.get("task_id") or body.get("taskId") or "")
+
+        if event_type in ("template_card_event", "card_button_click") or (msg_type_raw == "event" and event_key):
+            logger.info(
+                "[BotID: {}] 识别到企微卡片按钮点击回调事件 -> task_id='{}', event_key='{}', sender_id='{}'",
+                self.bot.bot_id,
+                cb_task_id,
+                event_key,
+                sender_id,
+            )
+            result_text = f"[卡片提交结果] 单选结果: {event_key}"
+            if cb_task_id:
+                result_text = f"[卡片提交结果] (TaskID: {cb_task_id}) 单选结果: {event_key}"
+
+            standard_msg.content.append(
+                MessageContent(
+                    msg_type=MessageType.TEXT,
+                    text=result_text,
+                )
+            )
+            self._submit_to_hub(standard_msg)
+            return
 
         # 2. 递归遍历和排重收集包体内所有多模态区块（包括 mixed 图文混排以及各种深层嵌套）
         parts: list[dict[str, Any]] = []
@@ -563,3 +604,86 @@ class WeChatAdapter(BaseAdapter):
                         self.bot._loop
                     )
                 future.result(timeout=15.0)
+
+            # 3. 卡片交互消息类型处理 (MessageType.CARD / MessageType.INTERACTIVE)
+            elif item.msg_type in {MessageType.CARD, MessageType.INTERACTIVE}:
+                wechat_card_body = None
+                if item.card_data:
+                    wechat_card_body = self._translate_common_card_to_wechat(item.card_data)
+                elif item.card_json:
+                    if isinstance(item.card_json, dict):
+                        wechat_card_body = item.card_json
+                    elif isinstance(item.card_json, str):
+                        try:
+                            wechat_card_body = json.loads(item.card_json)
+                        except Exception:
+                            wechat_card_body = None
+
+                if not wechat_card_body:
+                    logger.warning("[BotID: {}] 无法反归一化解析微信卡片数据，跳过发送。", self.bot.bot_id)
+                    continue
+
+                logger.info(
+                    "[BotID: {}] 微信适配器成功将公共卡片反归一化翻译为 button_interaction 模板卡片: {}",
+                    self.bot.bot_id,
+                    wechat_card_body,
+                )
+
+                future = asyncio.run_coroutine_threadsafe(
+                    self.bot.client.send_message(
+                        msg.session_id,
+                        body=wechat_card_body,
+                    ),
+                    self.bot._loop,
+                )
+                future.result(timeout=15.0)
+
+    def _translate_common_card_to_wechat(self, card_data: Any) -> dict[str, Any]:
+        """【反归一化翻译切面】将解耦的公共卡片数据模型 (QuestionCardData) 动态翻译组装为企微 button_interaction 模板卡片 JSON 包体。"""
+        if isinstance(card_data, dict):
+            try:
+                card_obj = QuestionCardData(**card_data)
+            except Exception as exc:
+                logger.warning(
+                    "[BotID: {}] 尝试将字典转换为 QuestionCardData 异常: {}",
+                    self.bot.bot_id,
+                    exc,
+                )
+                return card_data
+        elif isinstance(card_data, QuestionCardData):
+            card_obj = card_data
+        else:
+            return {}
+
+        button_list: list[dict[str, Any]] = []
+
+        # 1. 动态将选项列表映射为企微模板卡片的 button_list
+        for idx, opt in enumerate(card_obj.options):
+            opt_key = opt.value or opt.label or f"opt_{idx}"
+            button_list.append(
+                {
+                    "text": opt.label,
+                    "style": 1,
+                    "key": opt_key,
+                }
+            )
+
+        # 生成规范且唯一的 task_id（由数字、字母及符号构成，最长128字节）
+        task_id = card_obj.card_id or f"task_{uuid.uuid4().hex[:20]}"
+
+        # 2. 组装 button_interaction 类型的 template_card 结构
+        template_card: dict[str, Any] = {
+            "card_type": "button_interaction",
+            "task_id": task_id,
+            "main_title": {
+                "title": card_obj.title,
+                "desc": card_obj.description or "",
+            },
+            "button_list": button_list,
+        }
+
+        # 3. 封装为完整的发送包体
+        return {
+            "msgtype": "template_card",
+            "template_card": template_card,
+        }
