@@ -21,6 +21,7 @@ from loguru import logger
 
 from src.core.hub import hub
 from src.core.schemas import (
+    CardOptionItem,
     MessageContent,
     MessageType,
     QuestionCardData,
@@ -697,8 +698,16 @@ class WeChatAdapter(BaseAdapter):
 
         # 1. 动态填充竖排选项列表 (horizontal_content_list) 与底部短按钮 (button_list)
         for idx, opt in enumerate(card_obj.options):
-            opt_key = opt.key or chr(65 + idx)
-            raw_label = opt.label or f"选项 {opt_key}"
+            if isinstance(opt, str):
+                opt_key = chr(65 + idx)
+                raw_label = opt
+                btn_key = f"{opt_key}: {raw_label}"
+            elif isinstance(opt, CardOptionItem):
+                opt_key = opt.key or chr(65 + idx)
+                raw_label = opt.label
+                btn_key = opt.value or opt.label or f"{opt_key}: {raw_label}"
+            else:
+                continue
 
             # 整理详情展示（剥离前导 "A: " 或 "A：" 等重复 Key 前缀）
             clean_val = raw_label
@@ -716,7 +725,6 @@ class WeChatAdapter(BaseAdapter):
             )
 
             # 底部简短按钮组
-            btn_key = opt.value or opt.label or opt_key
             button_list.append(
                 {
                     "text": f"选 {opt_key}",

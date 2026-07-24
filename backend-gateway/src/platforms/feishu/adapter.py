@@ -22,6 +22,7 @@ from loguru import logger
 
 from src.core.hub import hub
 from src.core.schemas import (
+    CardOptionItem,
     MessageContent,
     MessageType,
     QuestionCardData,
@@ -864,18 +865,34 @@ class FeishuAdapter(BaseAdapter):
 
         form_elements: list[dict[str, Any]] = []
 
-        # 1. 动态翻译展开的方案选项按钮
+        # 1. 动态翻译展开的方案选项按钮 (自动按 0->A, 1->B, 2->C 编号)
         for idx, opt in enumerate(card_obj.options):
-            opt_key = opt.key or f"opt_{idx}"
-            opt_label = opt.label or f"选项 {opt_key}"
-            opt_val = opt.value or opt_label
+            if isinstance(opt, str):
+                opt_key = chr(65 + idx)
+                raw_label = opt
+                opt_val = f"{opt_key}: {raw_label}"
+            elif isinstance(opt, CardOptionItem):
+                opt_key = opt.key or chr(65 + idx)
+                raw_label = opt.label
+                opt_val = opt.value or opt.label or f"{opt_key}: {raw_label}"
+            else:
+                continue
+
+            # 统一剥离并格式化显示 Label 前缀 (避免出现 A: A: 方案一)
+            btn_display_label = raw_label
+            for prefix in (f"{opt_key}: ", f"{opt_key}：", f"{opt_key}."):
+                if btn_display_label.startswith(prefix):
+                    btn_display_label = btn_display_label[len(prefix) :].strip()
+                    break
+            btn_display_label = f"{opt_key}: {btn_display_label}"
+
             form_elements.append(
                 {
                     "tag": "button",
                     "name": f"btn_option_{opt_key.lower()}",
                     "text": {
                         "tag": "plain_text",
-                        "content": opt_label,
+                        "content": btn_display_label,
                     },
                     "type": "default",
                     "value": {
@@ -884,20 +901,27 @@ class FeishuAdapter(BaseAdapter):
                 }
             )
 
-        # 2. 动态翻译自定义输入框（若配置）
+        # 2. 平台自适应：根据当前选项数量动态推算下一个编号字母（例如 3 个选项自动推出 D，2 个推 C，4 个推 E）
+        next_key = chr(65 + len(card_obj.options))
+        default_input_name = f"custom_option_{next_key.lower()}"
+        default_input_ph = f"{next_key} 选项：请在此处自定义输入选项内容"
+
+        input_name = default_input_name
+        input_ph = default_input_ph
         if card_obj.custom_input:
-            input_name = card_obj.custom_input.name or "custom_option_d"
-            input_ph = card_obj.custom_input.placeholder or "自定义输入内容"
-            form_elements.append(
-                {
-                    "tag": "input",
-                    "name": input_name,
-                    "placeholder": {
-                        "tag": "plain_text",
-                        "content": input_ph,
-                    },
-                }
-            )
+            input_name = card_obj.custom_input.name or default_input_name
+            input_ph = card_obj.custom_input.placeholder or default_input_ph
+
+        form_elements.append(
+            {
+                "tag": "input",
+                "name": input_name,
+                "placeholder": {
+                    "tag": "plain_text",
+                    "content": input_ph,
+                },
+            }
+        )
 
         # 3. 动态翻译提交按钮
         submit_btn_text = card_obj.submit_text or "提交选择"
