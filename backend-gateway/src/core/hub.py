@@ -14,7 +14,14 @@ from typing import Any, Callable
 import aio_pika
 from loguru import logger
 
-from src.core.schemas import MessageContent, MessageType, StandardMessage
+from src.core.schemas import (
+    CardInputConfig,
+    CardOptionItem,
+    MessageContent,
+    MessageType,
+    QuestionCardData,
+    StandardMessage,
+)
 from src.utils.rabbitmq import mq_client
 
 
@@ -173,107 +180,40 @@ class MessageHub:
             # 非阻塞切换，释放协程控制权
             await asyncio.sleep(1.0)
 
-            # 检查是否为 /card 或 !card 卡片指令
+            # 在文本消息归一化（StandardMessage）后，对文本拆分识别 /card 卡片指令
             is_card_cmd = False
             for item in msg.content:
                 if item.msg_type == MessageType.TEXT and item.text:
                     text_strip = item.text.strip().lower()
-                    if text_strip in ("/card", "!card", "card"):
+                    if text_strip in ("/card", "!card", "card") or text_strip.startswith("/card "):
                         is_card_cmd = True
                         break
+                elif item.msg_type == MessageType.CARD:
+                    is_card_cmd = True
+                    break
 
             reply_msg = msg.model_copy(deep=True)
 
             if is_card_cmd:
-                logger.info("[MockAgent] 检测到卡片指令，构建符合 Schema 2.0 规范的交互卡片。")
-                card_dict = {
-                    "schema": "2.0",
-                    "header": {
-                        "title": {
-                            "tag": "plain_text",
-                            "content": "【测试题目】请选择您的首选方案："
-                        },
-                        "template": "blue"
-                    },
-                    "body": {
-                        "elements": [
-                            {
-                                "tag": "div",
-                                "text": {
-                                    "tag": "lark_md",
-                                    "content": "**题目：** 在智能员工系统中，您倾向采用哪种底层通信链路？"
-                                }
-                            },
-                            {
-                                "tag": "form",
-                                "name": "question_form",
-                                "elements": [
-                                    {
-                                        "tag": "button",
-                                        "name": "btn_option_a",
-                                        "text": {
-                                            "tag": "plain_text",
-                                            "content": "A: 方案一 (RabbitMQ 纯异步)"
-                                        },
-                                        "type": "default",
-                                        "value": {
-                                            "option_abc": "A: 方案一 (RabbitMQ 纯异步)"
-                                        }
-                                    },
-                                    {
-                                        "tag": "button",
-                                        "name": "btn_option_b",
-                                        "text": {
-                                            "tag": "plain_text",
-                                            "content": "B: 方案二 (HTTP 直连)"
-                                        },
-                                        "type": "default",
-                                        "value": {
-                                            "option_abc": "B: 方案二 (HTTP 直连)"
-                                        }
-                                    },
-                                    {
-                                        "tag": "button",
-                                        "name": "btn_option_c",
-                                        "text": {
-                                            "tag": "plain_text",
-                                            "content": "C: 方案三 (WebSocket 长连接)"
-                                        },
-                                        "type": "default",
-                                        "value": {
-                                            "option_abc": "C: 方案三 (WebSocket 长连接)"
-                                        }
-                                    },
-                                    {
-                                        "tag": "input",
-                                        "name": "custom_option_d",
-                                        "placeholder": {
-                                            "tag": "plain_text",
-                                            "content": "D 选项：请在此处自定义输入选项内容"
-                                        }
-                                    },
-                                    {
-                                        "tag": "button",
-                                        "name": "submit_btn",
-                                        "text": {
-                                            "tag": "plain_text",
-                                            "content": "提交选择"
-                                        },
-                                        "type": "primary",
-                                        "action_type": "form_submit",
-                                        "value": {
-                                            "action": "submit_question_card"
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                }
+                logger.info("[MockAgent] 检测到卡片指令，构建解耦的公共卡片数据模型 QuestionCardData。")
+                common_card = QuestionCardData(
+                    title="【测试题目】请选择您的首选方案：",
+                    description="**题目：** 在智能员工系统中，您倾向采用哪种底层通信链路？",
+                    options=[
+                        CardOptionItem(key="A", label="A: 方案一 (RabbitMQ 纯异步)", value="A: 方案一 (RabbitMQ 纯异步)"),
+                        CardOptionItem(key="B", label="B: 方案二 (HTTP 直连)", value="B: 方案二 (HTTP 直连)"),
+                        CardOptionItem(key="C", label="C: 方案三 (WebSocket 长连接)", value="C: 方案三 (WebSocket 长连接)"),
+                    ],
+                    custom_input=CardInputConfig(
+                        name="custom_option_d",
+                        placeholder="D 选项：请在此处自定义输入选项内容",
+                    ),
+                    submit_text="提交选择",
+                )
                 reply_msg.content = [
                     MessageContent(
                         msg_type=MessageType.CARD,
-                        card_json=json.dumps(card_dict, ensure_ascii=False)
+                        card_data=common_card,
                     )
                 ]
             else:

@@ -21,7 +21,12 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
 from loguru import logger
 
 from src.core.hub import hub
-from src.core.schemas import MessageContent, MessageType, StandardMessage
+from src.core.schemas import (
+    MessageContent,
+    MessageType,
+    QuestionCardData,
+    StandardMessage,
+)
 from src.platforms.base import BaseAdapter
 from src.utils.minio_client import minio_client
 
@@ -78,7 +83,7 @@ class FeishuAdapter(BaseAdapter):
 
         msg_type = event.message.message_type
 
-        # 1. 文本消息类型转换
+        # 1. 文本消息类型转换（纯粹协议翻译与归一化）
         if msg_type == "text":
             user_text = ""
             try:
@@ -93,7 +98,7 @@ class FeishuAdapter(BaseAdapter):
                 user_text = event.message.content
 
             standard_msg.content.append(
-                MessageContent(msg_type="text", text=user_text)
+                MessageContent(msg_type=MessageType.TEXT, text=user_text)
             )
 
         # 2. 单张图片消息类型转换
@@ -355,22 +360,29 @@ class FeishuAdapter(BaseAdapter):
 
         # 检查是否包含卡片消息（MessageType.CARD 或 MessageType.INTERACTIVE）
         for item in msg.content:
-            if item.msg_type in (MessageType.CARD, MessageType.INTERACTIVE) and item.card_json:
-                card_str = (
-                    item.card_json
-                    if isinstance(item.card_json, str)
-                    else json.dumps(item.card_json, ensure_ascii=False)
-                )
-                logger.info(
-                    "[BotID: {}] 准备发送交互卡片消息 JSON: {}",
-                    self.bot.bot_id,
-                    card_str,
-                )
-                if msg.chat_type == "p2p":
-                    self._send_card_p2p(msg.session_id, card_str)
-                elif msg.chat_type == "group":
-                    self._reply_card_group(msg.message_id, card_str)
-                return
+            if item.msg_type in (MessageType.CARD, MessageType.INTERACTIVE):
+                card_str = ""
+                # 优先解析与反归一化翻译公共卡片数据模型 QuestionCardData
+                if item.card_data:
+                    card_str = self._translate_common_card_to_feishu(item.card_data)
+                elif item.card_json:
+                    card_str = (
+                        item.card_json
+                        if isinstance(item.card_json, str)
+                        else json.dumps(item.card_json, ensure_ascii=False)
+                    )
+
+                if card_str:
+                    logger.info(
+                        "[BotID: {}] 飞书适配器成功将公共卡片反归一化翻译为 Schema 2.0 JSON: {}",
+                        self.bot.bot_id,
+                        card_str,
+                    )
+                    if msg.chat_type == "p2p":
+                        self._send_card_p2p(msg.session_id, card_str)
+                    elif msg.chat_type == "group":
+                        self._reply_card_group(msg.message_id, card_str)
+                    return
 
         # 构造统一的富文本骨架
         post_content: dict[str, Any] = {
@@ -832,4 +844,115 @@ class FeishuAdapter(BaseAdapter):
                 )
         except Exception as exc:
             logger.error("[BotID: {}] 群聊交互卡片回复异常: {}", self.bot.bot_id, exc)
+
+    def _translate_common_card_to_feishu(self, card_data: Any) -> str:
+        """【反归一化翻译切面】将解耦的公共卡片数据模型 (QuestionCardData) 动态翻译组装为飞书 Schema 2.0 JSON。"""
+        if isinstance(card_data, dict):
+            try:
+                card_obj = QuestionCardData(**card_data)
+            except Exception as exc:
+                logger.warning(
+                    "[BotID: {}] 尝试将字典转换为 QuestionCardData 异常: {}",
+                    self.bot.bot_id,
+                    exc,
+                )
+                return json.dumps(card_data, ensure_ascii=False)
+        elif isinstance(card_data, QuestionCardData):
+            card_obj = card_data
+        else:
+            return ""
+
+        form_elements: list[dict[str, Any]] = []
+
+        # 1. 动态翻译展开的方案选项按钮
+        for idx, opt in enumerate(card_obj.options):
+            opt_key = opt.key or f"opt_{idx}"
+            opt_label = opt.label or f"选项 {opt_key}"
+            opt_val = opt.value or opt_label
+            form_elements.append(
+                {
+                    "tag": "button",
+                    "name": f"btn_option_{opt_key.lower()}",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": opt_label,
+                    },
+                    "type": "default",
+                    "value": {
+                        "option_abc": opt_val,
+                    },
+                }
+            )
+
+        # 2. 动态翻译自定义输入框（若配置）
+        if card_obj.custom_input:
+            input_name = card_obj.custom_input.name or "custom_option_d"
+            input_ph = card_obj.custom_input.placeholder or "自定义输入内容"
+            form_elements.append(
+                {
+                    "tag": "input",
+                    "name": input_name,
+                    "placeholder": {
+                        "tag": "plain_text",
+                        "content": input_ph,
+                    },
+                }
+            )
+
+        # 3. 动态翻译提交按钮
+        submit_btn_text = card_obj.submit_text or "提交选择"
+        form_elements.append(
+            {
+                "tag": "button",
+                "name": "submit_btn",
+                "text": {
+                    "tag": "plain_text",
+                    "content": submit_btn_text,
+                },
+                "type": "primary",
+                "action_type": "form_submit",
+                "value": {
+                    "action": "submit_question_card",
+                },
+            }
+        )
+
+        elements: list[dict[str, Any]] = []
+
+        # 正文描述（若存在）
+        if card_obj.description:
+            elements.append(
+                {
+                    "tag": "div",
+                    "text": {
+                        "tag": "lark_md",
+                        "content": card_obj.description,
+                    },
+                }
+            )
+
+        # 表单容器
+        elements.append(
+            {
+                "tag": "form",
+                "name": "question_form",
+                "elements": form_elements,
+            }
+        )
+
+        feishu_card = {
+            "schema": "2.0",
+            "header": {
+                "title": {
+                    "tag": "plain_text",
+                    "content": card_obj.title,
+                },
+                "template": "blue",
+            },
+            "body": {
+                "elements": elements,
+            },
+        }
+
+        return json.dumps(feishu_card, ensure_ascii=False)
 

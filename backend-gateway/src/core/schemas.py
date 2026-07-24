@@ -69,6 +69,32 @@ class MessageType(str, Enum):
         return self.value
 
 
+class CardOptionItem(BaseModel):
+    """卡片选项单元模型（平台无关）。"""
+
+    key: str = Field(..., description="选项唯一标识，如 A, B, C")
+    label: str = Field(..., description="选项展示文案")
+    value: str | None = Field(default=None, description="回传数值（若为空则使用 label）")
+
+
+class CardInputConfig(BaseModel):
+    """卡片自填输入框配置（平台无关）。"""
+
+    name: str = Field(default="custom_option_d", description="输入框字段名")
+    placeholder: str = Field(default="D 选项：自定义输入选项内容", description="输入框占位文案")
+
+
+class QuestionCardData(BaseModel):
+    """全局公共题目/问卷卡片数据模型（与各 IM 平台解耦）。"""
+
+    card_id: str | None = Field(default=None, description="卡片模板 ID 或唯一标识")
+    title: str = Field(..., description="卡片标题")
+    description: str | None = Field(default=None, description="题目正文或详细描述")
+    options: list[CardOptionItem] = Field(default_factory=list, description="选项列表")
+    custom_input: CardInputConfig | None = Field(default=None, description="自填输入框配置（可选）")
+    submit_text: str = Field(default="提交选择", description="提交按钮文本")
+
+
 class MessageContent(BaseModel):
     """多模态消息的内容区块定义。"""
 
@@ -76,7 +102,8 @@ class MessageContent(BaseModel):
     text: str | None = Field(default=None, description="文本内容")
     file_url: str | None = Field(default=None, description="已转存至本地 MinIO 的统一对象 URL")
     file_name: str | None = Field(default=None, description="文件原始名称（可选）")
-    card_json: str | dict | None = Field(default=None, description="交互卡片 JSON 结构或对象")
+    card_json: str | dict | None = Field(default=None, description="交互卡片 JSON 结构或对象（平台特定备用）")
+    card_data: QuestionCardData | dict | None = Field(default=None, description="解耦的全局公共卡片数据模型")
 
 
 
