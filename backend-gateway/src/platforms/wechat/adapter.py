@@ -673,7 +673,10 @@ class WeChatAdapter(BaseAdapter):
                 future.result(timeout=15.0)
 
     def _translate_common_card_to_wechat(self, card_data: Any) -> dict[str, Any]:
-        """【反归一化翻译切面】将解耦的公共卡片数据模型 (QuestionCardData) 动态翻译组装为企微 button_interaction 模板卡片 JSON 包体。"""
+        """【反归一化翻译切面】将解耦的公共卡片数据模型 (QuestionCardData) 动态翻译组装为企微 button_interaction 模板卡片 JSON 包体。
+
+        使用 horizontal_content_list 实现优雅的"竖排选项展示"，配合底部简短操作按钮 (button_list)。
+        """
         if isinstance(card_data, dict):
             try:
                 card_obj = QuestionCardData(**card_data)
@@ -689,30 +692,58 @@ class WeChatAdapter(BaseAdapter):
         else:
             return {}
 
+        horizontal_content_list: list[dict[str, Any]] = []
         button_list: list[dict[str, Any]] = []
 
-        # 1. 动态将选项列表映射为企微模板卡片的 button_list
+        # 1. 动态填充竖排选项列表 (horizontal_content_list) 与底部短按钮 (button_list)
         for idx, opt in enumerate(card_obj.options):
-            opt_key = opt.value or opt.label or f"opt_{idx}"
+            opt_key = opt.key or chr(65 + idx)
+            raw_label = opt.label or f"选项 {opt_key}"
+
+            # 整理详情展示（剥离前导 "A: " 或 "A：" 等重复 Key 前缀）
+            clean_val = raw_label
+            for prefix in (f"{opt_key}: ", f"{opt_key}：", f"{opt_key}."):
+                if clean_val.startswith(prefix):
+                    clean_val = clean_val[len(prefix) :].strip()
+                    break
+
+            # 竖排列表展示
+            horizontal_content_list.append(
+                {
+                    "keyname": opt_key,
+                    "value": clean_val,
+                }
+            )
+
+            # 底部简短按钮组
+            btn_key = opt.value or opt.label or opt_key
             button_list.append(
                 {
-                    "text": opt.label,
+                    "text": f"选 {opt_key}",
                     "style": 1,
-                    "key": opt_key,
+                    "key": btn_key,
                 }
             )
 
         # 生成规范且唯一的 task_id（由数字、字母及符号构成，最长128字节）
         task_id = card_obj.card_id or f"task_{uuid.uuid4().hex[:20]}"
 
-        # 2. 组装 button_interaction 类型的 template_card 结构
+        # 清洗 description 中的 markdown 符号，适合企微模板卡片展示
+        clean_desc = card_obj.description or ""
+        if clean_desc.startswith("**题目：** "):
+            clean_desc = clean_desc[len("**题目：** ") :]
+        elif clean_desc.startswith("**题目：**"):
+            clean_desc = clean_desc[len("**题目：**") :]
+
+        # 2. 组装符合企微极简优化的 button_interaction 模板卡片
         template_card: dict[str, Any] = {
             "card_type": "button_interaction",
             "task_id": task_id,
             "main_title": {
                 "title": card_obj.title,
-                "desc": card_obj.description or "",
+                "desc": clean_desc,
             },
+            "horizontal_content_list": horizontal_content_list,
             "button_list": button_list,
         }
 
