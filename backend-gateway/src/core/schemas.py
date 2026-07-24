@@ -72,7 +72,7 @@ class MessageType(str, Enum):
 class CardOptionItem(BaseModel):
     """卡片选项单元模型（平台无关）。"""
 
-    key: str = Field(..., description="选项唯一标识，如 A, B, C")
+    key: str | None = Field(default=None, description="选项标识（若空则适配器自动按索引分配 A, B, C...）")
     label: str = Field(..., description="选项展示文案")
     value: str | None = Field(default=None, description="回传数值（若为空则使用 label）")
 
@@ -90,7 +90,9 @@ class QuestionCardData(BaseModel):
     card_id: str | None = Field(default=None, description="卡片模板 ID 或唯一标识")
     title: str = Field(..., description="卡片标题")
     description: str | None = Field(default=None, description="题目正文或详细描述")
-    options: list[CardOptionItem] = Field(default_factory=list, description="选项列表")
+    options: list[str | CardOptionItem] = Field(
+        default_factory=list, description="选项列表（支持纯字符串列表或 CardOptionItem）"
+    )
     custom_input: CardInputConfig | None = Field(default=None, description="自填输入框配置（可选）")
     submit_text: str = Field(default="提交选择", description="提交按钮文本")
 

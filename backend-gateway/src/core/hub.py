@@ -15,8 +15,6 @@ import aio_pika
 from loguru import logger
 
 from src.core.schemas import (
-    CardInputConfig,
-    CardOptionItem,
     MessageContent,
     MessageType,
     QuestionCardData,
@@ -200,14 +198,10 @@ class MessageHub:
                     title="【测试题目】请选择您的首选方案：",
                     description="**题目：** 在智能员工系统中，您倾向采用哪种底层通信链路？",
                     options=[
-                        CardOptionItem(key="A", label="A: 方案一 (RabbitMQ 纯异步)", value="A: 方案一 (RabbitMQ 纯异步)"),
-                        CardOptionItem(key="B", label="B: 方案二 (HTTP 直连)", value="B: 方案二 (HTTP 直连)"),
-                        CardOptionItem(key="C", label="C: 方案三 (WebSocket 长连接)", value="C: 方案三 (WebSocket 长连接)"),
+                        "方案一 (RabbitMQ 纯异步)",
+                        "方案二 (HTTP 直连)",
+                        "方案三 (WebSocket 长连接)",
                     ],
-                    custom_input=CardInputConfig(
-                        name="custom_option_d",
-                        placeholder="D 选项：请在此处自定义输入选项内容",
-                    ),
                     submit_text="提交选择",
                 )
                 reply_msg.content = [
