@@ -115,30 +115,53 @@ class WeChatAdapter(BaseAdapter):
         )
 
         # 0. 优先检测企微模板卡片按钮点击回调事件 (template_card_event)
-        event_type = str(body.get("event") or body.get("event_type") or body.get("Event") or "")
-        event_key = str(
-            body.get("event_key")
-            or body.get("EventKey")
-            or body.get("key")
-            or (
-                body.get("selected_items", [{}])[0].get("question_key", "")
-                if isinstance(body.get("selected_items"), list) and body.get("selected_items")
-                else ""
-            )
-        )
-        cb_task_id = str(body.get("task_id") or body.get("taskId") or "")
+        event_obj = body.get("event") or body.get("Event") or {}
+        card_evt_data = {}
+        if isinstance(event_obj, dict):
+            card_evt_data = event_obj.get("template_card_event") or event_obj.get("templatecardevent") or event_obj
 
-        if event_type in ("template_card_event", "card_button_click") or (msg_type_raw == "event" and event_key):
+        def _get_str_field(target_dict: Any, keys: list[str]) -> str:
+            if isinstance(target_dict, dict):
+                for k in keys:
+                    v = target_dict.get(k)
+                    if v is not None and str(v).strip() != "" and str(v).strip().lower() != "none":
+                        return str(v).strip()
+            return ""
+
+        event_type = (
+            _get_str_field(card_evt_data, ["eventtype", "event_type", "event"])
+            or _get_str_field(event_obj, ["eventtype", "event_type", "event"])
+            or _get_str_field(body, ["event", "event_type"])
+        )
+
+        event_key = (
+            _get_str_field(card_evt_data, ["event_key", "EventKey", "key"])
+            or _get_str_field(event_obj, ["event_key", "EventKey", "key"])
+            or _get_str_field(body, ["event_key", "EventKey", "key"])
+        )
+
+        cb_task_id = (
+            _get_str_field(card_evt_data, ["task_id", "taskId"])
+            or _get_str_field(event_obj, ["task_id", "taskId"])
+            or _get_str_field(body, ["task_id", "taskId"])
+        )
+
+        is_card_event = (
+            event_type in ("template_card_event", "card_button_click")
+            or (msg_type_raw == "event" and bool(event_key))
+        )
+
+        if is_card_event and event_key:
             logger.info(
-                "[BotID: {}] 识别到企微卡片按钮点击回调事件 -> task_id='{}', event_key='{}', sender_id='{}'",
+                "[BotID: {}] 识别到企微卡片按钮点击回调事件 -> msg_type='{}', event_type='{}', task_id='{}', event_key='{}', sender_id='{}'",
                 self.bot.bot_id,
+                msg_type_raw,
+                event_type,
                 cb_task_id,
                 event_key,
                 sender_id,
             )
-            result_text = f"[卡片提交结果] 单选结果: {event_key}"
-            if cb_task_id:
-                result_text = f"[卡片提交结果] (TaskID: {cb_task_id}) 单选结果: {event_key}"
+            result_text = f"[卡片提交结果] (TaskID: {cb_task_id}) 单选结果: {event_key}" if cb_task_id else f"[卡片提交结果] 单选结果: {event_key}"
 
             standard_msg.content.append(
                 MessageContent(
@@ -147,6 +170,11 @@ class WeChatAdapter(BaseAdapter):
                 )
             )
             self._submit_to_hub(standard_msg)
+            return
+
+        # 忽略无具体交互 key 的普通系统事件，避免产生误回复
+        if msg_type_raw == "event":
+            logger.debug("[BotID: {}] 忽略无具体交互 key 的企微系统事件", self.bot.bot_id)
             return
 
         # 2. 递归遍历和排重收集包体内所有多模态区块（包括 mixed 图文混排以及各种深层嵌套）
@@ -523,10 +551,16 @@ class WeChatAdapter(BaseAdapter):
             logger.error("[BotID: {}] WeChatBot SDK Client 未就绪，无法发送消息。", self.bot.bot_id)
             return
 
-        # 检查是否能找到入站时缓存的原始数据帧 (若有，说明是被动回复)
+        # 检查是否能找到入站时缓存的原始数据帧 (若有且非 event 事件回调，说明是被动回复)
         cached_frame = None
         if msg.message_id:
-            cached_frame = self._req_id_map.get(msg.message_id)
+            raw_frame = self._req_id_map.get(msg.message_id)
+            if raw_frame:
+                frame_cmd = raw_frame.get("cmd", "")
+                frame_msgtype = raw_frame.get("body", {}).get("msgtype", "")
+                # 企微规约：aibot_event_callback (事件回调) 无法使用 reply_stream 被动回复，必须通过主动发送接口出站
+                if frame_cmd != "aibot_event_callback" and frame_msgtype != "event":
+                    cached_frame = raw_frame
 
         # 遍历标准消息的所有区块，分别进行回复或发送
         # 企业微信对被动回复通道只有一次使用权（一次性应答），故如果存在多个块，仅首个块使用被动回复，后续块全部自动降级使用主动发送
