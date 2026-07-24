@@ -82,6 +82,7 @@ class WeChatBot(BaseBot):
             # 注册长连接事件处理器
             self.client.on("authenticated", self._on_authenticated)
             self.client.on("message", self._on_message)
+            self.client.on("event", self._on_message)
             self.client.on("error", self._on_error)
 
             logger.info(
