@@ -1,0 +1,21 @@
+-- PostgreSQL 16 DDL 专用账号授权示例
+-- 执行前请替换尖括号中的占位符。
+-- 不要把真实密码提交到 Git。
+-- 建议由数据库管理员或具备授权权限的人员执行。
+
+CREATE ROLE <DDL_USER> LOGIN PASSWORD '<DDL_PASSWORD>';
+
+GRANT CONNECT ON DATABASE <DATABASE_NAME> TO <DDL_USER>;
+
+\c <DATABASE_NAME>
+
+GRANT USAGE ON SCHEMA <SCHEMA_NAME> TO <DDL_USER>;
+GRANT CREATE ON SCHEMA <SCHEMA_NAME> TO <DDL_USER>;
+
+-- DDL 用户不应该拥有以下权限：
+-- SUPERUSER
+-- CREATEDB
+-- CREATEROLE
+-- BYPASSRLS
+-- 业务表 owner 权限
+-- 生产库管理员权限

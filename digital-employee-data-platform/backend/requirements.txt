@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]==0.35.0
+SQLAlchemy>=2.0
+psycopg2-binary
+redis
+python-dotenv
+minio
+loguru
+pydantic
+pydantic-settings
+alembic
+pytest
