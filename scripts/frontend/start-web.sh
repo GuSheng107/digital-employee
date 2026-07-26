@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 if [ ! -f "$REPO_ROOT/frontend/package.json" ]; then
     echo "[ERROR] 前端项目文件未找到: $REPO_ROOT/frontend/package.json"

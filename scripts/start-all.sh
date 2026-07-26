@@ -36,7 +36,7 @@ if [ -f "$SCRIPT_DIR/data-platform/start.sh" ]; then
 fi
 
 echo "[INFO] 步骤 5/5: 启动 Frontend 前端开发服务 (5173)..."
-bash "$SCRIPT_DIR/start-web.sh" &
+bash "$SCRIPT_DIR/frontend/start-web.sh" &
 FRONTEND_PID=$!
 echo "Frontend Dev Server PID: $FRONTEND_PID"
 

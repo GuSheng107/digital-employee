@@ -126,7 +126,7 @@ npm ci
 npm run dev
 ```
 
-也可以直接在根目录运行快捷脚本 `scripts/start-web.bat`（或 `./scripts/start-web.sh`）快速启动前端开发服务器（<http://localhost:5173>）。
+也可以直接在根目录运行快捷脚本 `scripts/frontend/start-web.bat`（或 `./scripts/frontend/start-web.sh`）快速启动前端开发服务器（<http://localhost:5173>）。
 
 可通过 `VITE_API_BASE_URL` 指定后端 API 前缀。生产构建命令为 `npm run build`。
 
@@ -144,7 +144,7 @@ make build            # 构建前端
 make check            # 运行现有测试、lint 和构建检查
 ```
 
-Windows 环境不要求安装 Make，可直接执行上文的 PowerShell 命令或 `scripts\start-web.bat`。
+Windows 环境不要求安装 Make，可直接执行上文的 PowerShell 命令或 `scripts\frontend\start-web.bat`。
 
 ## 验证
 

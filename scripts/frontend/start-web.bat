@@ -7,7 +7,7 @@ echo ========================================
 echo.
 
 set SCRIPT_DIR=%~dp0
-for %%I in ("%SCRIPT_DIR%..") do set PROJECT_ROOT=%%~fI
+for %%I in ("%SCRIPT_DIR%..\..") do set PROJECT_ROOT=%%~fI
 
 if not exist "%PROJECT_ROOT%\frontend\package.json" goto NO_FRONTEND
 

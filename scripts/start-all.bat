@@ -23,7 +23,7 @@ echo [INFO] Step 4/5: Starting Backend Data Service (8010)...
 start "Backend-Data-Service" cmd /k "%SCRIPT_DIR%data-platform\start.bat"
 
 echo [INFO] Step 5/5: Starting Frontend Dev Server (5173)...
-start "Frontend-Dev-Server" cmd /k "%SCRIPT_DIR%start-web.bat"
+start "Frontend-Dev-Server" cmd /k "%SCRIPT_DIR%frontend\start-web.bat"
 
 echo.
 echo ===================================================

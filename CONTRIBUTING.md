@@ -205,13 +205,13 @@ cd backend-gateway
 uv run python -m src.main
 
 # 启动 React 新管理端开发服务器（另开终端，Linux / macOS）
-./scripts/start-web.sh
+./scripts/frontend/start-web.sh
 
 # 或（Windows）
-scripts\start-web.bat
+scripts\frontend\start-web.bat
 ```
 
-Backend Agent 默认监听 <http://localhost:8765>（仅暴露 API），Backend Gateway 默认监听 <http://localhost:8864>。管理端前端位于根目录 `frontend/`，启动方式见上文的 `scripts/start-web.sh` / `scripts\start-web.bat`。
+Backend Agent 默认监听 <http://localhost:8765>（仅暴露 API），Backend Gateway 默认监听 <http://localhost:8864>。管理端前端位于根目录 `frontend/`，启动方式见上文的 `scripts/frontend/start-web.sh` / `scripts\frontend\start-web.bat`。
 
 ---
 
