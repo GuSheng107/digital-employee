@@ -13,6 +13,12 @@ if not exist "%PROJECT_ROOT%\frontend\package.json" goto NO_FRONTEND
 
 cd /d "%PROJECT_ROOT%\frontend"
 echo [INFO] Project dir: %PROJECT_ROOT%\frontend
+
+if not exist "%PROJECT_ROOT%\frontend\node_modules" (
+  echo [INFO] node_modules not found, installing dependencies via npm...
+  npm install
+)
+
 echo [INFO] Running npm run dev...
 echo   - Local URL: http://localhost:5173
 echo.
