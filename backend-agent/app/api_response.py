@@ -7,6 +7,7 @@ import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
@@ -101,7 +102,14 @@ def install_api_exception_handlers(
 
         trace_id = str(uuid4())
         request.state.trace_id = trace_id
-        response = await call_next(request)
+        # 绑定当前异步上下文的 trace_id，使请求处理过程中的所有日志
+        # 自动携带同一 trace_id（由 TraceIdFilter 注入）。
+        from app.logger import set_trace_id, reset_trace_id
+        set_trace_id(trace_id)
+        try:
+            response = await call_next(request)
+        finally:
+            reset_trace_id()
         fallback_trace_id = str(getattr(request.state, "trace_id", trace_id))
 
         content_type = response.headers.get("content-type", "")
@@ -352,7 +360,7 @@ def _build_access_log_detail(*, request: Request, status_code: int, payload: dic
     parts = [
         f"method={request.method}",
         f"path={request.url.path}",
-        f"query={request.url.query}",
+        f"query={_sanitize_query(request.url.query)}",
         f"status_code={status_code}",
         f"ok={payload.get('ok')}",
     ]
@@ -407,7 +415,7 @@ def _build_log_detail(
     parts = [
         f"method={request.method}",
         f"path={request.url.path}",
-        f"query={request.url.query}",
+        f"query={_sanitize_query(request.url.query)}",
         f"status_code={status_code}",
         f"public_message={public_message}",
         f"exception_type={type(exc).__name__}",
@@ -445,6 +453,26 @@ def _sanitize_text(value: Any, *, max_length: int | None = None) -> str:
     if max_length is not None and len(text) > max_length:
         text = text[:max_length] + "..."
     return text
+
+
+def _sanitize_query(query: Any) -> str:
+    text = str(query or "")
+    if not text:
+        return ""
+    try:
+        pairs = parse_qsl(text, keep_blank_values=True)
+    except ValueError:
+        return _sanitize_text(text)
+    sanitized = [
+        (key, "***" if _is_secret_query_key(key) else value)
+        for key, value in pairs
+    ]
+    return urlencode(sanitized, doseq=True)
+
+
+def _is_secret_query_key(key: str) -> bool:
+    normalized = str(key or "").strip().lower().replace("-", "_")
+    return any(part in normalized for part in ("token", "secret", "password", "authorization", "api_key"))
 
 
 def _trim_public_message(message: str) -> str:

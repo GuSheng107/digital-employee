@@ -34,6 +34,29 @@ _DEFAULTS: dict[str, Any] = {
         # SQLite 数据库文件相对项目根目录的路径
         "path": "data/ai_database.db",
     },
+    # Redis 配置 (双 Token 认证，必需)
+    "redis": {
+        # Redis 连接 URL。双 Token 认证强依赖 Redis，为空时服务拒绝启动。
+        "url": "",
+        # access token 滑动 TTL 秒数，默认 3 小时
+        "at_ttl_seconds": 10800,
+        # refresh token 绝对 TTL 秒数，默认 7 天
+        "rt_ttl_seconds": 604800,
+        # access token 绝对过期上限秒数，默认 24 小时
+        "at_absolute_lifetime_seconds": 86400,
+        # 刷新后旧 access token 保留时间秒数，默认 15 分钟
+        "rt_grace_seconds": 900,
+    },
+    # 认证配置
+    "auth": {
+        # 内部服务调用方配置：caller_id -> {shared_secret, ip_allowlist, description}
+        "internal_callers": {},
+        # 外部 Bearer 请求来源 IP 白名单。默认关闭，避免部署环境变化误拦截用户。
+        "external_ip_allowlist_enabled": False,
+        "external_ip_allowlist": [],
+        # 可信反向代理来源网段。为空时不信任 X-Forwarded-For。
+        "trusted_proxy_cidrs": [],
+    },
     # 企业微信机器人相关配置
     "wecom_bot": {
         # 企业微信 WebSocket 服务地址

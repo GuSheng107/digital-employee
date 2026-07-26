@@ -27,7 +27,9 @@ _ALLOWED_TABLES = frozenset({
     "mcp_server_config", "bot_skill_mapping", "bot_mcp_mapping",
     "token_usage", "uploaded_documents", "llm_request_slots",
     "memory_usage_audits", "console_users", "message_feedbacks",
-    "feedback_alert_log",
+    "feedback_alert_log", "auth_roles", "auth_permissions",
+    "auth_user_roles", "auth_role_permissions", "auth_route_permissions",
+    "auth_permission_audit_logs",
 })
 
 

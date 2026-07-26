@@ -1,0 +1,426 @@
+from __future__ import annotations
+
+"""双 Token 认证管理器 (Redis opaque token)。
+
+access_token  (ccx_at_xxx) — 短期，滑动 TTL (默认 3h)，绝对过期上限 (默认 24h)
+refresh_token (ccx_rt_xxx) — 长期，绝对 TTL (默认 7d)，刷新时立即撤销旧 RT
+
+Redis Key 结构:
+  cc:at:{sha256[:8]}  — access token session
+    token_full, username, role, rt_prefix, created_at, expires_at, revoked
+
+  cc:rt:{sha256[:8]}  — refresh token session
+    token_full, username, role, at_prefix, created_at, expires_at, revoked
+
+刷新时的 grace period (默认 15min):
+  旧 access_token 保留 grace period 内有效（处理途中的请求）
+  旧 refresh_token 立即标记 revoked=1
+"""
+
+import asyncio
+import hashlib
+import hmac
+import secrets
+import time
+from base64 import urlsafe_b64encode
+from typing import Any
+
+import redis.asyncio as aioredis
+
+from app.logger import get_logger
+
+
+_logger = get_logger("redis_token_manager")
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _first8_hex(plain: str) -> str:
+    return _sha256(plain.encode("utf-8"))[:16]  # 8 bytes = 16 hex chars
+
+
+def _full_hash(plain: str) -> str:
+    return _sha256(plain.encode("utf-8"))
+
+
+def _generate_opaque(prefix: str) -> str:
+    raw = secrets.token_bytes(32)
+    return prefix + urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def _log_revoke_task_result(task: asyncio.Task[None]) -> None:
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        _logger.warning("background revoke failed: %s", exc)
+
+
+class TokenUser:
+    __slots__ = ("username", "role", "expires_at")
+
+    def __init__(self, username: str, role: str, expires_at: int = 0) -> None:
+        self.username = username
+        self.role = role
+        self.expires_at = expires_at
+
+
+class TokenPair:
+    __slots__ = ("access_token", "refresh_token", "expires_in", "user")
+
+    def __init__(
+        self,
+        access_token: str,
+        refresh_token: str,
+        expires_in: int,
+        user: TokenUser,
+    ) -> None:
+        self.access_token = access_token
+        self.refresh_token = refresh_token
+        self.expires_in = expires_in
+        self.user = user
+
+
+def _hset_dict(pipe, key: str, data: dict) -> None:
+    """Redis 3.0 兼容 HSET：逐个设置字段，避免 mapping 参数 (需要 Redis 4.0+)。"""
+    for field, value in data.items():
+        pipe.hset(key, field, value)
+
+
+_REFRESH_TOKEN_PAIR_LUA = """
+local old_rt_key = KEYS[1]
+local new_at_key = KEYS[2]
+local new_rt_key = KEYS[3]
+
+local expected_full_hash = ARGV[1]
+local now = tonumber(ARGV[2])
+local grace_expires_at = tonumber(ARGV[3])
+local rt_grace = tonumber(ARGV[4])
+local new_at_full_hash = ARGV[5]
+local new_rt_full_hash = ARGV[6]
+local new_rt_prefix = ARGV[7]
+local new_at_prefix = ARGV[8]
+local new_created_at = ARGV[9]
+local new_at_expires_at = tonumber(ARGV[10])
+local new_rt_expires_at = tonumber(ARGV[11])
+local at_key_prefix = ARGV[12]
+
+local stored_full_hash = redis.call('HGET', old_rt_key, 'token_full')
+if not stored_full_hash then
+    return {0, 'missing'}
+end
+if stored_full_hash ~= expected_full_hash then
+    return {0, 'invalid'}
+end
+if redis.call('HGET', old_rt_key, 'revoked') ~= '0' then
+    return {0, 'revoked'}
+end
+local expires_at = tonumber(redis.call('HGET', old_rt_key, 'expires_at') or '0')
+if now > expires_at then
+    return {0, 'expired'}
+end
+
+local username = redis.call('HGET', old_rt_key, 'username') or ''
+local role = redis.call('HGET', old_rt_key, 'role') or 'user'
+local old_at_prefix = redis.call('HGET', old_rt_key, 'at_prefix') or ''
+
+redis.call('HSET', old_rt_key, 'revoked', '1')
+if old_at_prefix ~= '' then
+    local old_at_key = at_key_prefix .. old_at_prefix
+    redis.call('HSET', old_at_key, 'expires_at', tostring(grace_expires_at))
+    redis.call('EXPIRE', old_at_key, rt_grace)
+end
+
+redis.call(
+    'HSET',
+    new_at_key,
+    'token_full', new_at_full_hash,
+    'username', username,
+    'role', role,
+    'rt_prefix', new_rt_prefix,
+    'created_at', new_created_at,
+    'expires_at', tostring(new_at_expires_at),
+    'revoked', '0'
+)
+redis.call('EXPIREAT', new_at_key, new_at_expires_at + 300)
+
+redis.call(
+    'HSET',
+    new_rt_key,
+    'token_full', new_rt_full_hash,
+    'username', username,
+    'role', role,
+    'at_prefix', new_at_prefix,
+    'created_at', new_created_at,
+    'expires_at', tostring(new_rt_expires_at),
+    'revoked', '0'
+)
+redis.call('EXPIREAT', new_rt_key, new_rt_expires_at + 300)
+
+return {1, username, role}
+"""
+
+
+class DualTokenManager:
+    """Redis 双 token 管理器 (access + refresh opaque tokens)."""
+
+    def __init__(
+        self,
+        redis_client: aioredis.Redis,
+        *,
+        at_ttl_seconds: int = 3 * 60 * 60,       # access token 滑动 TTL，默认 3h
+        rt_ttl_seconds: int = 7 * 24 * 60 * 60,   # refresh token 绝对 TTL，默认 7d
+        at_absolute_lifetime_seconds: int = 24 * 60 * 60,  # access token 创建后绝对上限，默认 24h
+        rt_grace_seconds: int = 15 * 60,           # 刷新后旧 access token 保留时间
+    ) -> None:
+        self._redis = redis_client
+        self.at_ttl = at_ttl_seconds
+        self.rt_ttl = rt_ttl_seconds
+        self.at_absolute_lifetime = at_absolute_lifetime_seconds
+        self.rt_grace = rt_grace_seconds
+
+    # ── Redis key helpers ──────────────────────────────────────────
+
+    @staticmethod
+    def _at_key(hash_prefix: str) -> str:
+        return f"cc:at:{hash_prefix}"
+
+    @staticmethod
+    def _rt_key(hash_prefix: str) -> str:
+        return f"cc:rt:{hash_prefix}"
+
+    # ── Issue token pair ───────────────────────────────────────────
+
+    async def issue_token_pair(self, username: str, role: str) -> TokenPair:
+        """签发新的 access + refresh token pair，写入 Redis 并双向关联。"""
+        now = int(time.time())
+
+        at_plain = _generate_opaque("ccx_at_")
+        rt_plain = _generate_opaque("ccx_rt_")
+
+        at_prefix = _first8_hex(at_plain)
+        rt_prefix = _first8_hex(rt_plain)
+        at_expires_at = now + self.at_ttl
+        rt_expires_at = now + self.rt_ttl
+
+        at_data = {
+            "token_full": _full_hash(at_plain),
+            "username": username,
+            "role": role,
+            "rt_prefix": rt_prefix,
+            "created_at": str(now),
+            "expires_at": str(at_expires_at),
+            "revoked": "0",
+        }
+        rt_data = {
+            "token_full": _full_hash(rt_plain),
+            "username": username,
+            "role": role,
+            "at_prefix": at_prefix,
+            "created_at": str(now),
+            "expires_at": str(rt_expires_at),
+            "revoked": "0",
+        }
+
+        async with self._redis.pipeline(transaction=True) as pipe:
+            _hset_dict(pipe, self._at_key(at_prefix), at_data)
+            pipe.expireat(self._at_key(at_prefix), at_expires_at + 300)
+            _hset_dict(pipe, self._rt_key(rt_prefix), rt_data)
+            pipe.expireat(self._rt_key(rt_prefix), rt_expires_at + 300)
+            await pipe.execute()
+
+        return TokenPair(
+            access_token=at_plain,
+            refresh_token=rt_plain,
+            expires_in=self.at_ttl,
+            user=TokenUser(username=username, role=role, expires_at=at_expires_at),
+        )
+
+    # ── Validate access token ──────────────────────────────────────
+
+    async def validate_access_token(self, plain_text: str) -> TokenUser | None:
+        """验证 access token。成功则滑动续期，超过绝对上限返回 None 并撤销。"""
+        if not plain_text or not plain_text.startswith("ccx_at_"):
+            return None
+
+        at_prefix = _first8_hex(plain_text)
+        key = self._at_key(at_prefix)
+        raw = await self._redis.hgetall(key)
+        if not raw:
+            return None
+
+        # 完整 hash 碰撞检查
+        stored_full = raw.get("token_full", "")
+        if not hmac.compare_digest(stored_full.encode(), _full_hash(plain_text).encode()):
+            return None
+
+        if raw.get("revoked") == "1":
+            return None
+
+        now = int(time.time())
+        expires_at = int(raw.get("expires_at", "0"))
+        if now > expires_at:
+            return None
+
+        # 绝对过期检查
+        created_at = int(raw.get("created_at", "0"))
+        if (now - created_at) > self.at_absolute_lifetime:
+            # 超过绝对上限 → 后台撤销整个 pair
+            task = asyncio.create_task(self._revoke_by_access_token_async(plain_text, at_prefix))
+            task.add_done_callback(_log_revoke_task_result)
+            return None
+
+        # 滑动续期
+        new_expires_at = now + self.at_ttl
+        async with self._redis.pipeline(transaction=True) as pipe:
+            pipe.hset(key, "expires_at", str(new_expires_at))
+            pipe.expire(key, self.at_ttl)
+            await pipe.execute()
+
+        return TokenUser(
+            username=raw.get("username", ""),
+            role=raw.get("role", "user"),
+            expires_at=new_expires_at,
+        )
+
+    # ── Validate access token (只读，不续期) ───────────────────────
+
+    async def user_from_access_token(self, plain_text: str) -> TokenUser | None:
+        """只读获取 token 对应的用户，不续期。用于 /session 端点。"""
+        if not plain_text or not plain_text.startswith("ccx_at_"):
+            return None
+
+        key = self._at_key(_first8_hex(plain_text))
+        raw = await self._redis.hgetall(key)
+        if not raw:
+            return None
+
+        if not hmac.compare_digest(
+            raw.get("token_full", "").encode(),
+            _full_hash(plain_text).encode(),
+        ):
+            return None
+
+        if raw.get("revoked") == "1":
+            return None
+
+        if int(time.time()) > int(raw.get("expires_at", "0")):
+            return None
+
+        return TokenUser(
+            username=raw.get("username", ""),
+            role=raw.get("role", "user"),
+            expires_at=int(raw.get("expires_at", "0")),
+        )
+
+    # ── Refresh token pair ─────────────────────────────────────────
+
+    async def refresh_token_pair(self, plain_text: str) -> TokenPair:
+        """用 refresh token 原子换新 pair。旧 RT 立即撤销，旧 AT 保留 grace period。"""
+        if not plain_text or not plain_text.startswith("ccx_rt_"):
+            raise _AuthError("refresh token 格式无效")
+
+        rt_prefix = _first8_hex(plain_text)
+        old_rt_key = self._rt_key(rt_prefix)
+        now = int(time.time())
+        grace_expires_at = now + self.rt_grace
+
+        at_plain = _generate_opaque("ccx_at_")
+        rt_plain = _generate_opaque("ccx_rt_")
+        at_prefix = _first8_hex(at_plain)
+        new_rt_prefix = _first8_hex(rt_plain)
+        at_expires_at = now + self.at_ttl
+        rt_expires_at = now + self.rt_ttl
+
+        result = await self._redis.eval(
+            _REFRESH_TOKEN_PAIR_LUA,
+            3,
+            old_rt_key,
+            self._at_key(at_prefix),
+            self._rt_key(new_rt_prefix),
+            _full_hash(plain_text),
+            str(now),
+            str(grace_expires_at),
+            str(self.rt_grace),
+            _full_hash(at_plain),
+            _full_hash(rt_plain),
+            new_rt_prefix,
+            at_prefix,
+            str(now),
+            str(at_expires_at),
+            str(rt_expires_at),
+            "cc:at:",
+        )
+        if not result or str(result[0]) != "1":
+            reason = str(result[1] if result and len(result) > 1 else "")
+            if reason == "revoked":
+                raise _AuthError("refresh token 已被撤销，请重新登录")
+            if reason == "expired":
+                raise _AuthError("refresh token 已过期，请重新登录")
+            raise _AuthError("refresh token 无效或已过期")
+
+        username = str(result[1] or "")
+        role = str(result[2] or "user")
+        return TokenPair(
+            access_token=at_plain,
+            refresh_token=rt_plain,
+            expires_in=self.at_ttl,
+            user=TokenUser(username=username, role=role, expires_at=at_expires_at),
+        )
+
+    # ── Revoke token pair ──────────────────────────────────────────
+
+    async def revoke_token_pair(self, access_token: str) -> None:
+        """撤销 access token 及其关联的 refresh token。"""
+        if not access_token or not access_token.startswith("ccx_at_"):
+            raise _AuthError("access token 格式无效")
+
+        at_prefix = _first8_hex(access_token)
+        await self._revoke_by_access_token_async(access_token, at_prefix)
+
+    async def _revoke_by_access_token_async(self, plain_text: str, at_prefix: str) -> None:
+        """后台撤销：验证 token 后同时标记 at 和关联的 rt 为 revoked=1。"""
+        key = self._at_key(at_prefix)
+        stored_full = await self._redis.hget(key, "token_full")
+        if not stored_full:
+            return
+
+        if not hmac.compare_digest(
+            stored_full.encode(),
+            _full_hash(plain_text).encode(),
+        ):
+            return
+
+        rt_prefix = await self._redis.hget(key, "rt_prefix")
+        async with self._redis.pipeline(transaction=True) as pipe:
+            pipe.hset(key, "revoked", "1")
+            if rt_prefix:
+                pipe.hset(self._rt_key(rt_prefix), "revoked", "1")
+            await pipe.execute()
+
+    # ── Force logout all devices ───────────────────────────────────
+
+    async def revoke_all_user_tokens(self, username: str) -> int:
+        """强制下线用户所有设备。返回被撤销的 token 数。"""
+        count = 0
+        for prefix in ("cc:at:", "cc:rt:"):
+            cursor = 0
+            while True:
+                cursor, keys = await self._redis.scan(
+                    cursor, match=f"{prefix}*", count=100
+                )
+                for key in keys:
+                    raw = await self._redis.hgetall(key)
+                    if raw.get("username") == username and raw.get("revoked") != "1":
+                        await self._redis.hset(key, "revoked", "1")
+                        count += 1
+                if cursor == 0:
+                    break
+        return count
+
+
+class _AuthError(Exception):
+    """内部认证异常，统一映射为中文提示。"""
+    pass

@@ -84,8 +84,46 @@ def create_app(project_root: Path) -> FastAPI:
         database_path=database_path,
     )
 
+    # ── 双 Token 认证 (Redis，必需) ──
+    # 双 Token 认证强依赖 Redis：未配置 redis.url 时服务拒绝启动。
+    from app.yaml_config import get_yaml_config
+    from app.redis_token_manager import DualTokenManager
+    import redis.asyncio as aioredis
+
+    _yaml = get_yaml_config(project_root)
+    _redis_url = str(_yaml.get("redis.url") or "").strip()
+    if not _redis_url:
+        raise RuntimeError(
+            "Redis 未配置：双 Token 认证强依赖 Redis，请在 config.yaml 中设置 redis.url 后重启服务。"
+        )
+
+    _redis = aioredis.from_url(
+        _redis_url,
+        encoding="utf-8",
+        decode_responses=True,
+        health_check_interval=30,
+        socket_keepalive=True,
+        socket_connect_timeout=5,
+        socket_timeout=5,
+    )
+    _at_ttl = int(_yaml.get("redis.at_ttl_seconds") or 10800)
+    _rt_ttl = int(_yaml.get("redis.rt_ttl_seconds") or 604800)
+    _at_abs = int(_yaml.get("redis.at_absolute_lifetime_seconds") or 86400)
+    _rt_grace = int(_yaml.get("redis.rt_grace_seconds") or 900)
+    _dual_mgr = DualTokenManager(
+        _redis,
+        at_ttl_seconds=_at_ttl,
+        rt_ttl_seconds=_rt_ttl,
+        at_absolute_lifetime_seconds=_at_abs,
+        rt_grace_seconds=_rt_grace,
+    )
+    from app.auth import set_dual_token_manager
+    set_dual_token_manager(_dual_mgr)
+    logger.info("dual-token auth enabled (Redis)")
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        await _redis.ping()
         await init_memory(project_root=project_root)
         watchdog = BotWatchdog(manager)
         scheduler = TaskScheduler(database_path, manager, project_root=project_root)
@@ -97,9 +135,10 @@ def create_app(project_root: Path) -> FastAPI:
             await scheduler.stop()
             watchdog.stop()
             manager.stop_all()
+            if _redis is not None:
+                await _redis.aclose()
 
     app = FastAPI(title="WeCom Bot Agent Console", lifespan=lifespan)
-    install_api_exception_handlers(app, database_path=database_path, logger=logger)
 
     app.add_middleware(
         CORSMiddleware,
@@ -112,8 +151,15 @@ def create_app(project_root: Path) -> FastAPI:
     app.state.database_path = database_path
     app.state.project_root = project_root
     app.state.manager = manager
+    app.state.auth_config = _yaml.as_dict()
 
+    # 中间件执行顺序 (Starlette LIFO)：
+    #   请求 → _trace_api_response (生成 trace_id，最外层)
+    #        → _guard_api_session (认证 + IP 白名单，复用 trace_id)
+    #        → 路由
+    # 因此先安装 auth，再安装 trace/exception handlers，使 trace 成为最外层。
     install_auth_middleware(app)
+    install_api_exception_handlers(app, database_path=database_path, logger=logger)
 
     app.include_router(auth_router)
     app.include_router(system_router)

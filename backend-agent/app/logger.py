@@ -10,6 +10,7 @@ import json
 import logging
 import sqlite3
 import traceback
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -36,6 +37,42 @@ STRUCTURED_LOG_FIELDS = (
     "request_method",
     "request_path",
 )
+
+# 当前请求的 trace_id 上下文变量。
+# 由 web 中间件在请求入口 set_trace_id()，请求结束时 reset_trace_id()。
+# TraceIdFilter 会把它注入到每条 LogRecord，使全链路日志自动带上 trace_id。
+_trace_id_var: ContextVar[str] = ContextVar("trace_id", default="")
+
+
+def set_trace_id(trace_id: str) -> None:
+    """绑定当前异步上下文的 trace_id（请求入口调用）。"""
+    _trace_id_var.set(str(trace_id or ""))
+
+
+def reset_trace_id() -> None:
+    """清空当前异步上下文的 trace_id（请求出口调用）。"""
+    _trace_id_var.set("")
+
+
+def get_trace_id() -> str:
+    """读取当前异步上下文的 trace_id。"""
+    return _trace_id_var.get()
+
+
+class TraceIdFilter(logging.Filter):
+    """将当前上下文 trace_id 注入到每条 LogRecord。
+
+    若 LogRecord 已显式携带 trace_id（通过 extra 传入）则不覆盖；
+    否则用上下文变量中的 trace_id 补齐，使请求处理过程中的所有日志
+    都能关联到同一个 trace_id。
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not getattr(record, "trace_id", None):
+            ctx_trace_id = _trace_id_var.get()
+            if ctx_trace_id:
+                record.trace_id = ctx_trace_id
+        return True
 
 
 class StructuredFormatter(logging.Formatter):
@@ -166,8 +203,13 @@ def configure_logging(
         root_logger.removeHandler(handler)
         handler.close()
 
+    # 全局 trace_id 注入过滤器：使每条日志自动携带当前请求的 trace_id
+    trace_filter = TraceIdFilter()
+    root_logger.addFilter(trace_filter)
+
     db_handler = SQLiteLogHandler(database_path, level=log_level)
     db_handler.setFormatter(StructuredFormatter())
+    db_handler.addFilter(trace_filter)
     root_logger.addHandler(db_handler)
 
     import sys
@@ -178,6 +220,7 @@ def configure_logging(
     else:
         console_handler = logging.StreamHandler()
     console_handler.setFormatter(ConsoleFormatter())
+    console_handler.addFilter(trace_filter)
     root_logger.addHandler(console_handler)
 
     message_logger = logging.getLogger(BOT_MESSAGE_LOGGER_NAME)
