@@ -172,7 +172,7 @@ cd ..
 # Backend Gateway
 cd backend-gateway
 python -m pip install uv
-python -m uv sync
+uv sync
 cp .env.example .env
 cp config/bot.template.json config/bot.json
 cd ..

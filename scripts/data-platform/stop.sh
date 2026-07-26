@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-ROOT_DIR="$REPO_ROOT/digital-employee-data-platform"
+ROOT_DIR="$REPO_ROOT/backend-data"
 PID_FILE="$ROOT_DIR/run/backend.pid"
 
 if [[ ! -f "$PID_FILE" ]]; then

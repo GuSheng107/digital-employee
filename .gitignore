@@ -61,6 +61,7 @@ logs/
 .config.toml.lock
 .simple-config.toml.lock
 修复清单.md
+前端需要修复.md
 
 # ========================
 # AI / Memory

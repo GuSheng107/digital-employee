@@ -56,7 +56,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MINIO_DEFAULT_BUCKET", "MINIO_BUCKET_NAME"),
     )
 
-    cors_origins: str = "http://127.0.0.1:5174,http://localhost:5174"
+    cors_origins: str = "http://127.0.0.1:5173,http://localhost:5173"
 
     @property
     def cors_origins_list(self) -> list[str]:

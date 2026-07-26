@@ -16,7 +16,7 @@ digital-employee/
 ```bash
 # 1. 启动主项目 Gateway
 cd backend-gateway
-python -m uv run python -m src.main
+uv run python -m src.main
 
 # 2. 启动数据中台
 ./scripts/data-platform/start.sh

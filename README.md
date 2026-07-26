@@ -106,10 +106,10 @@ RabbitMQ 管理端默认位于 <http://localhost:15672>，账号和密码均可�
 ```powershell
 cd backend-gateway
 python -m pip install uv
-python -m uv sync
+uv sync
 Copy-Item .env.example .env
 Copy-Item config\bot.template.json config\bot.json
-python -m uv run python -m src.main
+uv run python -m src.main
 ```
 
 在 `.env` 中设置 RabbitMQ、MinIO 连接信息，并在 `config/bot.json` 中填写飞书应用凭证。网关默认监听 <http://localhost:8864>，健康检查为 `GET /api/v1/health`。

@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PROJECT_ROOT="$REPO_ROOT/backend-agent"
+
+command -v uv >/dev/null 2>&1 || {
+  echo "[ERROR] 未找到 uv，请先安装: https://docs.astral.sh/uv/" >&2
+  exit 1
+}
 
 echo "[INFO] 项目根目录: $PROJECT_ROOT"
 echo ""

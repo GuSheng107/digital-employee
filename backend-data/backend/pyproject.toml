@@ -17,6 +17,11 @@ dependencies = [
     "pydantic-settings>=2.1",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=7.4",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

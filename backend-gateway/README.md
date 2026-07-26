@@ -23,7 +23,7 @@
 
 使用 `uv` 自动创建虚拟环境并同步依赖：
 ```bash
-python -m uv sync
+uv sync
 ```
 
 ### 2. 配置文件说明

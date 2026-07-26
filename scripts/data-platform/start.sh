@@ -10,6 +10,11 @@ RUN_DIR="$ROOT_DIR/run"
 ENV_FILE="$BACKEND_DIR/.env"
 PID_FILE="$RUN_DIR/backend.pid"
 
+command -v uv >/dev/null 2>&1 || {
+  echo "[ERROR] 未找到 uv，请先安装: https://docs.astral.sh/uv/" >&2
+  exit 1
+}
+
 get_env() {
   local key="$1"
   local default_value="$2"
