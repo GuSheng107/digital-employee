@@ -44,24 +44,51 @@ async def lifespan(app: FastAPI):
     3. 从配置文件加载机器人并注入主事件循环。
     4. 启动 Watchdog 守护线程。
     """
-    # 1. 连接 RabbitMQ 并声明拓扑
-    outbound_queue = await mq_client.connect_and_setup()
+    # 1. 尝试连接 RabbitMQ 并声明拓扑，失败则容错降级
+    try:
+        outbound_queue = await mq_client.connect_and_setup()
+        # 2. 注册出站队列消费者（由 hub 处理 Agent 回复）
+        from src.core.hub import hub
+        await outbound_queue.consume(hub.consume_outbound)
+        logger.info("[MQ] RabbitMQ 消费者注册成功，生产模式就绪。")
+    except Exception as exc:
+        logger.error(
+            "[MQ] 警告：RabbitMQ 连接或初始化失败 ({})。网关将降级运行：所有 Prod 模式 Bot 的消息发送可能受阻，Test 模式 Bot 仍可正常运行。",
+            exc,
+        )
 
-    # 2. 注册出站队列消费者（由 hub 处理 Agent 回复）
-    from src.core.hub import hub
-    await outbound_queue.consume(hub.consume_outbound)
+    # 3. 启动后台重连与连接状态监控守护协程（每分钟执行一次检测重连）
+    async def _mq_reconnect_loop():
+        from src.core.hub import hub
+        while True:
+            try:
+                await asyncio.sleep(60.0)
+                if not mq_client.is_connected:
+                    logger.info("[MQ] 检测到 RabbitMQ 当前处于断开状态，尝试自动重连中...")
+                    outbound_queue = await mq_client.connect_and_setup()
+                    await outbound_queue.consume(hub.consume_outbound)
+                    logger.info("[MQ] RabbitMQ 自动重连成功并已重新订阅出站队列！")
+            except asyncio.CancelledError:
+                break
+            except Exception as err:
+                logger.error("[MQ] RabbitMQ 自动重连尝试失败，60秒后将再次重试: {}", err)
 
-    # 3. 加载 Bot 配置并注入主事件循环
+    reconnect_task = asyncio.create_task(_mq_reconnect_loop())
+
+    # 4. 加载 Bot 配置并注入主事件循环
     main_loop = asyncio.get_running_loop()
     manager.load_from_file()
     manager.inject_main_loop_to_all(main_loop)
 
-    # 4. 启动 Watchdog
+    # 5. 启动 Watchdog
     manager.start_watchdog()
-    yield
-    # 服务关闭时清理
-    manager.shutdown()
-    await mq_client.close()
+    try:
+        yield
+    finally:
+        # 服务关闭时清理
+        reconnect_task.cancel()
+        manager.shutdown()
+        await mq_client.close()
 
 
 app: FastAPI = FastAPI(

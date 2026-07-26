@@ -14,7 +14,12 @@ from typing import Any, Callable
 import aio_pika
 from loguru import logger
 
-from src.core.schemas import StandardMessage
+from src.core.schemas import (
+    MessageContent,
+    MessageType,
+    QuestionCardData,
+    StandardMessage,
+)
 from src.utils.rabbitmq import mq_client
 
 
@@ -65,21 +70,31 @@ class MessageHub:
 
         elif mode == "prod":
             logger.info(
-                "[HUB-IN] 机器人 {} (Prod模式)，异步投递至 MQ",
+                "[HUB-IN] 机器人 {} (Prod模式)，准备投递至 MQ",
                 msg.bot_id,
             )
             inbound_prefix = os.getenv("RABBITMQ_INBOUND_PUBLISH_PREFIX", "msg.inbound")
             routing_key = f"{inbound_prefix}.{msg.platform}.{msg.bot_id}"
             payload = msg.model_dump_json()
             try:
+                # 若检测到 MQ 连接断开，直接主动触发异常以走降级回复逻辑
+                if not mq_client.is_connected:
+                    raise RuntimeError("RabbitMQ 客户端处于断开状态")
+
                 # 显式 await，发生网络异常时可直接被上层 try 结构捕获
                 await mq_client.publish(routing_key, payload)
             except Exception as exc:
                 logger.error(
-                    "[HUB-IN] MQ 消息投递失败 (Bot={}): {}",
+                    "[HUB-IN] MQ 消息投递失败 (Bot={}): {}。直接向正式用户返回服务不可用提示。",
                     msg.bot_id,
                     exc,
                 )
+                # 容灾回复：组装不可用回帧
+                reply_err = msg.model_copy(deep=True)
+                reply_err.content = [
+                    MessageContent(msg_type=MessageType.TEXT, text="系统繁忙，服务暂时不可用，请稍后再试。")
+                ]
+                await self.process_outbound(reply_err)
         else:
             logger.warning(
                 "[HUB-IN] 机器人 {} 配置了未知的 mode='{}'",
@@ -163,11 +178,42 @@ class MessageHub:
             # 非阻塞切换，释放协程控制权
             await asyncio.sleep(1.0)
 
-            # 深拷贝一份并修改内容
+            # 在文本消息归一化（StandardMessage）后，对文本拆分识别 /card 卡片指令
+            is_card_cmd = False
+            for item in msg.content:
+                if item.msg_type == MessageType.TEXT and item.text:
+                    text_strip = item.text.strip().lower()
+                    if text_strip in ("/card", "!card", "card") or text_strip.startswith("/card "):
+                        is_card_cmd = True
+                        break
+                elif item.msg_type == MessageType.CARD:
+                    is_card_cmd = True
+                    break
+
             reply_msg = msg.model_copy(deep=True)
-            for item in reply_msg.content:
-                if item.msg_type == "text" and item.text:
-                    item.text = f"【TEST 异步模拟大脑】已收到指令: {item.text}"
+
+            if is_card_cmd:
+                logger.info("[MockAgent] 检测到卡片指令，构建解耦的公共卡片数据模型 QuestionCardData。")
+                common_card = QuestionCardData(
+                    title="【测试题目】请选择您的首选方案：",
+                    description="**题目：** 在智能员工系统中，您倾向采用哪种底层通信链路？",
+                    options=[
+                        "方案一 (RabbitMQ 纯异步)",
+                        "方案二 (HTTP 直连)",
+                        "方案三 (WebSocket 长连接)",
+                    ],
+                    submit_text="提交选择",
+                )
+                reply_msg.content = [
+                    MessageContent(
+                        msg_type=MessageType.CARD,
+                        card_data=common_card,
+                    )
+                ]
+            else:
+                for item in reply_msg.content:
+                    if item.msg_type == MessageType.TEXT and item.text:
+                        item.text = f"【TEST 异步模拟大脑】已收到指令: {item.text}"
 
             logger.debug(
                 "[MockAgent] 处理完成，投递至出站切面 (SessionID: {}).",

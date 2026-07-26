@@ -11,6 +11,11 @@ from typing import Any
 import lark_oapi as lark
 from loguru import logger
 
+from lark_oapi.event.callback.model.p2_card_action_trigger import (
+    P2CardActionTrigger,
+    P2CardActionTriggerResponse,
+)
+
 from src.core.base import BaseBot
 from src.platforms.feishu.adapter import FeishuAdapter
 
@@ -48,6 +53,7 @@ class FeishuBot(BaseBot):
         self.event_handler: lark.EventDispatcherHandler = (
             lark.EventDispatcherHandler.builder("", "")
             .register_p2_im_message_receive_v1(self._handle_message)
+            .register_p2_card_action_trigger(self._handle_card_action)
             .build()
         )
 
@@ -85,6 +91,21 @@ class FeishuBot(BaseBot):
                     log_level=lark.LogLevel.INFO,
                     auto_reconnect=True,
                 )
+
+                # ============================================================
+                # [Monkey Patch] 修复 lark-oapi <= 1.7.0 WebSocket 长连接模式下
+                # CARD 帧被静默丢弃（直接 return）的 SDK Bug。
+                #
+                # 原始代码 (ws/client.py _handle_data_frame):
+                #   elif message_type == MessageType.CARD:
+                #       return  # <-- 卡片回调被丢弃，永远不会触发处理器
+                #
+                # 补丁逻辑：让 CARD 帧与 EVENT 帧走同一条处理路径
+                # （_do_without_validation），使注册的 card.action.trigger
+                # 回调能被正确触发。
+                # ============================================================
+                self._patch_ws_card_callback(self.ws_client)
+
                 self.ws_client.start()
                 # 正常连接退出（一般不退出，除非 self._is_running 设为 False 且断开连接）
                 break
@@ -126,3 +147,110 @@ class FeishuBot(BaseBot):
         """
         # 直接交由绑定的适配器处理翻译和入站
         self.adapter.handle_receive(data)
+
+    def _handle_card_action(
+        self, data: P2CardActionTrigger
+    ) -> P2CardActionTriggerResponse:
+        """接收卡片交互动作事件，交付适配器处理并归一化出站。
+
+        Args:
+            data: 飞书卡片交互动作事件体。
+
+        Returns:
+            符合飞书 API 规范的 P2CardActionTriggerResponse 响应。
+        """
+        return self.adapter.handle_card_action(data)
+
+    @staticmethod
+    def _patch_ws_card_callback(ws_client: lark.ws.Client) -> None:
+        """对 lark-oapi WebSocket Client 打猴子补丁修复 CARD 帧被丢弃的 Bug。
+
+        lark-oapi <= 1.7.0 中 ws/client.py 的 _handle_data_frame 方法在
+        收到 MessageType.CARD 时直接 return，导致卡片交互回调永远无法触发。
+
+        本补丁将 CARD 帧也交由 _do_without_validation 处理，与 EVENT 帧走
+        相同的处理路径。
+        """
+        import base64
+        import http
+        import time as _time
+
+        from lark_oapi.core.const import UTF_8
+        from lark_oapi.core.json import JSON
+        from lark_oapi.ws.const import (
+            HEADER_BIZ_RT,
+            HEADER_MESSAGE_ID,
+            HEADER_SEQ,
+            HEADER_SUM,
+            HEADER_TRACE_ID,
+            HEADER_TYPE,
+        )
+        from lark_oapi.ws.enum import MessageType as _MT
+        from lark_oapi.ws.model import Response
+
+        async def _patched_handle_data_frame(frame: Any) -> None:
+            """替换后的 _handle_data_frame：让 CARD 帧也走回调处理器。"""
+
+            hs = frame.headers
+            msg_id = _get_by_key_safe(hs, HEADER_MESSAGE_ID)
+            trace_id = _get_by_key_safe(hs, HEADER_TRACE_ID)
+            sum_ = _get_by_key_safe(hs, HEADER_SUM)
+            seq = _get_by_key_safe(hs, HEADER_SEQ)
+            type_ = _get_by_key_safe(hs, HEADER_TYPE)
+
+            pl = frame.payload
+            if int(sum_) > 1:
+                pl = ws_client._combine(msg_id, int(sum_), int(seq), pl)
+                if pl is None:
+                    return
+
+            message_type = _MT(type_)
+            logger.debug(
+                "[WS-Patch] 收到帧: type={}, msg_id={}, trace_id={}",
+                message_type.value, msg_id, trace_id,
+            )
+
+            resp = Response(code=http.HTTPStatus.OK)
+            try:
+                start = int(round(_time.time() * 1000))
+
+                # 核心修复：CARD 帧也走 _do_without_validation
+                if message_type in (_MT.EVENT, _MT.CARD):
+                    result = ws_client._event_handler._do_without_validation(pl)
+                else:
+                    return
+
+                end = int(round(_time.time() * 1000))
+                header = hs.add()
+                header.key = HEADER_BIZ_RT
+                header.value = str(end - start)
+                if result is not None:
+                    resp.data = base64.b64encode(
+                        JSON.marshal(result).encode(UTF_8)
+                    )
+            except Exception as e:
+                logger.error(
+                    "[WS-Patch] 处理帧异常: type={}, msg_id={}, err={}",
+                    message_type.value, msg_id, e,
+                )
+                resp = Response(code=http.HTTPStatus.INTERNAL_SERVER_ERROR)
+
+            frame.payload = JSON.marshal(resp).encode(UTF_8)
+            await ws_client._write_message(frame.SerializeToString())
+
+        def _get_by_key_safe(
+            headers: Any, key: str
+        ) -> str:
+            """安全地从 protobuf headers 中查找键值。"""
+            for header in headers:
+                if header.key == key:
+                    return header.value
+            return ""
+
+        # 替换实例方法（直接替换为协程函数引用）
+        ws_client._handle_data_frame = _patched_handle_data_frame
+
+        logger.info(
+            "[BotID: WS-Patch] 已成功对 lark.ws.Client._handle_data_frame "
+            "打补丁，CARD 帧将正常交由 EventDispatcherHandler 处理。"
+        )
