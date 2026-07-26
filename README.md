@@ -47,7 +47,7 @@ digital-employee/
 ├── backend-gateway/     # Python 飞书消息网关
 ├── backend-data/        # 数据平台后端服务
 ├── frontend/            # React + TypeScript 新管理端脚手架
-├── scripts/             # 各模块运维、启动与清理脚本（含一键启动脚本 start-all.cmd / start-all.sh）
+├── scripts/             # 各模块运维、启动与清理脚本（含一键启动脚本 start-all.bat / start-all.sh）
 ├── docker-compose.yml   # RabbitMQ、MinIO 本地依赖
 └── Makefile             # 可选的统一开发命令
 ```
@@ -99,7 +99,7 @@ cd ..
 .\.venv\Scripts\python.exe .\main.py
 ```
 
-也可以在仓库根目录运行 `scripts\backend-agent\start.cmd`。默认访问地址为 <http://localhost:8765>，OpenAPI 文档位于 <http://localhost:8765/docs>。
+也可以在仓库根目录运行 `scripts\backend-agent\start.bat`。默认访问地址为 <http://localhost:8765>，OpenAPI 文档位于 <http://localhost:8765/docs>。
 
 ## 启动 backend-gateway
 
@@ -136,7 +136,7 @@ npm ci
 npm run dev
 ```
 
-也可以直接在根目录运行快捷脚本 `scripts/start-web.cmd`（或 `./scripts/start-web.sh`）快速启动前端开发服务器（<http://localhost:5173>）。
+也可以直接在根目录运行快捷脚本 `scripts/start-web.bat`（或 `./scripts/start-web.sh`）快速启动前端开发服务器（<http://localhost:5173>）。
 
 可通过 `VITE_API_BASE_URL` 指定后端 API 前缀。生产构建命令为 `npm run build`。
 

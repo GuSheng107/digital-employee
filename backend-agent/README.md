@@ -238,7 +238,7 @@ cd ..
 <summary><b>💻 Windows</b></summary>
 
 ```bat
-..\scripts\backend-agent\start.cmd
+..\scripts\backend-agent\start.bat
 ```
 
 或手动启动：

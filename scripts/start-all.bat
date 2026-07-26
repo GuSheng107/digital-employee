@@ -15,7 +15,7 @@ python "%SCRIPT_DIR%clean-pycache.py"
 echo.
 
 echo [INFO] 步骤 2/5: 在新窗口中启动 Backend Agent 服务 (8765)...
-start "Backend Agent (8765)" cmd /k "%SCRIPT_DIR%backend-agent\start.cmd"
+start "Backend Agent (8765)" cmd /k "%SCRIPT_DIR%backend-agent\start.bat"
 
 echo [INFO] 步骤 3/5: 在新窗口中启动 Backend Gateway 网关服务...
 start "Backend Gateway Service" cmd /k "%SCRIPT_DIR%backend-gateway\start.bat"
@@ -24,7 +24,7 @@ echo [INFO] 步骤 4/5: 在新窗口中启动 Backend Data 数据平台服务 (8
 start "Backend Data Service (8010)" cmd /k "%SCRIPT_DIR%data-platform\start.bat"
 
 echo [INFO] 步骤 5/5: 在新窗口中启动 Frontend 前端开发服务 (5173)...
-start "Frontend Dev Server (5173)" cmd /k "%SCRIPT_DIR%start-web.cmd"
+start "Frontend Dev Server (5173)" cmd /k "%SCRIPT_DIR%start-web.bat"
 
 echo.
 echo ===================================================
