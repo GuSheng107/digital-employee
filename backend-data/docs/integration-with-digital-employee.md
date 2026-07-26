@@ -19,8 +19,7 @@ cd backend-gateway
 python -m uv run python -m src.main
 
 # 2. 启动数据中台
-cd ../backend-data
-./scripts/start.sh
+./scripts/data-platform/start.sh
 ```
 
 ## 调用方式

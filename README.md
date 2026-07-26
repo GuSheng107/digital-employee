@@ -4,12 +4,13 @@ Digital Employee 是一个面向企业 IM 场景的数字员工项目。仓库�
 
 ## 当前实现
 
-| 模块 | 技术栈 | 当前职责与状态 |
-| --- | --- | --- |
-| `backend-agent/` | Python 3.10+、FastAPI、LangChain、SQLite | 企业微信长连接、Agent 运行时、Skills/MCP、记忆、任务、日志和现有管理 API |
-| `backend-agent/web/` | Vue 3、Element Plus、Vite | `backend-agent` 当前实际托管的管理控制台 |
-| `backend-gateway/` | Python 3.11+、FastAPI、lark-oapi、RabbitMQ、MinIO | 飞书多 Bot 长连接、消息归一化、多模态转存、Test/Prod 双模式路由和 Admin API |
-| `frontend/` | React 19、TypeScript、Ant Design 6、Vite 8 | 新管理端脚手架；目前只有布局和示例页面，尚未替代现有 Vue 控制台 |
+| 模块 | 默认端口 | 技术栈 | 当前职责与状态 |
+| --- | --- | --- | --- |
+| `backend-agent/` | `8765` | Python 3.10+、FastAPI、LangChain、SQLite | 企业微信长连接、Agent 运行时、Skills/MCP、记忆、任务、日志和现有管理 API |
+| `backend-agent/web/` | - | Vue 3、Element Plus、Vite | `backend-agent` 当前实际托管的管理控制台 |
+| `backend-gateway/` | `8000` | Python 3.11+、FastAPI、lark-oapi、RabbitMQ、MinIO | 飞书多 Bot 长连接、消息归一化、多模态转存、Test/Prod 双模式路由和 Admin API |
+| `backend-data/` | `8010` | Python 3.11+、FastAPI、Uvicorn、Redis、MinIO | 数据中台后端服务、数据项管理与状态检查 |
+| `frontend/` | `5173` | React 19、TypeScript、Ant Design 6、Vite 8 | 新管理端脚手架；目前只有布局和示例页面，尚未替代现有 Vue 控制台 |
 
 当前可确认的平台实现：
 
@@ -44,11 +45,25 @@ Digital Employee 是一个面向企业 IM 场景的数字员工项目。仓库�
 digital-employee/
 ├── backend-agent/       # 企业微信 Agent 服务与现有 Vue 管理端
 ├── backend-gateway/     # Python 飞书消息网关
+├── backend-data/        # 数据平台后端服务
 ├── frontend/            # React + TypeScript 新管理端脚手架
-├── scripts/             # backend-agent 启动与清理脚本
+├── scripts/             # 各模块运维、启动与清理脚本（含一键启动脚本 start-all.cmd / start-all.sh）
 ├── docker-compose.yml   # RabbitMQ、MinIO 本地依赖
 └── Makefile             # 可选的统一开发命令
 ```
+
+## 服务端口一览
+
+| 模块 / 服务 | 默认端口 | 协议 / 类型 | 说明及常用地址 |
+| --- | --- | --- | --- |
+| **`backend-agent`** | `8765` | HTTP | 企微 Agent 后端 & 托管 Vue 管理控制台 (<http://localhost:8765>)，OpenAPI 文档 (<http://localhost:8765/docs>) |
+| **`backend-gateway`** | `8000` | HTTP | 飞书消息网关 API (<http://localhost:8000>)，健康检查为 `GET /api/v1/health` |
+| **`backend-data`** | `8010` | HTTP | 数据平台后端 API (<http://127.0.0.1:8010>)，Swagger 文档 (<http://127.0.0.1:8010/docs>) |
+| **`frontend`** | `5173` | HTTP | React 前端 Vite 开发服务器 (<http://localhost:5173>) |
+| **RabbitMQ AMQP** | `5672` | AMQP | 消息队列核心服务端口 |
+| **RabbitMQ Console** | `15672` | HTTP | RabbitMQ Web 管理控制台 (<http://localhost:15672>) |
+| **MinIO API** | `19000` / `9000` | HTTP | MinIO 对象存储 API 服务端口 |
+| **MinIO Console** | `19001` / `9001` | HTTP | MinIO Web 管理控制台 (<http://localhost:19001>) |
 
 ## 环境要求
 
@@ -84,7 +99,7 @@ cd ..
 .\.venv\Scripts\python.exe .\main.py
 ```
 
-也可以在仓库根目录运行 `scripts\start-web.cmd`。默认访问地址为 <http://localhost:8765>，OpenAPI 文档位于 <http://localhost:8765/docs>。
+也可以在仓库根目录运行 `scripts\backend-agent\start.cmd`。默认访问地址为 <http://localhost:8765>，OpenAPI 文档位于 <http://localhost:8765/docs>。
 
 ## 启动 backend-gateway
 
@@ -120,6 +135,8 @@ cd frontend
 npm ci
 npm run dev
 ```
+
+也可以直接在根目录运行快捷脚本 `scripts/start-web.cmd`（或 `./scripts/start-web.sh`）快速启动前端开发服务器（<http://localhost:5173>）。
 
 可通过 `VITE_API_BASE_URL` 指定后端 API 前缀。生产构建命令为 `npm run build`。
 

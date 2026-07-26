@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ROOT_DIR="$REPO_ROOT/digital-employee-data-platform"
 PID_FILE="$ROOT_DIR/run/backend.pid"
 
 if [[ ! -f "$PID_FILE" ]]; then

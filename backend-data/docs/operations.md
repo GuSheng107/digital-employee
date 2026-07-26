@@ -3,9 +3,8 @@
 ## 启动
 
 ```bash
-cd backend-data
-chmod +x scripts/*.sh
-./scripts/start.sh
+chmod +x scripts/data-platform/*.sh
+./scripts/data-platform/start.sh
 ```
 
 脚本会读取 `backend/.env` 中的 `APP_HOST` 和 `APP_PORT`，默认端口为 `8010`。
@@ -13,13 +12,13 @@ chmod +x scripts/*.sh
 ## 停止
 
 ```bash
-./scripts/stop.sh
+./scripts/data-platform/stop.sh
 ```
 
 ## 状态检查
 
 ```bash
-./scripts/status.sh
+./scripts/data-platform/status.sh
 ```
 
 状态脚本会检查进程 PID，并调用：

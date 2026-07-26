@@ -170,10 +170,8 @@ wecom-bot-agent/
 ├── web/                        # 🎨 Vue 3 + Element Plus 前端
 │   └── src/                    #    组件/视图/样式（集中式 CSS 管理）
 │
-├── .skills/                    # 🎯 Skills 技能目录
-│   └── system/                 #    系统级 Skills（4 个）
-│
-└── scripts/                    # 🔧 启动脚本
+└── .skills/                    # 🎯 Skills 技能目录
+    └── system/                 #    系统级 Skills（4 个）
 ```
 
 ***
@@ -240,7 +238,7 @@ cd ..
 <summary><b>💻 Windows</b></summary>
 
 ```bat
-scripts\start-web.cmd
+..\scripts\backend-agent\start.cmd
 ```
 
 或手动启动：
@@ -255,7 +253,7 @@ scripts\start-web.cmd
 <summary><b>🍎 macOS / Linux</b></summary>
 
 ```bash
-bash scripts/start-web.sh
+bash ../scripts/backend-agent/start.sh
 ```
 
 或手动启动：
