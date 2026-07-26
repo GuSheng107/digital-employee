@@ -114,6 +114,8 @@ export default function DataPlatformDataItems() {
   }
 
   useEffect(() => {
+    // 初始数据加载场景：异步函数内部 setState 不会同步触发级联渲染
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
