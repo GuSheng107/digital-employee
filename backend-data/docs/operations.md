@@ -46,7 +46,7 @@ curl http://127.0.0.1:8010/api/v1/health/dependencies
 
 ### 端口被占用
 
-确认是否已有主项目 Gateway 或其他服务占用端口。数据中台默认使用 `8010`，主项目 Gateway 通常使用 `8000`。
+确认是否已有主项目 Gateway 或其他服务占用端口。数据中台默认使用 `8010`，主项目 Gateway 通常使用 `8864`。
 
 ### PostgreSQL 连接失败
 

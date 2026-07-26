@@ -2,9 +2,9 @@ from __future__ import annotations
 
 """Web 管理控制台服务器模块。
 
-创建并运行 FastAPI Web 服务器，提供管理控制台的 SPA 静态资源服务、
-API 路由注册、Bot 子进程生命周期管理（启动/停止/监控）、
-看门狗自动重启和定时任务调度等功能。
+创建并运行 FastAPI Web 服务器，提供 API 路由注册、Bot 子进程生命周期
+管理（启动/停止/监控）、看门狗自动重启和定时任务调度等功能。
+前端控制台已迁移至仓库根目录的 `frontend/`（React），本服务仅暴露 API。
 """
 
 import asyncio
@@ -17,8 +17,6 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
 
 from app.asyncio_compat import install_asyncio_exception_filter
 from app.auth_middleware import install_auth_middleware
@@ -126,42 +124,7 @@ def create_app(project_root: Path) -> FastAPI:
     app.include_router(tasks_router)
     app.include_router(feedback_router)
 
-    mount_web_assets(app, project_root)
     return app
-
-
-def mount_web_assets(app: FastAPI, project_root: Path) -> None:
-    """挂载前端 SPA 静态资源到 FastAPI 应用。
-
-    将 Vue 构建产物（assets、avatars、brand 目录）挂载为静态文件服务，
-    并注册通配路由以支持 SPA 的 HTML5 History 模式。
-
-    Args:
-        app: FastAPI 应用实例。
-        project_root: 项目根目录路径，web/dist 子目录包含前端构建产物。
-    """
-    dist_dir = project_root / "web" / "dist"
-    assets_dir = dist_dir / "assets"
-    avatars_dir = dist_dir / "avatars"
-    brand_dir = dist_dir / "brand"
-
-    if assets_dir.exists():
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
-    if avatars_dir.exists():
-        app.mount("/avatars", StaticFiles(directory=avatars_dir), name="avatars")
-    if brand_dir.exists():
-        app.mount("/brand", StaticFiles(directory=brand_dir), name="brand")
-
-    @app.get("/{full_path:path}", response_model=None)
-    def spa(full_path: str):
-        index_path = dist_dir / "index.html"
-        if index_path.exists():
-            return FileResponse(index_path)
-        return HTMLResponse(
-            "<h1>WeCom Bot Agent Console</h1>"
-            "<p>Vue assets are missing. Run <code>npm install</code> and "
-            "<code>npm run build</code> in the <code>web</code> directory.</p>"
-        )
 
 
 def run_web_server(

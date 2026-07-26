@@ -60,6 +60,7 @@ logs/
 .pytest_cache/
 .config.toml.lock
 .simple-config.toml.lock
+修复清单.md
 
 # ========================
 # AI / Memory
