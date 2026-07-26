@@ -7,7 +7,7 @@ PROJECT_ROOT="$REPO_ROOT/backend-gateway"
 
 echo "[INFO] 项目根目录: $PROJECT_ROOT"
 echo "[INFO] 启动网关服务 (uv run python -m src.main)..."
-echo "  - 本地访问: http://localhost:8000"
+echo "  - 本地访问: http://localhost:8864"
 echo ""
 
 cd "$PROJECT_ROOT"

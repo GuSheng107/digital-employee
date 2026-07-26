@@ -57,7 +57,7 @@ digital-employee/
 | 模块 / 服务 | 默认端口 | 协议 / 类型 | 说明及常用地址 |
 | --- | --- | --- | --- |
 | **`backend-agent`** | `8765` | HTTP | 企微 Agent 后端 & 托管 Vue 管理控制台 (<http://localhost:8765>)，OpenAPI 文档 (<http://localhost:8765/docs>) |
-| **`backend-gateway`** | `8000` | HTTP | 飞书消息网关 API (<http://localhost:8000>)，健康检查为 `GET /api/v1/health` |
+| **`backend-gateway`** | `8864` | HTTP | 飞书消息网关 API (<http://localhost:8864>)，健康检查为 `GET /api/v1/health` |
 | **`backend-data`** | `8010` | HTTP | 数据平台后端 API (<http://127.0.0.1:8010>)，Swagger 文档 (<http://127.0.0.1:8010/docs>) |
 | **`frontend`** | `5173` | HTTP | React 前端 Vite 开发服务器 (<http://localhost:5173>) |
 | **RabbitMQ AMQP** | `5672` | AMQP | 消息队列核心服务端口 |
@@ -122,7 +122,7 @@ Copy-Item config\bot.template.json config\bot.json
 python -m uv run python -m src.main
 ```
 
-在 `.env` 中设置 RabbitMQ、MinIO 连接信息，并在 `config/bot.json` 中填写飞书应用凭证。网关默认监听 <http://localhost:8000>，健康检查为 `GET /api/v1/health`。
+在 `.env` 中设置 RabbitMQ、MinIO 连接信息，并在 `config/bot.json` 中填写飞书应用凭证。网关默认监听 <http://localhost:8864>，健康检查为 `GET /api/v1/health`。
 
 即使 Bot 使用 `test` 模式，网关启动阶段仍会连接 RabbitMQ；媒体消息只有在实际收发时才会访问 MinIO。
 

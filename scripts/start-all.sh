@@ -18,7 +18,7 @@ bash "$SCRIPT_DIR/backend-agent/start.sh" &
 AGENT_PID=$!
 echo "Backend Agent PID: $AGENT_PID"
 
-echo "[INFO] 步骤 3/5: 启动 Backend Gateway 网关服务 (8000)..."
+echo "[INFO] 步骤 3/5: 启动 Backend Gateway 网关服务 (8864)..."
 if [ -f "$SCRIPT_DIR/backend-gateway/start.sh" ]; then
     bash "$SCRIPT_DIR/backend-gateway/start.sh" &
     GATEWAY_PID=$!
@@ -39,7 +39,7 @@ echo ""
 echo "==================================================="
 echo "  所有后台服务已拉起！"
 echo "  - Backend Agent:   http://localhost:8765"
-echo "  - Backend Gateway: http://localhost:8000"
+echo "  - Backend Gateway: http://localhost:8864"
 echo "  - Backend Data:    http://localhost:8010"
 echo "  - Frontend Dev:    http://localhost:5173"
 echo "==================================================="

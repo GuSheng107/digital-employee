@@ -172,5 +172,6 @@ async def delete_bot(bot_id: str) -> dict[str, str]:
 
 
 if __name__ == "__main__":
+    port = int(os.getenv("GATEWAY_PORT", os.getenv("PORT", "8864")))
     # 生产部署时建议通过 CLI 传入 reload 配置，此处硬编码 reload=False 以防主线程重载导致子线程混乱
-    uvicorn.run("src.main:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("src.main:app", host="0.0.0.0", port=port, reload=False)
