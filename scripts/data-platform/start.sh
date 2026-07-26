@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-ROOT_DIR="$REPO_ROOT/digital-employee-data-platform"
+ROOT_DIR="$REPO_ROOT/backend-data"
 BACKEND_DIR="$ROOT_DIR/backend"
 LOG_DIR="$ROOT_DIR/logs"
 RUN_DIR="$ROOT_DIR/run"
@@ -35,7 +35,7 @@ if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
 fi
 
 cd "$BACKEND_DIR"
-nohup python3 -m uvicorn app.main:app --host "$APP_HOST" --port "$APP_PORT" \
+nohup uv run uvicorn app.main:app --host "$APP_HOST" --port "$APP_PORT" \
   > "$LOG_DIR/backend.log" 2>&1 &
 echo "$!" > "$PID_FILE"
 
