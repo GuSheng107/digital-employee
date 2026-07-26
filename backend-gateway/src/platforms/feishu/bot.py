@@ -247,14 +247,7 @@ class FeishuBot(BaseBot):
                     return header.value
             return ""
 
-        # 替换实例方法
-        import types
-        ws_client._handle_data_frame = types.MethodType(
-            lambda self, frame: _patched_handle_data_frame(frame),
-            ws_client,
-        )
-        # 由于 MethodType 包裹的 lambda 不能直接 await，
-        # 直接替换为协程函数引用
+        # 替换实例方法（直接替换为协程函数引用）
         ws_client._handle_data_frame = _patched_handle_data_frame
 
         logger.info(

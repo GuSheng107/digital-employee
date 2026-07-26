@@ -8,7 +8,6 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 
-
 class BotConfig(BaseModel):
     """单个 Bot 实例的配置模型。"""
 
@@ -52,7 +51,6 @@ class HealthResponse(BaseModel):
     status: str = Field(default="ok", description="服务状态")
     active_bots: int = Field(default=0, description="活跃 Bot 数量")
     bots: list[BotStatusResponse] = Field(default_factory=list, description="各 Bot 状态详情")
-
 
 class MessageType(str, Enum):
     """归一化的消息类型枚举。"""
@@ -106,9 +104,6 @@ class MessageContent(BaseModel):
     file_name: str | None = Field(default=None, description="文件原始名称（可选）")
     card_json: str | dict | None = Field(default=None, description="交互卡片 JSON 结构或对象（平台特定备用）")
     card_data: QuestionCardData | dict | None = Field(default=None, description="解耦的全局公共卡片数据模型")
-
-
-
 
 class StandardMessage(BaseModel):
     """全局统一的归一化消息体模型。"""

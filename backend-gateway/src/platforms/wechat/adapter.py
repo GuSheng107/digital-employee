@@ -70,6 +70,24 @@ class WeChatAdapter(BaseAdapter):
         # 缓存 msgid -> 原始帧字典的映射，用于被动回复
         self._req_id_map: LRUCache = LRUCache(capacity=2000)
 
+    @staticmethod
+    def _get_str_field(target_dict: Any, keys: list[str]) -> str:
+        """从字典中按 key 列表顺序安全抽取非空字符串属性。
+
+        Args:
+            target_dict: 目标字典数据。
+            keys: 候选键列表。
+
+        Returns:
+            提取到的字符串属性值，若未找到则返回空字符串。
+        """
+        if isinstance(target_dict, dict):
+            for k in keys:
+                v = target_dict.get(k)
+                if v is not None and str(v).strip() != "" and str(v).strip().lower() != "none":
+                    return str(v).strip()
+        return ""
+
     def handle_receive(self, data: dict[str, Any]) -> None:
         """接收企业微信长连接推送的原始事件，翻译成归一化消息投递至中枢。
 
@@ -81,7 +99,7 @@ class WeChatAdapter(BaseAdapter):
         body = data.get("body", {})
 
         req_id = headers.get("req_id", "")
-        
+
         # 1. 采用多级 Fallback 字段抽取关键消息属性，以完美对齐复杂交互
         msg_id = body.get("msgid") or body.get("msg_id") or body.get("message_id") or req_id or ""
         chat_id = body.get("chatid") or body.get("chat_id") or body.get("conversation_id") or ""
@@ -121,30 +139,22 @@ class WeChatAdapter(BaseAdapter):
         if isinstance(event_obj, dict):
             card_evt_data = event_obj.get("template_card_event") or event_obj.get("templatecardevent") or event_obj
 
-        def _get_str_field(target_dict: Any, keys: list[str]) -> str:
-            if isinstance(target_dict, dict):
-                for k in keys:
-                    v = target_dict.get(k)
-                    if v is not None and str(v).strip() != "" and str(v).strip().lower() != "none":
-                        return str(v).strip()
-            return ""
-
         event_type = (
-            _get_str_field(card_evt_data, ["eventtype", "event_type", "event"])
-            or _get_str_field(event_obj, ["eventtype", "event_type", "event"])
-            or _get_str_field(body, ["event", "event_type"])
+            self._get_str_field(card_evt_data, ["eventtype", "event_type", "event"])
+            or self._get_str_field(event_obj, ["eventtype", "event_type", "event"])
+            or self._get_str_field(body, ["event", "event_type"])
         )
 
         event_key = (
-            _get_str_field(card_evt_data, ["event_key", "EventKey", "key"])
-            or _get_str_field(event_obj, ["event_key", "EventKey", "key"])
-            or _get_str_field(body, ["event_key", "EventKey", "key"])
+            self._get_str_field(card_evt_data, ["event_key", "EventKey", "key"])
+            or self._get_str_field(event_obj, ["event_key", "EventKey", "key"])
+            or self._get_str_field(body, ["event_key", "EventKey", "key"])
         )
 
         cb_task_id = (
-            _get_str_field(card_evt_data, ["task_id", "taskId"])
-            or _get_str_field(event_obj, ["task_id", "taskId"])
-            or _get_str_field(body, ["task_id", "taskId"])
+            self._get_str_field(card_evt_data, ["task_id", "taskId"])
+            or self._get_str_field(event_obj, ["task_id", "taskId"])
+            or self._get_str_field(body, ["task_id", "taskId"])
         )
 
         is_card_event = (
