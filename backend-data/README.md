@@ -1,6 +1,6 @@
 # 数字员工数据中台服务
 
-`digital-employee-data-platform` 是数字员工主项目旁路部署的数据访问服务。它只连接已经存在的 PostgreSQL 数据库和数据表，封装必要的数据查询、写入、缓存和对象存储接口。
+`backend-data` 是数字员工主项目旁路部署的数据访问服务。它只连接已经存在的 PostgreSQL 数据库和数据表，封装必要的数据查询、写入、缓存和对象存储接口。
 
 数据库结构管理不由本服务负责。建库、建表、字段调整、索引调整等结构变更统一由服务器独立部署的 CloudBeaver Community 完成。
 
@@ -48,7 +48,7 @@ docs/                 运维、CloudBeaver、主项目集成文档
 ### 后端
 
 ```bash
-cd digital-employee-data-platform/backend
+cd backend-data/backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -59,7 +59,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8010 --reload
 也可以使用 Linux 脚本：
 
 ```bash
-cd digital-employee-data-platform
+cd backend-data
 chmod +x scripts/*.sh
 ./scripts/start.sh
 ./scripts/status.sh
@@ -69,7 +69,7 @@ chmod +x scripts/*.sh
 ### 前端
 
 ```bash
-cd digital-employee-data-platform/frontend
+cd backend-data/frontend
 npm install
 cp .env.example .env
 npm run dev
@@ -162,7 +162,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8010
 ```text
 digital-employee 主项目
   -> HTTP API
-  -> digital-employee-data-platform
+  -> backend-data
   -> PostgreSQL / Redis / MinIO
 ```
 

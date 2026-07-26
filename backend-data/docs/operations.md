@@ -3,7 +3,7 @@
 ## 启动
 
 ```bash
-cd digital-employee-data-platform
+cd backend-data
 chmod +x scripts/*.sh
 ./scripts/start.sh
 ```

@@ -4,7 +4,7 @@
 
 ```text
 digital-employee/
-  digital-employee-data-platform/
+  backend-data/
 ```
 
 ## 运行方式
@@ -19,7 +19,7 @@ cd backend-gateway
 python -m uv run python -m src.main
 
 # 2. 启动数据中台
-cd ../digital-employee-data-platform
+cd ../backend-data
 ./scripts/start.sh
 ```
 
@@ -30,7 +30,7 @@ cd ../digital-employee-data-platform
 ```text
 backend-gateway
   -> http://127.0.0.1:8010/api/v1/...
-  -> digital-employee-data-platform
+  -> backend-data
   -> PostgreSQL / Redis / MinIO
 ```
 
