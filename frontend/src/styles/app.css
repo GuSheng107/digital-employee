@@ -1,0 +1,343 @@
+/* ========================================
+   Global app styles — ported from frontend-vue
+   ======================================== */
+
+/* Panel card styles (replaces Element Plus .el-card) */
+.panel {
+  border: 1px solid #e5e7eb !important;
+  border-radius: 16px !important;
+  background: #ffffff !important;
+  box-shadow: 0 4px 12px 0 rgba(0, 0, 0, 0.05), 0 1px 3px 0 rgba(0, 0, 0, 0.05) !important;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  color: #111827;
+  font-size: 16px;
+}
+
+.panel-title.split {
+  justify-content: space-between;
+}
+
+/* Metric rows */
+.metric-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.metric-row--quad {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.metric-row--triple {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.metric-row--dual {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.metric-row div {
+  padding: 18px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #fafafa 0%, #f3f4f6 100%);
+  border: 1px solid #e5e7eb;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.metric-row div:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 6px 16px -6px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+  transform: translateY(-2px);
+}
+
+.metric-row span {
+  display: block;
+  margin-bottom: 8px;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.metric-row strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 22px;
+  font-weight: 700;
+  color: #1d4ed8;
+  line-height: 1.2;
+}
+
+.metric-row small {
+  display: block;
+  margin-bottom: 10px;
+  color: #9ca3af;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Grid layouts */
+.grid {
+  display: grid;
+  gap: 20px;
+}
+
+.grid.two {
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+}
+
+.stack {
+  display: grid;
+  gap: 20px;
+}
+
+/* Actions bar */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.actions.right {
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.actions.compact {
+  gap: 8px;
+}
+
+/* Status chip */
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-weight: 500;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  color: #4b5563;
+}
+
+.status-chip span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ef4444;
+}
+
+.status-chip.online span {
+  background: #10b981;
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.2);
+}
+
+/* Bot card grid */
+.bot-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  align-content: start;
+}
+
+/* Empty states */
+.empty-block {
+  display: grid;
+  gap: 8px;
+  place-items: center;
+  padding: 28px 24px;
+  text-align: center;
+}
+
+.empty-block--large {
+  min-height: 260px;
+}
+
+.empty-inline {
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f9fafb;
+  color: #6b7280;
+  line-height: 1.7;
+}
+
+/* Data hero */
+.data-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+  padding: 22px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border: 1px solid #bfdbfe;
+  box-shadow: 0 4px 16px -8px rgba(59, 130, 246, 0.15);
+}
+
+.data-hero h2 {
+  margin: 0 0 8px;
+  color: #111827;
+  font-size: 36px;
+  font-weight: 700;
+}
+
+/* Summary list */
+.summary-list {
+  display: grid;
+  gap: 14px;
+}
+
+.summary-list div {
+  padding: 18px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #fafafa 0%, #f3f4f6 100%);
+  border: 1px solid #e5e7eb;
+}
+
+/* Settings */
+.settings-section {
+  padding: 20px 22px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/* Mono text */
+.mono-text {
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+
+/* Shutdown overlay */
+.shutdown-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  color: #f9fafb;
+  background: rgba(17, 24, 39, 0.95);
+  backdrop-filter: blur(4px);
+}
+
+/* ── Chat / Conversation styles ── */
+.message-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Token time cards ── */
+.token-time-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.token-time-card {
+  padding: 24px;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border: 1px solid #bfdbfe;
+  border-radius: 14px;
+  box-shadow: 0 4px 12px -6px rgba(59, 130, 246, 0.15);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.token-time-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px -8px rgba(59, 130, 246, 0.25);
+}
+
+.token-time-card span {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 6px;
+  color: #4b5563;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.token-time-card small {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 12px;
+  color: #6b7280;
+}
+
+.token-time-card strong {
+  font-size: 28px;
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+/* ── Console view ── */
+.console-view {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.console-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.8fr);
+  gap: 24px;
+  height: 100%;
+  min-height: 0;
+  align-items: start;
+}
+
+.data-overview-grid {
+  display: grid;
+  gap: 24px;
+  height: 100%;
+  min-height: 0;
+  align-items: stretch;
+}
+
+/* ── Task items ── */
+.task-item--active {
+  border-color: #3b82f6 !important;
+  background: #eff6ff !important;
+}
+
+/* ── Feedback styles ── */
+.feedback-count-badge {
+  font-weight: 600;
+}
+
+.feedback-count-sep {
+  color: #d9d9d9;
+  margin: 0 1px;
+}
+
+/* ── Scrollbar styling ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}

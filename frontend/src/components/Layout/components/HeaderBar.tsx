@@ -1,40 +1,101 @@
-import { Layout, Dropdown, Avatar, Flex } from 'antd';
-import { UserOutlined, DownOutlined, KeyOutlined, LogoutOutlined } from '@ant-design/icons';
-import styles from '../index.module.css';
+import { Layout, Dropdown, Avatar, Button, Space } from 'antd';
+import {
+  UserOutlined,
+  DownOutlined,
+  KeyOutlined,
+  LogoutOutlined,
+  SettingOutlined,
+  PoweroffOutlined,
+} from '@ant-design/icons';
 import { useUserStore } from '@/store/user';
+import styles from '../index.module.css';
 
 const { Header } = Layout;
 
-export default function HeaderBar() {
+interface HeaderBarProps {
+  onOpenUsers?: () => void;
+  onChangePassword?: () => void;
+  onExit?: () => void;
+}
+
+export default function HeaderBar({ onOpenUsers, onChangePassword, onExit }: HeaderBarProps) {
+  const username = useUserStore((s) => s.username);
+  const displayName = useUserStore((s) => s.displayName);
+  const avatar = useUserStore((s) => s.avatar);
+  const isAdmin = useUserStore((s) => s.isAdmin);
+  const isGuest = useUserStore((s) => s.isGuest);
+  const permission = useUserStore((s) => s.permission);
+  const logout = useUserStore((s) => s.logout);
+
+  const roleLabel =
+    permission === 'admin' ? '管理员' :
+    permission === 'guest' ? '游客' : '普通用户';
+
   const userActionItems = [
-    { key: 'profile', icon: <UserOutlined />, label: '用户管理' },
-    { key: 'password', icon: <KeyOutlined />, label: '修改密码' },
+    ...(isAdmin ? [{ key: 'users', icon: <SettingOutlined />, label: '用户管理' }] : []),
+    ...(!isGuest ? [{ key: 'password', icon: <KeyOutlined />, label: '修改密码' }] : []),
     { type: 'divider' as const },
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', danger: true },
   ];
 
-  const handleUserClick = ({ key }: { key: string }) => {
-    if (key === 'logout') {
-      clearUserInfo();
+  const handleUserClick = async ({ key }: { key: string }) => {
+    switch (key) {
+      case 'users':
+        onOpenUsers?.();
+        break;
+      case 'password':
+        onChangePassword?.();
+        break;
+      case 'logout':
+        await logout();
+        break;
     }
   };
 
-  const username = useUserStore((state) => state.username);
-  const avatar = useUserStore((state) => state.avatar);
-  const clearUserInfo = useUserStore((state) => state.clearUserInfo);
-
   return (
     <Header className={styles.header}>
-      <Flex justify="space-between" align="center" style={{ height: '100%' }}>
-        <div className={styles.projectName}>企微数字员工v1.0</div>
-        <Dropdown menu={{ items: userActionItems, onClick: handleUserClick }} placement="bottomRight">
-          <span className={styles.userDropdown}>
-            <Avatar src={avatar} icon={<UserOutlined />} size="small" style={{ marginRight: 8 }} />
-            <span className={styles.username}>{username || '未登录'}</span>
-            <DownOutlined style={{ fontSize: 10, marginLeft: 4 }} />
-          </span>
-        </Dropdown>
-      </Flex>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' }}>
+        <div>
+          <p className={styles.eyebrow}>Local Runtime</p>
+          <h1 className={styles.title}>企微数字员工V1.0</h1>
+        </div>
+        <Space>
+          {username && (
+            <div className={styles.topbarUser}>
+              <UserOutlined />
+              <span>{displayName || username}</span>
+              <em>{roleLabel}</em>
+            </div>
+          )}
+          {isAdmin && (
+            <Button icon={<SettingOutlined />} onClick={() => onOpenUsers?.()}>
+              用户管理
+            </Button>
+          )}
+          {!isGuest && (
+            <Button icon={<KeyOutlined />} onClick={() => onChangePassword?.()}>
+              修改密码
+            </Button>
+          )}
+          <Button icon={<LogoutOutlined />} onClick={logout}>
+            退出登录
+          </Button>
+          {!isGuest && (
+            <Button danger icon={<PoweroffOutlined />} onClick={() => onExit?.()}>
+              退出系统
+            </Button>
+          )}
+          {username && (
+            <Dropdown menu={{ items: userActionItems, onClick: handleUserClick }} placement="bottomRight">
+              <span className={styles.userDropdown}>
+                <Avatar src={avatar} icon={<UserOutlined />} size="small" style={{ marginRight: 8 }} />
+                <span className={styles.username}>{displayName || username || '未登录'}</span>
+                <DownOutlined style={{ fontSize: 10, marginLeft: 4 }} />
+              </span>
+            </Dropdown>
+          )}
+        </Space>
+      </div>
     </Header>
   );
 }

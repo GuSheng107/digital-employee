@@ -5,6 +5,8 @@ import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { router } from './router';
 import './index.css';
+import './styles/app.css';
+import './styles/responsive.css';
 
 createRoot(document.getElementById('app')!).render(
   <StrictMode>

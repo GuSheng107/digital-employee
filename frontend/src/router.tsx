@@ -1,25 +1,42 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import Layout from './components/Layout';
-import PageA from './pages/PageA';
-import PageB from './pages/PageB';
+import { AuthGuard, GuestGuard } from './components/AuthGuard';
+import PageLoader from './components/PageLoader';
+import LoginView from './pages/LoginView';
+
+const ControlView = lazy(() => import('./pages/ControlView'));
+const AgentConfigView = lazy(() => import('./pages/AgentConfigView'));
+const BotConfigView = lazy(() => import('./pages/BotConfigView'));
+const ProjectLogsView = lazy(() => import('./pages/ProjectLogsView'));
+const DataManagementView = lazy(() => import('./pages/DataManagementView'));
+const SkillsConfigView = lazy(() => import('./pages/SkillsConfigView'));
+const McpConfigView = lazy(() => import('./pages/McpConfigView'));
+const FeedbackStatsView = lazy(() => import('./pages/FeedbackStatsView'));
+const MemoryManagementView = lazy(() => import('./pages/MemoryManagementView'));
+const TaskManagementView = lazy(() => import('./pages/TaskManagementView'));
+const SystemSettingsView = lazy(() => import('./pages/SystemSettingsView'));
+const ConversationsView = lazy(() => import('./pages/ConversationsView'));
 
 export const router = createBrowserRouter([
+  { path: '/login', element: (<GuestGuard><LoginView /></GuestGuard>) },
   {
-    path: '/',
-    element: <Layout />,
+    path: '/', element: (<AuthGuard><Layout /></AuthGuard>),
     children: [
-      {
-        index: true,
-        element: <PageA />,
-      },
-      {
-        path: 'page-b',
-        element: <PageB />,
-      },
+      { index: true, element: <Suspense fallback={<PageLoader />}><ControlView /></Suspense> },
+      { path: 'agent', element: <Suspense fallback={<PageLoader />}><AgentConfigView /></Suspense> },
+      { path: 'bot', element: <Suspense fallback={<PageLoader />}><BotConfigView /></Suspense> },
+      { path: 'chats', element: <Suspense fallback={<PageLoader />}><ConversationsView /></Suspense> },
+      { path: 'mcp', element: <Suspense fallback={<PageLoader />}><McpConfigView /></Suspense> },
+      { path: 'skills', element: <Suspense fallback={<PageLoader />}><SkillsConfigView /></Suspense> },
+      { path: 'projectLogs', element: <Suspense fallback={<PageLoader />}><ProjectLogsView /></Suspense> },
+      { path: 'data', element: <Suspense fallback={<PageLoader />}><DataManagementView /></Suspense> },
+      { path: 'feedback', element: <Suspense fallback={<PageLoader />}><FeedbackStatsView /></Suspense> },
+      { path: 'memory', element: <Suspense fallback={<PageLoader />}><MemoryManagementView /></Suspense> },
+      { path: 'tasks', element: <Suspense fallback={<PageLoader />}><TaskManagementView /></Suspense> },
+      { path: 'settings', element: <Suspense fallback={<PageLoader />}><SystemSettingsView /></Suspense> },
     ],
   },
-  {
-    path: '*',
-    element: <Navigate to="/" replace />,
-  },
+  { path: '*', element: <Navigate to="/" replace /> },
 ]);

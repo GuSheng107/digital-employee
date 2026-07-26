@@ -22,13 +22,56 @@
 .header {
   background: #fff;
   padding: 0 24px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.eyebrow {
+  margin: 0 0 2px;
+  color: #3b82f6;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: #111827;
+}
+
+.topbarUser {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  color: #1e3a8a;
+  background: #eff6ff;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.topbarUser span {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbarUser em {
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
 }
 
 .projectName {
   font-size: 18px;
   font-weight: 600;
-  color: var(--ant-color-text-heading);
+  color: #111827;
 }
 
 .userDropdown {
@@ -36,29 +79,62 @@
   align-items: center;
   cursor: pointer;
   padding: 4px 8px;
-  border-radius: var(--ant-border-radius-sm);
+  border-radius: 6px;
   transition: background 0.3s;
 }
 
 .userDropdown:hover {
-  background: var(--ant-color-fill-alter);
+  background: #f3f4f6;
 }
 
 .username {
   font-size: 14px;
-  color: var(--ant-color-text);
+  color: #1f2937;
 }
 
 .content {
   padding: 24px;
-  background: var(--ant-color-bg-layout);
+  background: #f5f7fa;
   overflow-y: auto;
+  min-height: 0;
 }
 
 .pageContainer {
   padding: 24px;
   background: #fff;
   min-height: 100%;
-  border-radius: var(--ant-border-radius-lg);
-  box-shadow: var(--ant-box-shadow-card);
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+/* Brand area in sidebar */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding: 20px 16px 4px;
+}
+
+.brandMark {
+  width: 42px;
+  height: 42px;
+  display: block;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 4px 12px rgba(59, 130, 246, 0.38));
+}
+
+.brand strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  color: #f9fafb;
+}
+
+.brand span {
+  display: block;
+  margin-top: 2px;
+  color: #9ca3af;
+  font-size: 12px;
 }

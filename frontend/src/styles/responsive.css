@@ -1,0 +1,106 @@
+/* Responsive breakpoints — ported from frontend-vue */
+
+@media (max-width: 1280px) {
+  .data-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metric-row--quad {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  /* Sidebar collapses on mobile — handled by AntD Sider */
+  .workspace {
+    padding: 20px;
+  }
+
+  .grid.two,
+  .console-grid,
+  .data-overview-grid,
+  .settings-grid,
+  .chat-grid,
+  .form-grid,
+  .metric-row,
+  .task-filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-row,
+  .token-time-row {
+    gap: 12px;
+  }
+
+  .metric-row div,
+  .summary-list div {
+    padding: 14px;
+  }
+
+  .metric-row strong,
+  .summary-list strong {
+    font-size: 20px;
+  }
+
+  .data-hero {
+    padding: 18px;
+    gap: 12px;
+  }
+
+  .data-hero h2 {
+    font-size: 28px;
+  }
+
+  .token-time-card {
+    padding: 18px;
+  }
+
+  .token-time-card strong {
+    font-size: 24px;
+  }
+
+  .data-hero,
+  .bot-service-head,
+  .placeholder-task__head,
+  .settings-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .workspace {
+    padding: 16px;
+  }
+
+  .metric-row--quad,
+  .metric-row--triple,
+  .metric-row--dual {
+    grid-template-columns: 1fr;
+  }
+
+  .token-time-row {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-row div,
+  .summary-list div {
+    padding: 16px 14px;
+  }
+
+  .console-grid,
+  .data-overview-grid,
+  .settings-grid {
+    gap: 16px;
+  }
+
+  .data-hero {
+    padding: 16px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .data-hero h2 {
+    font-size: 24px;
+  }
+}
