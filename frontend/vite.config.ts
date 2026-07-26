@@ -11,6 +11,16 @@ export default defineConfig({
   resolve: {
     alias: [{ find: '@', replacement: path.resolve(__dirname, 'src') }],
   },
+  server: {
+    proxy: {
+      // 数据中台后端运行在 8010 端口，开发环境通过代理转发避免跨域
+      '/data-platform-api': {
+        target: 'http://127.0.0.1:8010',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/data-platform-api/, ''),
+      },
+    },
+  },
   build: {
     rollupOptions: {
       output: {
