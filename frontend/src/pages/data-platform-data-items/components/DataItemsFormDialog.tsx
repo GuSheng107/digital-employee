@@ -44,16 +44,32 @@ export default function DataItemsFormDialog({
         initialValues={initialValues}
         onFinish={onSave}
       >
-        <Form.Item label="Namespace" name="namespace">
+        <Form.Item label="Namespace" name="namespace" rules={[{ required: true, message: '请输入 Namespace' }]}>
           <Input />
         </Form.Item>
-        <Form.Item label="Key" name="itemKey">
+        <Form.Item label="Key" name="itemKey" rules={[{ required: true, message: '请输入 Key' }]}>
           <Input />
         </Form.Item>
         <Form.Item label="描述" name="description">
           <Input />
         </Form.Item>
-        <Form.Item label="JSON Value" name="itemValueText">
+        <Form.Item
+          label="JSON Value"
+          name="itemValueText"
+          rules={[
+            { required: true, message: '请输入 JSON 内容' },
+            {
+              validator: (_, value) => {
+                try {
+                  JSON.parse(value || '{}');
+                  return Promise.resolve();
+                } catch {
+                  return Promise.reject(new Error('请输入合法的 JSON 格式'));
+                }
+              },
+            },
+          ]}
+        >
           <Input.TextArea rows={10} spellCheck={false} />
         </Form.Item>
       </Form>

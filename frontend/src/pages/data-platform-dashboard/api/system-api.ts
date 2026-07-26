@@ -4,12 +4,10 @@ import type { DependenciesStatus } from '@/types/data-platform';
 
 // 获取后端服务基本信息
 export async function getServiceInfo(): Promise<ServiceInfo> {
-  const data = await dataPlatformRequest.get<ServiceInfo>('/');
-  return data as unknown as ServiceInfo;
+  return dataPlatformRequest.get<ServiceInfo>('/');
 }
 
 // 获取所有外部依赖状态
 export async function getDependencies(): Promise<DependenciesStatus> {
-  const data = await dataPlatformRequest.get<DependenciesStatus>('/api/v1/health/dependencies');
-  return data as unknown as DependenciesStatus;
+  return dataPlatformRequest.get<DependenciesStatus>('/api/v1/health/dependencies');
 }

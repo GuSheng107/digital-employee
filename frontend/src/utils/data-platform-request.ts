@@ -1,4 +1,9 @@
-import axios, { type AxiosInstance, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
+import axios, {
+  type AxiosInstance,
+  type AxiosRequestConfig,
+  type AxiosResponse,
+  type InternalAxiosRequestConfig,
+} from 'axios';
 import { message } from 'antd';
 
 // 数据中台响应信封：{ success, message, data }
@@ -8,8 +13,7 @@ export interface DataPlatformApiResponse<T> {
   data: T;
 }
 
-// 数据中台独立 baseURL，端口 8010 与主项目后端不同
-const dataPlatformRequest: AxiosInstance = axios.create({
+const instance: AxiosInstance = axios.create({
   baseURL: import.meta.env.VITE_DATA_PLATFORM_API_BASE_URL || '/data-platform-api',
   timeout: 10000,
   headers: {
@@ -17,20 +21,22 @@ const dataPlatformRequest: AxiosInstance = axios.create({
   },
 });
 
-dataPlatformRequest.interceptors.request.use(
+instance.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => config,
   (error) => Promise.reject(error),
 );
 
-dataPlatformRequest.interceptors.response.use(
-  (response: AxiosResponse<DataPlatformApiResponse<unknown>>) => {
-    const { data } = response;
-    if (!data.success) {
-      message.error(data.message || '数据中台请求失败');
-      return Promise.reject(new Error(data.message || 'Error'));
+// 响应拦截器：解包 data.data，业务层直接拿到 T 而非 AxiosResponse<T>
+// 注意：axios 类型要求 fulfilled 返回 AxiosResponse，这里运行时返回的是 body.data，
+// 通过 as unknown as AxiosResponse 在类型层兼容，下方包装层会再次断言为 Promise<T>
+instance.interceptors.response.use(
+  (response) => {
+    const body = response.data as DataPlatformApiResponse<unknown>;
+    if (!body.success) {
+      message.error(body.message || '数据中台请求失败');
+      return Promise.reject(new Error(body.message || 'Error'));
     }
-    // 直接返回 data.data，便于业务层按需透传
-    return data.data as unknown as AxiosResponse;
+    return body.data as unknown as AxiosResponse;
   },
   (error) => {
     if (error.response) {
@@ -51,6 +57,23 @@ dataPlatformRequest.interceptors.response.use(
     return Promise.reject(error);
   },
 );
+
+// 类型化包装：响应拦截器已解包 data.data，此处把 AxiosPromise 断言为 Promise<T>
+// 强转仅存在于封装层一处，调用方直接返回 Promise<T>，无需二次断言
+export const dataPlatformRequest = {
+  get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+    return instance.get(url, config) as unknown as Promise<T>;
+  },
+  post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+    return instance.post(url, data, config) as unknown as Promise<T>;
+  },
+  put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+    return instance.put(url, data, config) as unknown as Promise<T>;
+  },
+  delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+    return instance.delete(url, config) as unknown as Promise<T>;
+  },
+};
 
 export default dataPlatformRequest;
 
