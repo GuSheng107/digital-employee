@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { DataLine, DocumentAdd, Monitor, Setting } from '@element-plus/icons-vue'
+import { DataLine, Monitor, Setting } from '@element-plus/icons-vue'
 import { computed, ref } from 'vue'
 import Dashboard from './views/Dashboard.vue'
 import DataItems from './views/DataItems.vue'
-import DdlTables from './views/DdlTables.vue'
 import SystemConfig from './views/SystemConfig.vue'
 
 const activeView = ref('dashboard')
@@ -11,7 +10,6 @@ const activeView = ref('dashboard')
 const currentComponent = computed(() => {
   if (activeView.value === 'system') return SystemConfig
   if (activeView.value === 'data-items') return DataItems
-  if (activeView.value === 'ddl-tables') return DdlTables
   return Dashboard
 })
 </script>
@@ -39,10 +37,6 @@ const currentComponent = computed(() => {
         <el-menu-item index="data-items">
           <el-icon><DataLine /></el-icon>
           <span>Data Items</span>
-        </el-menu-item>
-        <el-menu-item index="ddl-tables">
-          <el-icon><DocumentAdd /></el-icon>
-          <span>DDL 建表工具</span>
         </el-menu-item>
       </el-menu>
     </el-aside>

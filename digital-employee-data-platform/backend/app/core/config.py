@@ -23,29 +23,23 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     app_env: str = "local"
     app_host: str = "127.0.0.1"
-    app_port: int = 8000
+    app_port: int = 8010
     api_prefix: str = "/api/v1"
-    auto_create_tables: bool = True
     dependency_timeout_seconds: int = 3
 
     core_db_host: str = "127.0.0.1"
     core_db_port: int = 5432
     core_db_name: str = "digital_employee_core"
-    core_db_user: str = "postgres"
+    core_db_user: str = "digital_employee_app"
     core_db_password: str = Field(default="", repr=False)
     core_db_sslmode: str = "disable"
 
     vector_db_host: str = "127.0.0.1"
     vector_db_port: int = 5432
     vector_db_name: str = "digital_employee_vector"
-    vector_db_user: str = "postgres"
+    vector_db_user: str = "digital_employee_app"
     vector_db_password: str = Field(default="", repr=False)
     vector_db_sslmode: str = "disable"
-
-    ddl_database_url: str | None = Field(default=None, repr=False)
-    ddl_allowed_database: str = ""
-    ddl_allowed_schemas: str = "public"
-    ddl_execution_enabled: bool = False
 
     redis_host: str = "127.0.0.1"
     redis_port: int = 6379
@@ -54,8 +48,8 @@ class Settings(BaseSettings):
     redis_ssl: bool = False
 
     minio_endpoint: str = "127.0.0.1:9000"
-    minio_access_key: str = Field(default="minioadmin", repr=False)
-    minio_secret_key: str = Field(default="minioadmin", repr=False)
+    minio_access_key: str = Field(default="", repr=False)
+    minio_secret_key: str = Field(default="", repr=False)
     minio_secure: bool = False
     minio_default_bucket: str = Field(
         default="digital-employee",
@@ -142,12 +136,6 @@ class Settings(BaseSettings):
                 "user": self.vector_db_user,
                 "sslmode": self.vector_db_sslmode,
             },
-            "ddl": {
-                "execution_enabled": self.ddl_execution_enabled,
-                "allowed_database": self.ddl_allowed_database,
-                "allowed_schemas": self.ddl_allowed_schemas_list,
-                "configured": bool(self.ddl_database_url),
-            },
             "redis": {
                 "host": self.redis_host,
                 "port": self.redis_port,
@@ -161,14 +149,6 @@ class Settings(BaseSettings):
             },
             "cors_origins": self.cors_origins_list,
         }
-
-    @property
-    def ddl_allowed_schemas_list(self) -> list[str]:
-        return [
-            schema.strip()
-            for schema in self.ddl_allowed_schemas.split(",")
-            if schema.strip()
-        ]
 
 
 ConnectionTarget = Literal["all", "postgres", "core_db", "vector_db", "redis", "minio"]

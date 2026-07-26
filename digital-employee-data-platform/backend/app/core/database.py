@@ -12,7 +12,6 @@ from app.core.config import settings
 class DatabaseRole(str, Enum):
     CORE = "core"
     VECTOR = "vector"
-    DDL = "ddl"
 
 
 class Base(DeclarativeBase):
@@ -26,12 +25,8 @@ class DatabaseClientWrapper:
         self.role = role
         if role == DatabaseRole.CORE:
             self.database_url = settings.core_database_url
-        elif role == DatabaseRole.VECTOR:
-            self.database_url = settings.vector_database_url
         else:
-            if not settings.ddl_database_url:
-                raise RuntimeError("DDL_DATABASE_URL is not configured.")
-            self.database_url = settings.ddl_database_url
+            self.database_url = settings.vector_database_url
         self._engine: Engine | None = None
         self._session_factory: sessionmaker[Session] | None = None
 
@@ -65,10 +60,6 @@ class DatabaseClientWrapper:
         with self.engine.connect() as connection:
             connection.execute(text("SELECT 1"))
 
-    def create_all(self) -> None:
-        Base.metadata.create_all(bind=self.engine)
-
-
 _database_clients: dict[DatabaseRole, DatabaseClientWrapper] = {}
 
 
@@ -91,9 +82,3 @@ def get_session_factory(role: DatabaseRole = DatabaseRole.CORE) -> sessionmaker[
 def get_core_db_session() -> Generator[Session, None, None]:
     with get_database_client(DatabaseRole.CORE).session() as session:
         yield session
-
-
-def init_core_schema() -> None:
-    from app.models import data_item  # noqa: F401
-
-    get_database_client(DatabaseRole.CORE).create_all()

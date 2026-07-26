@@ -16,3 +16,6 @@ frontend/dist/
 frontend/.vite/
 
 *.log
+logs/
+run/
+*.pid

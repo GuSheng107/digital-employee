@@ -69,7 +69,7 @@ async function runAction(label: string, action: () => Promise<unknown>) {
   try {
     const response = await action()
     lastResult.value = JSON.stringify(response, null, 2)
-    ElMessage.success(`${label}成功`)
+    ElMessage.success(`${label}完成`)
   } catch (error) {
     ElMessage.error(getErrorMessage(error))
   } finally {
@@ -85,7 +85,7 @@ onMounted(loadConfig)
     <div class="page-header">
       <div>
         <h2>System Config</h2>
-        <p>脱敏配置与连接测试</p>
+        <p>查看脱敏配置并测试外部依赖连接</p>
       </div>
       <el-button :loading="loading" @click="loadConfig">刷新配置</el-button>
     </div>
@@ -146,7 +146,7 @@ onMounted(loadConfig)
     </div>
 
     <el-table v-if="configRows.length" :data="configRows" border class="config-table">
-      <el-table-column prop="group" label="配置项" width="180" />
+      <el-table-column prop="group" label="配置分组" width="180" />
       <el-table-column label="脱敏配置">
         <template #default="{ row }">
           <el-descriptions :column="3" size="small" border>
@@ -182,16 +182,16 @@ onMounted(loadConfig)
         确保 Bucket
       </el-button>
       <el-button
-        :loading="actionLoading === 'MinIO 写对象'"
-        @click="runAction('MinIO 写对象', writeTestObject)"
+        :loading="actionLoading === 'MinIO 写入对象'"
+        @click="runAction('MinIO 写入对象', writeTestObject)"
       >
-        MinIO 写对象
+        MinIO 写入对象
       </el-button>
       <el-button
-        :loading="actionLoading === 'MinIO 读对象'"
-        @click="runAction('MinIO 读对象', readTestObject)"
+        :loading="actionLoading === 'MinIO 读取对象'"
+        @click="runAction('MinIO 读取对象', readTestObject)"
       >
-        MinIO 读对象
+        MinIO 读取对象
       </el-button>
       <el-button
         :loading="actionLoading === 'Bucket 列表'"

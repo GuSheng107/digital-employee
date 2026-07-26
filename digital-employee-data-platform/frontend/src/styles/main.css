@@ -173,11 +173,6 @@ body {
   line-height: 1.55;
 }
 
-.ddl-form {
-  max-width: 760px;
-  margin-bottom: 18px;
-}
-
 .table-actions {
   display: flex;
   align-items: center;
@@ -185,22 +180,10 @@ body {
   margin: 18px 0 10px;
 }
 
-.ddl-column-table {
-  margin-bottom: 16px;
-}
-
 .inline-number {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-}
-
-.ddl-alert {
-  margin: 16px 0;
-}
-
-.ddl-result {
-  white-space: pre;
 }
 
 @media (max-width: 1180px) {

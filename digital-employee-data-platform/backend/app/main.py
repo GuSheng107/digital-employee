@@ -6,20 +6,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
-from app.api.routes import ddl
 from app.core.config import settings
-from app.core.database import init_core_schema
 from app.schemas.health import ServiceInfo
 from app.utils.response import fail_response
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if settings.auto_create_tables:
-        try:
-            init_core_schema()
-        except Exception as exc:
-            print(f"Skip auto create tables: {exc}")
     yield
 
 
@@ -83,4 +76,3 @@ def health() -> dict:
 
 
 app.include_router(api_router, prefix=settings.api_prefix)
-app.include_router(ddl.router, prefix="/api/ddl", tags=["ddl-compat"])

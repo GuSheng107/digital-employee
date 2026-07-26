@@ -8,5 +8,4 @@ minio
 loguru
 pydantic
 pydantic-settings
-alembic
 pytest
