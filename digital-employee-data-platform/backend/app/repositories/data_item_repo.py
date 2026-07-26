@@ -19,11 +19,21 @@ class DataItemRepository:
         self.session.refresh(item)
         return item
 
-    def list(self, namespace: str | None = None) -> list[DataItem]:
+    def list(
+        self,
+        namespace: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[DataItem]:
         statement = select(DataItem).where(DataItem.deleted_at.is_(None))
         if namespace:
             statement = statement.where(DataItem.namespace == namespace)
-        statement = statement.order_by(DataItem.created_at.desc())
+        statement = (
+            statement
+            .order_by(DataItem.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         return list(self.session.scalars(statement))
 
     def get(self, item_id: UUID) -> DataItem | None:

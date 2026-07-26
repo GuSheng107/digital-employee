@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from loguru import logger
 
 from app.api.router import api_router
 from app.core.config import settings
@@ -28,7 +29,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -54,9 +55,15 @@ async def validation_exception_handler(
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception(
+        "[UNHANDLED] {} {}: {}",
+        request.method,
+        request.url.path,
+        exc,
+    )
     return JSONResponse(
         status_code=500,
-        content=fail_response(message=str(exc)),
+        content=fail_response(message="internal server error"),
     )
 
 

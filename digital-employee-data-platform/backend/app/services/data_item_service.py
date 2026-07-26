@@ -14,8 +14,13 @@ class DataItemService:
     def create(self, payload: DataItemCreate) -> DataItem:
         return self.repository.create(payload)
 
-    def list(self, namespace: str | None = None) -> list[DataItem]:
-        return self.repository.list(namespace=namespace)
+    def list(
+        self,
+        namespace: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[DataItem]:
+        return self.repository.list(namespace=namespace, limit=limit, offset=offset)
 
     def get(self, item_id: UUID) -> DataItem:
         item = self.repository.get(item_id)

@@ -30,9 +30,11 @@ def create_data_item(
 @router.get("", response_model=ApiResponse)
 def list_data_items(
     namespace: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     service: DataItemService = Depends(get_service),
 ) -> dict:
-    items = service.list(namespace=namespace)
+    items = service.list(namespace=namespace, limit=limit, offset=offset)
     data = [DataItemRead.model_validate(item).model_dump(mode="json") for item in items]
     return success_response(data)
 
