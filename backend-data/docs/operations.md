@@ -9,24 +9,6 @@ chmod +x scripts/data-platform/*.sh
 
 脚本会读取 `backend/.env` 中的 `APP_HOST` 和 `APP_PORT`，默认端口为 `8010`。
 
-## 停止
-
-```bash
-./scripts/data-platform/stop.sh
-```
-
-## 状态检查
-
-```bash
-./scripts/data-platform/status.sh
-```
-
-状态脚本会检查进程 PID，并调用：
-
-```text
-http://<APP_HOST>:<APP_PORT>/health
-```
-
 ## 日志位置
 
 ```text

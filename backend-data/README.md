@@ -57,8 +57,6 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8010 --reload
 ```bash
 chmod +x scripts/data-platform/*.sh
 ./scripts/data-platform/start.sh
-./scripts/data-platform/status.sh
-./scripts/data-platform/stop.sh
 ```
 
 ### 前端
