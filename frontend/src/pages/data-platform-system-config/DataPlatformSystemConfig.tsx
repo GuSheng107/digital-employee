@@ -40,7 +40,7 @@ interface StorageAction {
   run: () => Promise<unknown>;
 }
 
-export default function DataPlatformSystemConfig() {
+export default function DataPlatformSystemConfig(): React.ReactElement {
   const [loading, setLoading] = useState<boolean>(false);
   const [actionLoading, setActionLoading] = useState<string>('');
   const [config, setConfig] = useState<SystemConfigData | null>(null);
@@ -108,8 +108,9 @@ export default function DataPlatformSystemConfig() {
     }
   }
 
+  // 初始数据加载：effect 仅在挂载时执行一次，loadConfig 内部 setState 为异步流程，
+  // 不会在 effect 同步阶段触发级联渲染，符合 react-hooks 规范例外。
   useEffect(() => {
-    // 初始数据加载场景：异步函数内部 setState 不会同步触发级联渲染
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadConfig();
   }, []);

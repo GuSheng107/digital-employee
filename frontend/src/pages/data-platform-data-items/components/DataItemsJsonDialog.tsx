@@ -7,7 +7,7 @@ export interface DataItemsJsonDialogProps {
   onCancel: () => void;
 }
 
-export default function DataItemsJsonDialog({ open, jsonText, onCancel }: DataItemsJsonDialogProps) {
+export default function DataItemsJsonDialog({ open, jsonText, onCancel }: DataItemsJsonDialogProps): React.ReactElement {
   return (
     <Modal
       open={open}

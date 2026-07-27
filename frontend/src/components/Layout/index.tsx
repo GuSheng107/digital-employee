@@ -4,7 +4,7 @@ import HeaderBar from './components/HeaderBar';
 import MainContent from './components/MainContent';
 import styles from './index.module.css';
 
-export default function Layout() {
+export default function Layout(): React.ReactElement {
   return (
     <AntdLayout className={styles.mainLayout}>
       <SiderMenu />

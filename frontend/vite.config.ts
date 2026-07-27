@@ -36,7 +36,7 @@ export default defineConfig(({ mode }) => {
     build: {
       rollupOptions: {
         output: {
-          manualChunks(id) {
+          manualChunks(id: string): string | undefined {
             if (id.includes('node_modules')) {
               if (id.includes('antd')) {
                 return 'antd';
@@ -46,6 +46,7 @@ export default defineConfig(({ mode }) => {
               }
               return 'vendor';
             }
+            return undefined;
           },
         },
       },

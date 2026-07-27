@@ -18,7 +18,7 @@
 
 .pageHeader p {
   margin: 0;
-  color: #697589;
+  color: var(--ant-color-text-secondary);
 }
 
 .toolbar {
@@ -49,10 +49,10 @@
   margin: 18px 0 0;
   padding: 14px;
   overflow: auto;
-  border: 1px solid #d8dee8;
-  border-radius: 8px;
-  background: #111827;
-  color: #d6e4ff;
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--ant-border-radius-lg);
+  background: var(--ant-color-bg-spotlight);
+  color: var(--ant-color-text-light-solid);
   font-size: 13px;
   line-height: 1.55;
 }

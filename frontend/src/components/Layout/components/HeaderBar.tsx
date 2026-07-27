@@ -5,7 +5,7 @@ import { useUserStore } from '@/store/user';
 
 const { Header } = Layout;
 
-export default function HeaderBar() {
+export default function HeaderBar(): React.ReactElement {
   const userActionItems = [
     { key: 'profile', icon: <UserOutlined />, label: '用户管理' },
     { key: 'password', icon: <KeyOutlined />, label: '修改密码' },
@@ -25,13 +25,13 @@ export default function HeaderBar() {
 
   return (
     <Header className={styles.header}>
-      <Flex justify="space-between" align="center" style={{ height: '100%' }}>
+      <Flex justify="space-between" align="center" className={styles.headerFlex}>
         <div className={styles.projectName}>企微数字员工v1.0</div>
         <Dropdown menu={{ items: userActionItems, onClick: handleUserClick }} placement="bottomRight">
           <span className={styles.userDropdown}>
-            <Avatar src={avatar} icon={<UserOutlined />} size="small" style={{ marginRight: 8 }} />
+            <Avatar src={avatar} icon={<UserOutlined />} size="small" className={styles.avatar} />
             <span className={styles.username}>{username || '未登录'}</span>
-            <DownOutlined style={{ fontSize: 10, marginLeft: 4 }} />
+            <DownOutlined className={styles.downIcon} />
           </span>
         </Dropdown>
       </Flex>

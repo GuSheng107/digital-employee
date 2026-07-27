@@ -18,7 +18,7 @@ export default function DataItemsFormDialog({
   initialValues,
   onCancel,
   onSave,
-}: DataItemsFormDialogProps) {
+}: DataItemsFormDialogProps): React.ReactElement {
   const [form] = Form.useForm<DataItemFormValues>();
 
   useEffect(() => {
@@ -61,7 +61,10 @@ export default function DataItemsFormDialog({
             {
               validator: (_, value) => {
                 try {
-                  JSON.parse(value || '{}');
+                  const parsed: unknown = JSON.parse(value || '{}');
+                  if (parsed == null || Array.isArray(parsed) || typeof parsed !== 'object') {
+                    return Promise.reject(new Error('JSON 必须是对象'));
+                  }
                   return Promise.resolve();
                 } catch {
                   return Promise.reject(new Error('请输入合法的 JSON 格式'));

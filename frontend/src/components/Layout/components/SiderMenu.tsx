@@ -9,7 +9,7 @@ const { Sider } = Layout;
 
 const DATA_PLATFORM_KEY = 'data-platform';
 
-export default function SiderMenu() {
+export default function SiderMenu(): React.ReactElement {
   const navigate = useNavigate();
   const location = useLocation();
 

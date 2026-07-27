@@ -18,7 +18,7 @@
 
 .pageHeader p {
   margin: 0;
-  color: #697589;
+  color: var(--ant-color-text-secondary);
 }
 
 .statusGrid {

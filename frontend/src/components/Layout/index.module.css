@@ -8,8 +8,8 @@
   align-items: center;
   padding: 0 20px;
   gap: 12px;
-  background: #002140;
-  color: #fff;
+  background: var(--ant-color-bg-spotlight);
+  color: var(--ant-color-text-light-solid);
   font-weight: bold;
   font-size: 16px;
 }
@@ -20,7 +20,7 @@
 }
 
 .header {
-  background: #fff;
+  background: var(--ant-color-bg-container);
   padding: 0 24px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
@@ -57,8 +57,21 @@
 
 .pageContainer {
   padding: 24px;
-  background: #fff;
+  background: var(--ant-color-bg-container);
   min-height: 100%;
   border-radius: var(--ant-border-radius-lg);
   box-shadow: var(--ant-box-shadow-card);
+}
+
+.headerFlex {
+  height: 100%;
+}
+
+.avatar {
+  margin-right: 8px;
+}
+
+.downIcon {
+  font-size: 10px;
+  margin-left: 4px;
 }
