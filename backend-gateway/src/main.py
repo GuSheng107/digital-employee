@@ -9,6 +9,24 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
+
+# 启动时尽早加载 .env，让 Nacos 凭证（NACOS_*）可被 NacosClient 读到。
+# 必须在 import 业务模块（src.utils.minio_client 等）之前完成，
+# 因为这些模块在 import 时就会读环境变量。
+load_dotenv()
+
+# 从 Nacos 拉取共享基础设施配置并注入 os.environ，优先级高于本地 .env。
+# 失败时静默降级（缺凭证/包未安装/网络异常都仅打日志），不阻塞启动。
+try:
+    from nacos_client import NacosClient
+
+    _nacos_client = NacosClient.from_env_optional(default_data_id="dev.yaml")
+    if _nacos_client is not None:
+        _nacos_client.load_to_environ()
+except ImportError:
+    pass  # nacos-client 未安装，仅本地开发场景
+
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException
 
