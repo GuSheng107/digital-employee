@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.data_item import DataItem
@@ -35,6 +35,20 @@ class DataItemRepository:
             .offset(offset)
         )
         return list(self.session.scalars(statement))
+
+    def count(self, namespace: str | None = None) -> int:
+        """统计未软删的数据条目数量。
+
+        Args:
+            namespace: 可选命名空间过滤条件，为 None 时统计全量。
+
+        Returns:
+            符合条件的记录数，无数据时返回 0。
+        """
+        statement = select(func.count()).select_from(DataItem).where(DataItem.deleted_at.is_(None))
+        if namespace:
+            statement = statement.where(DataItem.namespace == namespace)
+        return self.session.scalar(statement) or 0
 
     def get(self, item_id: UUID) -> DataItem | None:
         statement = select(DataItem).where(

@@ -20,6 +20,8 @@ import styles from './index.module.css';
 
 const { Title, Text } = Typography;
 
+const DEFAULT_PAGE_SIZE = 10;
+
 function parsePayload(values: DataItemFormValues): DataItemPayload {
   return {
     namespace: values.namespace,
@@ -37,19 +39,41 @@ export default function DataPlatformDataItems() {
   const [editingId, setEditingId] = useState<string>('');
   const [namespaceFilter, setNamespaceFilter] = useState<string>('');
   const [items, setItems] = useState<DataItem[]>([]);
+  const [total, setTotal] = useState<number>(0);
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [currentJson, setCurrentJson] = useState<string>('');
   const [formValues, setFormValues] = useState<DataItemFormValues>(DEFAULT_FORM_VALUE);
 
-  async function loadItems(): Promise<void> {
+  async function loadItems(pageNum = page, pageSz = pageSize): Promise<void> {
     setLoading(true);
     try {
-      const list = await listDataItems(namespaceFilter);
-      setItems(list);
+      let result = await listDataItems(namespaceFilter, pageSz, (pageNum - 1) * pageSz);
+      // 删除最后一页的最后一条后，后端返回空数组 — 自动回退到最后一页
+      if (result.items.length === 0 && result.total > 0 && pageNum > 1) {
+        const lastPage = Math.max(1, Math.ceil(result.total / pageSz));
+        pageNum = lastPage;
+        setPage(lastPage);
+        result = await listDataItems(namespaceFilter, pageSz, (pageNum - 1) * pageSz);
+      }
+      setItems(result.items);
+      setTotal(result.total);
     } catch (error) {
       message.error(getDataPlatformErrorMessage(error));
     } finally {
       setLoading(false);
     }
+  }
+
+  function handlePageChange(newPage: number, newPageSize: number): void {
+    setPage(newPage);
+    setPageSize(newPageSize);
+    void loadItems(newPage, newPageSize);
+  }
+
+  function handleQuery(): void {
+    setPage(1);
+    void loadItems(1, pageSize);
   }
 
   function openCreate(): void {
@@ -135,9 +159,13 @@ export default function DataPlatformDataItems() {
       <DataItemsTable
         loading={loading}
         dataSource={items}
+        total={total}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={handlePageChange}
         namespaceFilter={namespaceFilter}
         onNamespaceFilterChange={setNamespaceFilter}
-        onQuery={() => void loadItems()}
+        onQuery={handleQuery}
         onShowJson={showJson}
         onEdit={openEdit}
         onDelete={removeItem}

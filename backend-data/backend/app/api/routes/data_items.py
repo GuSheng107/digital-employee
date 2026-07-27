@@ -34,9 +34,9 @@ def list_data_items(
     offset: int = Query(default=0, ge=0),
     service: DataItemService = Depends(get_service),
 ) -> dict:
-    items = service.list(namespace=namespace, limit=limit, offset=offset)
+    items, total = service.list_with_count(namespace=namespace, limit=limit, offset=offset)
     data = [DataItemRead.model_validate(item).model_dump(mode="json") for item in items]
-    return success_response(data)
+    return success_response({"items": data, "total": total})
 
 
 @router.get("/{item_id}", response_model=ApiResponse)

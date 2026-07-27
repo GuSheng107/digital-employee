@@ -17,6 +17,7 @@ export default defineConfig([
     ],
     rules: {
       semi: ['error', 'always'],
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
     languageOptions: {
       globals: globals.browser,
