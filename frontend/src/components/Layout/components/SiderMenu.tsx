@@ -13,14 +13,15 @@ export default function SiderMenu(): React.ReactElement {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // 派生 state 模式：路由决定 data-platform 子菜单是否强制展开，
-  // 用户在其他页面可手动展开/折叠；在 data-platform 页面时强制展开（符合 UX 预期）
-  const [dpManuallyOpen, setDpManuallyOpen] = useState<boolean>(false);
+  // 用户显式收起时优先级高于路由强制展开：在 data-platform 页面用户仍可手动折叠子菜单
+  // 路由变化时（导航到 data-platform）自动展开，除非用户已手动收起
+  const [dpManuallyClosed, setDpManuallyClosed] = useState<boolean>(false);
   const isOnDataPlatform = location.pathname.startsWith('/data-platform');
-  const openKeys = isOnDataPlatform || dpManuallyOpen ? [DATA_PLATFORM_KEY] : [];
+  const shouldOpen = (isOnDataPlatform && !dpManuallyClosed);
+  const openKeys = shouldOpen ? [DATA_PLATFORM_KEY] : [];
 
   const handleOpenChange = (keys: string[]): void => {
-    setDpManuallyOpen(keys.includes(DATA_PLATFORM_KEY));
+    setDpManuallyClosed(!keys.includes(DATA_PLATFORM_KEY));
   };
 
   const menuItems = [

@@ -19,31 +19,7 @@ load_dotenv()
 # 从 Nacos 拉取共享基础设施配置并注入 os.environ，优先级高于本地 .env。
 # 失败时静默降级（缺凭证/包未安装/网络异常都仅打日志），不阻塞启动。
 
-
-def _copy_overwrite(src_key: str, dst_key: str) -> None:
-    """如果 src_key 存在，覆盖 dst_key（Nacos 优先级高于本地 .env）。"""
-    src = os.environ.get(src_key)
-    if src:
-        os.environ[dst_key] = src
-
-
-def _compose_endpoint(host_key: str, port_key: str, endpoint_key: str) -> None:
-    """如果 host+port 都存在，拼接为 host:port 覆盖 endpoint（Nacos 优先）。"""
-    host = os.environ.get(host_key)
-    port = os.environ.get(port_key)
-    if host and port:
-        os.environ[endpoint_key] = f"{host}:{port}"
-
-
-def _compose_rabbitmq_url() -> None:
-    """从 RABBITMQ_HOST + AMQP_PORT + USERNAME + PASSWORD 拼接 amqp:// URL。"""
-    host = os.environ.get("RABBITMQ_HOST")
-    port = os.environ.get("RABBITMQ_AMQP_PORT")
-    if not host or not port:
-        return
-    user = os.environ.get("RABBITMQ_USERNAME", "guest")
-    password = os.environ.get("RABBITMQ_PASSWORD", "guest")
-    os.environ["RABBITMQ_URL"] = f"amqp://{user}:{password}@{host}:{port}/"
+from nacos_client import adapter as nacos_adapter
 
 
 def _adapt_nacos_to_gateway_env() -> None:
@@ -58,11 +34,11 @@ def _adapt_nacos_to_gateway_env() -> None:
     本地调试时设 NACOS_SERVER_ADDR 为空可跳过 Nacos 拉取，回退到 .env。
     """
     # MinIO: host + api_port -> endpoint
-    _compose_endpoint("MINIO_HOST", "MINIO_API_PORT", "MINIO_ENDPOINT")
-    _copy_overwrite("MINIO_USERNAME", "MINIO_ACCESS_KEY")
-    _copy_overwrite("MINIO_PASSWORD", "MINIO_SECRET_KEY")
-    # RabbitMQ: host + amqp_port + user + pass -> url
-    _compose_rabbitmq_url()
+    nacos_adapter.compose_endpoint("MINIO_HOST", "MINIO_API_PORT", "MINIO_ENDPOINT")
+    nacos_adapter.copy_overwrite("MINIO_USERNAME", "MINIO_ACCESS_KEY")
+    nacos_adapter.copy_overwrite("MINIO_PASSWORD", "MINIO_SECRET_KEY")
+    # RabbitMQ: host + amqp_port + user + pass -> url（凭证 URL 编码在 adapter 内处理）
+    nacos_adapter.compose_rabbitmq_url()
 
 
 try:
@@ -72,11 +48,20 @@ try:
     if _nacos_client is not None:
         _nacos_client.load_to_environ()
         _adapt_nacos_to_gateway_env()
-except ImportError:
-    pass  # nacos-client 未安装，仅本地开发场景
+except Exception as _nacos_exc:  # noqa: BLE001
+    # 捕获所有异常（含 ImportError / NacosClient 内部异常 / YAML 解析异常），
+    # 统一降级到本地配置，避免任一环节失败阻断服务启动。
+    import logging
+    logging.getLogger("nacos_client").warning(
+        "[Nacos] 初始化失败 (%s: %s)，降级到本地配置。",
+        type(_nacos_exc).__name__,
+        _nacos_exc,
+    )
+
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from loguru import logger
 
@@ -165,6 +150,20 @@ app: FastAPI = FastAPI(
     description="智能机器人系统消息侧网关（三期：RabbitMQ 双模路由）",
     version="3.0.0",
     lifespan=lifespan,
+)
+
+# CORS 中间件：允许前端管理后台跨域调用 Admin API。
+# 默认放行本地开发前端端口（5173），可通过环境变量 CORS_ORIGINS 扩展。
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        *(origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()),
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["*"],
 )
 
 

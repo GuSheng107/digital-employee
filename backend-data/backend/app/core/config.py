@@ -8,6 +8,7 @@ from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
+from nacos_client import adapter as nacos_adapter
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(BASE_DIR / ".env")
@@ -42,37 +43,22 @@ def _adapt_nacos_to_backend_data_env() -> None:
     本地调试时设 NACOS_SERVER_ADDR 为空可跳过 Nacos 拉取，回退到 .env。
     """
     # Postgres -> core_db_*
-    _copy_overwrite("POSTGRES_HOST", "CORE_DB_HOST")
-    _copy_overwrite("POSTGRES_PORT", "CORE_DB_PORT")
-    _copy_overwrite("POSTGRES_DATABASE", "CORE_DB_NAME")
-    _copy_overwrite("POSTGRES_USERNAME", "CORE_DB_USER")
-    _copy_overwrite("POSTGRES_PASSWORD", "CORE_DB_PASSWORD")
+    nacos_adapter.copy_overwrite("POSTGRES_HOST", "CORE_DB_HOST")
+    nacos_adapter.copy_overwrite("POSTGRES_PORT", "CORE_DB_PORT")
+    nacos_adapter.copy_overwrite("POSTGRES_DATABASE", "CORE_DB_NAME")
+    nacos_adapter.copy_overwrite("POSTGRES_USERNAME", "CORE_DB_USER")
+    nacos_adapter.copy_overwrite("POSTGRES_PASSWORD", "CORE_DB_PASSWORD")
     # Postgres -> vector_db_*（dev.yaml 当前未区分 core/vector，复用同一组）
-    _copy_overwrite("POSTGRES_HOST", "VECTOR_DB_HOST")
-    _copy_overwrite("POSTGRES_PORT", "VECTOR_DB_PORT")
-    _copy_overwrite("POSTGRES_DATABASE", "VECTOR_DB_NAME")
-    _copy_overwrite("POSTGRES_USERNAME", "VECTOR_DB_USER")
-    _copy_overwrite("POSTGRES_PASSWORD", "VECTOR_DB_PASSWORD")
+    nacos_adapter.copy_overwrite("POSTGRES_HOST", "VECTOR_DB_HOST")
+    nacos_adapter.copy_overwrite("POSTGRES_PORT", "VECTOR_DB_PORT")
+    nacos_adapter.copy_overwrite("POSTGRES_DATABASE", "VECTOR_DB_NAME")
+    nacos_adapter.copy_overwrite("POSTGRES_USERNAME", "VECTOR_DB_USER")
+    nacos_adapter.copy_overwrite("POSTGRES_PASSWORD", "VECTOR_DB_PASSWORD")
     # MinIO: host + api_port -> endpoint
-    _compose_endpoint("MINIO_HOST", "MINIO_API_PORT", "MINIO_ENDPOINT")
-    _copy_overwrite("MINIO_USERNAME", "MINIO_ACCESS_KEY")
-    _copy_overwrite("MINIO_PASSWORD", "MINIO_SECRET_KEY")
+    nacos_adapter.compose_endpoint("MINIO_HOST", "MINIO_API_PORT", "MINIO_ENDPOINT")
+    nacos_adapter.copy_overwrite("MINIO_USERNAME", "MINIO_ACCESS_KEY")
+    nacos_adapter.copy_overwrite("MINIO_PASSWORD", "MINIO_SECRET_KEY")
     # Redis 已匹配（REDIS_HOST/REDIS_PORT/REDIS_PASSWORD），无需转换
-
-
-def _copy_overwrite(src_key: str, dst_key: str) -> None:
-    """如果 src_key 存在，覆盖 dst_key（Nacos 优先级高于本地 .env）。"""
-    src = os.environ.get(src_key)
-    if src:
-        os.environ[dst_key] = src
-
-
-def _compose_endpoint(host_key: str, port_key: str, endpoint_key: str) -> None:
-    """如果 host+port 都存在，拼接为 host:port 覆盖 endpoint（Nacos 优先）。"""
-    host = os.environ.get(host_key)
-    port = os.environ.get(port_key)
-    if host and port:
-        os.environ[endpoint_key] = f"{host}:{port}"
 
 
 class Settings(BaseSettings):

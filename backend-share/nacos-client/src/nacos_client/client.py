@@ -158,9 +158,11 @@ class NacosClient:
         default_data_id: str | None = None,
         default_namespace: str = "dev",
     ) -> "NacosClient | None":
-        """from_env 的可选版本：缺少凭证时返回 None 而非抛异常。
+        """from_env 的可选版本：缺少凭证或配置异常时返回 None 而非抛异常。
 
         适用于「未配置 Nacos 凭证即跳过」的场景，让本地开发不必强制配置 Nacos。
+        捕获所有异常（NacosConfigError、ValueError、TypeError 等）统一降级，
+        避免任一配置项格式错误阻断服务启动。
         """
         if not os.getenv("NACOS_SERVER_ADDR"):
             logger.info(
@@ -169,8 +171,12 @@ class NacosClient:
             return None
         try:
             return cls.from_env(default_data_id, default_namespace)
-        except NacosConfigError as exc:
-            logger.warning("[Nacos] %s，降级到本地配置。", exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[Nacos] 初始化失败 (%s: %s)，降级到本地配置。",
+                type(exc).__name__,
+                exc,
+            )
             return None
 
     def _login(self) -> str | None:

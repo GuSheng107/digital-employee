@@ -1,10 +1,25 @@
+import { Suspense } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { Spin } from 'antd';
 import Layout from './components/Layout';
 import PageA from './pages/PageA';
 import PageB from './pages/PageB';
-import DataPlatformDashboard from './pages/data-platform-dashboard/DataPlatformDashboard';
-import DataPlatformDataItems from './pages/data-platform-data-items/DataPlatformDataItems';
-import DataPlatformSystemConfig from './pages/data-platform-system-config/DataPlatformSystemConfig';
+import {
+  DataPlatformDashboard,
+  DataPlatformDataItems,
+  DataPlatformSystemConfig,
+} from './router/lazy-pages';
+
+// 懒加载页面统一 fallback
+const LazyFallback = (
+  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
+    <Spin size="large" />
+  </div>
+);
+
+function withSuspense(element: React.ReactElement): React.ReactElement {
+  return <Suspense fallback={LazyFallback}>{element}</Suspense>;
+}
 
 export const router = createBrowserRouter([
   {
@@ -21,15 +36,15 @@ export const router = createBrowserRouter([
       },
       {
         path: 'data-platform/dashboard',
-        element: <DataPlatformDashboard />,
+        element: withSuspense(<DataPlatformDashboard />),
       },
       {
         path: 'data-platform/data-items',
-        element: <DataPlatformDataItems />,
+        element: withSuspense(<DataPlatformDataItems />),
       },
       {
         path: 'data-platform/system-config',
-        element: <DataPlatformSystemConfig />,
+        element: withSuspense(<DataPlatformSystemConfig />),
       },
     ],
   },
