@@ -14,10 +14,10 @@ export default defineConfig({
   server: {
     proxy: {
       // backend-agent 运行在 8765 端口，开发环境通过代理转发避免跨域
-      '/api': {
+      '/backend-agent-api': {
         target: 'http://127.0.0.1:8765',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
+        rewrite: (path) => path.replace(/^\/backend-agent-api/, ''),
       },
       // 数据中台后端运行在 8010 端口，开发环境通过代理转发避免跨域
       '/data-platform-api': {

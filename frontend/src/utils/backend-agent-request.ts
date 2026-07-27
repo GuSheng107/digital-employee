@@ -17,7 +17,7 @@ export interface AgentApiResponse<T> {
  */
 class BackendAgentRequest extends BaseRequest {
   constructor() {
-    super(import.meta.env.VITE_API_BASE_URL || '/api');
+    super(import.meta.env.VITE_API_BASE_URL || '/backend-agent-api');
   }
 
   protected isSuccess(body: unknown): boolean {
