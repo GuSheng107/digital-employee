@@ -62,7 +62,7 @@ export default function DataItemsFormDialog({
               validator: (_, value) => {
                 try {
                   const parsed: unknown = JSON.parse(value || '{}');
-                  if (parsed == null || typeof parsed !== 'object') {
+                  if (parsed == null || Array.isArray(parsed) || typeof parsed !== 'object') {
                     return Promise.reject(new Error('JSON 必须是对象'));
                   }
                   return Promise.resolve();

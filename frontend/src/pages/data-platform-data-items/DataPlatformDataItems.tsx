@@ -25,7 +25,9 @@ const DEFAULT_PAGE_SIZE = 10;
 function parsePayload(values: DataItemFormValues): DataItemPayload {
   const raw: unknown = JSON.parse(values.itemValueText || '{}');
   const itemValue: Record<string, unknown> =
-    raw != null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+    raw != null && !Array.isArray(raw) && typeof raw === 'object'
+      ? (raw as Record<string, unknown>)
+      : {};
   return {
     namespace: values.namespace,
     item_key: values.itemKey,
