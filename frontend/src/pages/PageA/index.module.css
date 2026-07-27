@@ -3,7 +3,7 @@
 }
 
 .title {
-  color: #1677ff;
+  color: var(--ant-color-primary);
   font-size: 22px;
   font-weight: 600;
   margin-bottom: 16px;

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger
+from pydantic import ValidationError
 
 from src.core.base import BaseBot
 from src.core.schemas import BotConfig, BotConfigFile, BotStatusResponse
@@ -72,8 +73,12 @@ class BotManager:
             for bot_cfg in config_file.bots:
                 self.add_or_update_bot(bot_cfg)
 
+        except (json.JSONDecodeError, ValidationError) as exc:
+            logger.error("静态配置文件 {} 解析失败: {}", self.config_path, exc)
+        except OSError as exc:
+            logger.error("读取静态配置文件 {} 失败: {}", self.config_path, exc)
         except Exception as exc:
-            logger.error("加载静态配置文件失败: {}", exc)
+            logger.error("加载静态配置文件时发生未预期异常: {}", exc)
 
     def inject_main_loop_to_all(self, loop: asyncio.AbstractEventLoop) -> None:
         """将 FastAPI 主事件循环注入给所有已加载的 Bot 实例。
@@ -242,17 +247,14 @@ class BotManager:
 
             with self._lock:
                 for bot_id, bot in self.bots.items():
-                    # 如果 Bot 标记为应该运行，但对应的底层线程已经死掉
-                    if bot._is_running and (
-                        bot._thread is None or not bot._thread.is_alive()
-                    ):
+                    # 通过公开属性判断是否处于僵尸状态，避免直接读取私有字段
+                    if bot.is_zombie:
                         logger.warning(
                             "[BotID: {}] 检测到 Bot 线程异常终止（僵尸状态），正在尝试重新拉起...",
                             bot_id,
                         )
                         try:
-                            # 清理残留线程对象，重新拉起
-                            bot._thread = None
+                            # start() 会重置 _thread，无需外部清理私有字段
                             bot.start()
                         except Exception as exc:
                             logger.error(

@@ -3,7 +3,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.10+-blue.svg" alt="Python">
   <img src="https://img.shields.io/badge/FastAPI-0.115+-green.svg" alt="FastAPI">
-  <img src="https://img.shields.io/badge/Vue-3.5+-brightgreen.svg" alt="Vue">
   <img src="https://img.shields.io/badge/LangChain-Agent-orange.svg" alt="LangChain">
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
 </p>
@@ -15,7 +14,7 @@
 ***
 
 <p align="center">
-  <i>企业微信 AI 机器人本地管控台 — 基于 FastAPI + Vue 3 + SQLite + LangChain Agent</i>
+  <i>企业微信 AI 机器人后端服务 — 基于 FastAPI + SQLite + LangChain Agent（管理端前端位于仓库根目录 `frontend/`）</i>
 </p>
 
 <p align="center">
@@ -167,14 +166,11 @@ wecom-bot-agent/
 │   ├── reply.py                #    消息上下文提取与回复构建
 │   └── frame_store.py          #    帧缓存（TTL 过期）
 │
-├── web/                        # 🎨 Vue 3 + Element Plus 前端
-│   └── src/                    #    组件/视图/样式（集中式 CSS 管理）
-│
-├── .skills/                    # 🎯 Skills 技能目录
-│   └── system/                 #    系统级 Skills（4 个）
-│
-└── scripts/                    # 🔧 启动脚本
+└── .skills/                    # 🎯 Skills 技能目录
+    └── system/                 #    系统级 Skills（4 个）
 ```
+
+> 管理端前端位于仓库根目录的 `frontend/`（React + TypeScript + Ant Design），通过调用本服务的 API 工作。
 
 ***
 
@@ -183,8 +179,8 @@ wecom-bot-agent/
 ### 📋 环境要求
 
 - **Python** 3.10+
-- **Node.js** 18+（仅构建前端时需要）
 - 企业微信机器人凭证（bot\_id / secret）
+- 管理端前端见仓库根目录 `frontend/`（Node.js 22.14.x）
 
 ### 📦 安装
 
@@ -197,12 +193,6 @@ python -m venv .venv
 
 # 安装依赖（使用国内镜像源）
 .\.venv\Scripts\python.exe -m pip install . -i https://pypi.tuna.tsinghua.edu.cn/simple
-
-# 构建前端
-cd web
-npm install --registry=https://registry.npmmirror.com
-npm run build
-cd ..
 ```
 
 </details>
@@ -216,12 +206,6 @@ python3 -m venv .venv
 
 # 安装依赖（使用国内镜像源）
 .venv/bin/python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple .
-
-# 构建前端
-cd web
-npm install --registry=https://registry.npmmirror.com
-npm run build
-cd ..
 ```
 
 </details>
@@ -240,7 +224,7 @@ cd ..
 <summary><b>💻 Windows</b></summary>
 
 ```bat
-scripts\start-web.cmd
+..\scripts\backend-agent\start.bat
 ```
 
 或手动启动：
@@ -255,7 +239,7 @@ scripts\start-web.cmd
 <summary><b>🍎 macOS / Linux</b></summary>
 
 ```bash
-bash scripts/start-web.sh
+bash ../scripts/backend-agent/start.sh
 ```
 
 或手动启动：
@@ -266,11 +250,13 @@ bash scripts/start-web.sh
 
 </details>
 
-> 🎉 启动后自动打开本机浏览器访问 `http://localhost:8765`。服务默认监听 `0.0.0.0`，同一局域网设备可访问 `http://<本机局域网IP>:8765`。启动脚本会打印 Local access 和 LAN access 两个地址。
+> 🎉 启动后默认会自动打开浏览器访问 `http://localhost:8765/docs`（Swagger UI）。服务默认监听 `0.0.0.0`，同一局域网设备可访问 `http://<本机局域网IP>:8765`。启动脚本会打印 Local access 和 LAN access 两个地址。
+>
+> 管理端 UI 位于仓库根目录 `frontend/`，需另启动前端开发服务器（见根目录 [README.md](../README.md#react-管理端)）。`backend-agent` 仅通过 8765 端口提供 API。
 
 ### 🌐 局域网访问与跨域
 
-- 默认 `--host 0.0.0.0`，控制台可被同一局域网内设备访问。
+- 默认 `--host 0.0.0.0`，API 可被同一局域网内设备访问。
 - 控制台默认启用登录页，首次启动会在数据库 schema 初始化时创建管理员账号：`admin` / `shanfan123`。登录 session 有效期为 24 小时，同一账号仅保留最近一次登录的 session；过期或被新登录挤下线后前端回到登录页，后端服务和 Bot 进程不会被停止。
 - 管理员固定只有 `admin` 一个账号，可添加普通用户、编辑显示名、重置密码、删除普通用户和强制下线在线用户；普通用户可以登录使用控制台，并修改自己的密码，但不能修改账号名。密码要求同时包含英文字母和数字。
 - 支持显式开启游客账号登录（在 `config.yaml` 中设置 `guest_account.enabled: true` 并配置账密）。游客仅可查看页面，所有操作类 API（如 Bot 启停、Agent 配置、技能上传、任务触发等）均会返回无权限提示。游客无单点登录限制，但 session 同样 24 小时有效；关闭或改名游客账号后，已签发游客 session 会立即失效。管理员可在用户管理中对游客账号执行"下线"操作，这会同时使所有游客会话失效。

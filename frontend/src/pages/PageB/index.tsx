@@ -1,6 +1,6 @@
 import styles from './index.module.css';
 
-export default function PageB() {
+export default function PageB(): React.ReactElement {
   return (
     <div className={styles.container}>
       <h2 className={styles.title}>页面 B (Page B)</h2>

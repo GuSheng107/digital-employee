@@ -1,0 +1,56 @@
+.statusCard {
+  min-height: 150px;
+  padding: 16px;
+  overflow: hidden;
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--ant-border-radius-lg);
+  background: var(--ant-color-bg-container);
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ant-color-text-tertiary);
+}
+
+.ok .dot {
+  background: var(--ant-color-success);
+}
+
+.error .dot {
+  background: var(--ant-color-error);
+}
+
+.title {
+  font-weight: 650;
+}
+
+.state {
+  margin-top: 18px;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.messageText {
+  display: -webkit-box;
+  min-height: 38px;
+  margin: 10px 0;
+  overflow: hidden;
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.latency {
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+}

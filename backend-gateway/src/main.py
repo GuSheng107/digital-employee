@@ -5,10 +5,12 @@
 """
 
 import asyncio
+import os
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 
 from loguru import logger
 
@@ -19,6 +21,7 @@ from src.core.schemas import (
     HealthResponse,
 )
 from src.manager import BotManager
+from src.utils.auth import verify_admin_api_key
 from src.utils.rabbitmq import mq_client
 
 # 配置日志输出到文件
@@ -35,7 +38,7 @@ manager: BotManager = BotManager(config_path="config/bot.json")
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """FastAPI 生命周期管理上下文。
 
     启动时完成以下初始化序列：
@@ -116,7 +119,11 @@ async def get_health() -> HealthResponse:
     )
 
 
-@app.get("/api/v1/admin/bots", response_model=list[BotStatusResponse])
+@app.get(
+    "/api/v1/admin/bots",
+    response_model=list[BotStatusResponse],
+    dependencies=[Depends(verify_admin_api_key)],
+)
 async def get_bots() -> list[BotStatusResponse]:
     """获取所有 Bot 实例当前的运行详情。
 
@@ -126,7 +133,10 @@ async def get_bots() -> list[BotStatusResponse]:
     return manager.get_all_status()
 
 
-@app.post("/api/v1/admin/bots")
+@app.post(
+    "/api/v1/admin/bots",
+    dependencies=[Depends(verify_admin_api_key)],
+)
 async def add_or_update_bot(req: BotConfigRequest) -> dict[str, str]:
     """动态添加或更新 Bot 凭证。
 
@@ -149,7 +159,10 @@ async def add_or_update_bot(req: BotConfigRequest) -> dict[str, str]:
     return {"status": "success", "message": f"Bot {req.bot_id} has been added or updated"}
 
 
-@app.delete("/api/v1/admin/bots/{bot_id}")
+@app.delete(
+    "/api/v1/admin/bots/{bot_id}",
+    dependencies=[Depends(verify_admin_api_key)],
+)
 async def delete_bot(bot_id: str) -> dict[str, str]:
     """销毁并注销指定的 Bot 实例，断开其与平台的长连接。
 
@@ -172,5 +185,6 @@ async def delete_bot(bot_id: str) -> dict[str, str]:
 
 
 if __name__ == "__main__":
+    port = int(os.getenv("GATEWAY_PORT", os.getenv("PORT", "8864")))
     # 生产部署时建议通过 CLI 传入 reload 配置，此处硬编码 reload=False 以防主线程重载导致子线程混乱
-    uvicorn.run("src.main:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("src.main:app", host="0.0.0.0", port=port, reload=False)

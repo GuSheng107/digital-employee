@@ -162,25 +162,20 @@
 git clone https://github.com/GuSheng107/digital-employee.git
 cd digital-employee
 
-# Backend Agent 与当前 Vue 管理端
+# Backend Agent
 cd backend-agent
-python -m venv .venv
-source .venv/bin/activate   # Windows 用 .venv\Scripts\activate
-pip install -e . pytest
-cd web
-npm ci
-npm run build
-cd ../..
+uv sync
+cd ..
 
 # Backend Gateway
 cd backend-gateway
 python -m pip install uv
-python -m uv sync
+uv sync
 cp .env.example .env
 cp config/bot.template.json config/bot.json
 cd ..
 
-# React 新管理端脚手架
+# React 管理端
 cd frontend
 npm ci
 npm run build
@@ -195,24 +190,26 @@ make build
 
 ```bash
 # 启动 Backend Agent（Linux / macOS）
-./scripts/start-web.sh
+./scripts/backend-agent/start.sh
 
 # 启动 Backend Agent（Windows）
-scripts\start-web.cmd
+scripts\backend-agent\start.bat
 
 # 启动代码当前依赖的 RabbitMQ 与 MinIO
 docker compose up -d
 
 # 启动 Backend Gateway（另开终端）
 cd backend-gateway
-python -m uv run python -m src.main
+uv run python -m src.main
 
-# 启动 React 新管理端开发服务器（另开终端）
-cd frontend
-npm run dev
+# 启动 React 新管理端开发服务器（另开终端，Linux / macOS）
+./scripts/frontend/start-web.sh
+
+# 或（Windows）
+scripts\frontend\start-web.bat
 ```
 
-Backend Agent 及当前 Vue 控制台默认监听 <http://localhost:8765>，Backend Gateway 默认监听 <http://localhost:8000>。根目录 React 前端目前是独立脚手架，尚未替代 `backend-agent/web`。
+Backend Agent 默认监听 <http://localhost:8765>（仅暴露 API），Backend Gateway 默认监听 <http://localhost:8864>。管理端前端位于根目录 `frontend/`，启动方式见上文的 `scripts/frontend/start-web.sh` / `scripts\frontend\start-web.bat`。
 
 ---
 
@@ -284,7 +281,6 @@ BREAKING CHANGE: webhook platform configs must be migrated to grpc
 
 - **Python**：遵循 PEP 8；snake_case；公共 API 使用 type hints 与 docstring；Gateway 使用 Ruff 检查
 - **React/TypeScript**：遵循 `frontend/docs/frontend-development-spec.md`，使用 ESLint、CSS Modules 和严格类型约束
-- **Vue/JavaScript**：`backend-agent/web` 保持 2 空格缩进、单引号、无分号，并沿用现有组件与 composable 结构
 
 ### 测试要求
 
@@ -302,15 +298,11 @@ backend-agent/.venv/Scripts/python.exe -m pytest backend-agent/tests
 
 # Backend Gateway
 cd backend-gateway
-python -m uv run ruff check src
+uv run ruff check src
 
-# React 新管理端
+# React 管理端
 cd ../frontend
 npm run lint
-npm run build
-
-# 当前 Vue 管理端
-cd ../backend-agent/web
 npm run build
 ```
 
@@ -322,7 +314,7 @@ npm run build
 
 当你需要修改数据库表结构时：
 
-1. 在 `backend-agent/scripts/db_migrations/` 下编写 **一次性脚本**
+1. 在 `backend-agent/scripts/db_migrations/` 下编写 **一次性脚本**（该目录可按需创建，不存在时新建即可）
 2. 脚本必须 **幂等**（重复运行不报错）
 3. 脚本必须有 **注释文档**（开头说明用途和影响）
 4. **不保留** 旧数据结构，倾向一次性切换
