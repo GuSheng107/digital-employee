@@ -10,7 +10,7 @@ set SCRIPT_DIR=%~dp0
 for %%I in ("%SCRIPT_DIR%..") do set PROJECT_ROOT=%%~fI
 
 echo [INFO] Step 1/5: Cleaning python __pycache__...
-python "%SCRIPT_DIR%clean-pycache.py" 2>nul
+uv run python "%SCRIPT_DIR%clean-pycache.py" 2>nul
 echo.
 
 echo [INFO] Step 2/5: Starting Backend Agent Service (8765)...

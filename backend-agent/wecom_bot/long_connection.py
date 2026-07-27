@@ -333,7 +333,7 @@ class AgentLongConnectionBot:
     async def run(self) -> None:
         if WSClient is None:
             raise DependencyError(
-                "wecom_aibot_sdk is not installed. Run 'pip install -e .' from the backend-agent directory before starting the bot."
+                "wecom_aibot_sdk is not installed. Run 'uv sync' from the backend-agent directory before starting the bot."
             )
 
         try:

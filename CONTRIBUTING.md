@@ -164,9 +164,7 @@ cd digital-employee
 
 # Backend Agent
 cd backend-agent
-python -m venv .venv
-source .venv/bin/activate   # Windows 用 .venv\Scripts\activate
-pip install -e . pytest
+uv sync
 cd ..
 
 # Backend Gateway
@@ -316,7 +314,7 @@ npm run build
 
 当你需要修改数据库表结构时：
 
-1. 在 `backend-agent/scripts/db_migrations/` 下编写 **一次性脚本**
+1. 在 `backend-agent/scripts/db_migrations/` 下编写 **一次性脚本**（该目录可按需创建，不存在时新建即可）
 2. 脚本必须 **幂等**（重复运行不报错）
 3. 脚本必须有 **注释文档**（开头说明用途和影响）
 4. **不保留** 旧数据结构，倾向一次性切换

@@ -42,7 +42,7 @@ Digital Employee 是一个面向企业 IM 场景的数字员工项目。仓库�
 
 ```text
 digital-employee/
-├── backend-agent/       # 企业微信 Agent 服务与现有 Vue 管理端
+├── backend-agent/       # 企业微信 Agent 服务（仅 API）
 ├── backend-gateway/     # Python 飞书消息网关
 ├── backend-data/        # 数据平台后端服务
 ├── frontend/            # React + TypeScript 新管理端脚手架
@@ -55,7 +55,7 @@ digital-employee/
 
 | 模块 / 服务 | 默认端口 | 协议 / 类型 | 说明及常用地址 |
 | --- | --- | --- | --- |
-| **`backend-agent`** | `8765` | HTTP | 企微 Agent 后端 & 托管 Vue 管理控制台 (<http://localhost:8765>)，OpenAPI 文档 (<http://localhost:8765/docs>) |
+| **`backend-agent`** | `8765` | HTTP | 企微 Agent 后端 API (<http://localhost:8765>)，OpenAPI 文档 (<http://localhost:8765/docs>) |
 | **`backend-gateway`** | `8864` | HTTP | 飞书消息网关 API (<http://localhost:8864>)，健康检查为 `GET /api/v1/health` |
 | **`backend-data`** | `8010` | HTTP | 数据平台后端 API (<http://127.0.0.1:8010>)，Swagger 文档 (<http://127.0.0.1:8010/docs>) |
 | **`frontend`** | `5173` | HTTP | React 前端 Vite 开发服务器 (<http://localhost:5173>) |

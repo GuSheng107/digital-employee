@@ -32,7 +32,9 @@ fi
 
 echo "[INFO] 步骤 4/5: 启动 Backend Data 服务 (8010)..."
 if [ -f "$SCRIPT_DIR/data-platform/start.sh" ]; then
-    bash "$SCRIPT_DIR/data-platform/start.sh"
+    bash "$SCRIPT_DIR/data-platform/start.sh" &
+    DATA_PID=$!
+    echo "Backend Data PID: $DATA_PID"
 fi
 
 echo "[INFO] 步骤 5/5: 启动 Frontend 前端开发服务 (5173)..."

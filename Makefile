@@ -7,12 +7,6 @@ PYTHON ?= python
 NPM ?= npm
 UV ?= $(PYTHON) -m uv
 
-ifeq ($(OS),Windows_NT)
-AGENT_PYTHON := backend-agent/.venv/Scripts/python.exe
-else
-AGENT_PYTHON := backend-agent/.venv/bin/python
-endif
-
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
@@ -25,7 +19,7 @@ dev: infra-up ## Start local infrastructure and print service commands
 	@echo "  make dev-frontend"
 
 dev-agent: ## Start backend-agent on port 8765
-	$(AGENT_PYTHON) backend-agent/main.py --project-root backend-agent
+	cd backend-agent && $(UV) run python main.py --project-root .
 
 dev-gateway: ## Start backend-gateway on port 8864
 	cd backend-gateway && $(UV) run python -m src.main
@@ -48,9 +42,8 @@ infra-status: ## Show infrastructure status
 
 install: install-agent install-gateway install-frontend ## Install all dependencies
 
-install-agent: ## Create backend-agent virtualenv and install runtime/test dependencies
-	$(PYTHON) -m venv backend-agent/.venv
-	$(AGENT_PYTHON) -m pip install -e backend-agent pytest
+install-agent: ## Install backend-agent dependencies with uv
+	cd backend-agent && $(UV) sync
 
 install-gateway: ## Install backend-gateway dependencies with uv
 	cd backend-gateway && $(UV) sync
@@ -68,7 +61,7 @@ build-frontend: ## Build the React frontend
 # Verification
 
 test-agent: ## Run backend-agent tests
-	$(AGENT_PYTHON) -m pytest backend-agent/tests
+	cd backend-agent && $(UV) run python -m pytest tests
 
 lint-gateway: ## Run ruff against backend-gateway
 	cd backend-gateway && $(UV) run ruff check src
@@ -82,4 +75,4 @@ check: test-agent lint-gateway lint-frontend build-frontend ## Run repository ch
 
 clean: ## Remove generated caches and frontend build output
 	$(PYTHON) scripts/clean-pycache.py
-	$(PYTHON) -c "import shutil; [shutil.rmtree(path, ignore_errors=True) for path in ('backend-agent/.pytest_cache', 'backend-gateway/.pytest_cache', 'frontend/dist')]"
+	$(PYTHON) -c "import shutil; [shutil.rmtree(path, ignore_errors=True) for path in ('backend-agent/.pytest_cache', 'backend-gateway/.pytest_cache', 'frontend/dist')]"  # noqa: E501

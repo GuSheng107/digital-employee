@@ -1,44 +1,70 @@
 #!/usr/bin/env python3
-"""Kill processes occupying the specified ports.
+"""跨平台端口进程清理工具。
+
+按端口查找占用进程并强制结束，默认覆盖项目四个服务的端口。
+支持 Windows 与 Unix（依赖 netstat / lsof）。
 
 Usage:
-    python kill-port.py              # Kill all default service ports
-    python kill-port.py 8765 5173    # Kill specific ports only
+    python kill-port.py              # 清理全部默认服务端口
+    python kill-port.py 8765 5173    # 仅清理指定端口
 """
 
+from __future__ import annotations
+
+import logging
 import subprocess
 import sys
+from collections.abc import Sequence
 
-# Default service ports (must match the ports in start scripts)
-DEFAULT_PORTS = {
+# 默认服务端口（须与 start 脚本中的端口一致）
+DEFAULT_PORTS: dict[int, str] = {
     8765: "backend-agent",
     8864: "backend-gateway",
     8010: "backend-data",
     5173: "frontend",
 }
 
-IS_WINDOWS = sys.platform == "win32"
+IS_WINDOWS: bool = sys.platform == "win32"
+
+logger = logging.getLogger("kill-port")
 
 
-def _run(cmd):
-    """Run a command, suppressing console window on Windows."""
-    kwargs = {"capture_output": True, "text": True, "errors": "replace"}
+def _run(cmd: Sequence[str]) -> tuple[str, str]:
+    """运行子命令并返回 (stdout, stderr)。
+
+    在 Windows 下抑制控制台弹窗。
+
+    Args:
+        cmd: 命令及其参数列表。
+
+    Returns:
+        二元组 (标准输出, 标准错误)，已按 replace 错误处理解码为文本。
+    """
+    kwargs: dict[str, object] = {"capture_output": True, "text": True, "errors": "replace"}
     if IS_WINDOWS:
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-    result = subprocess.run(cmd, **kwargs)
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+    result = subprocess.run(list(cmd), **kwargs)  # type: ignore[arg-type]
     return result.stdout, result.stderr
 
 
-def find_pids(port):
-    """Return a set of PIDs listening on the given port."""
+def find_pids(port: int) -> set[str]:
+    """返回占用指定端口的进程 PID 集合。
+
+    Args:
+        port: 目标端口号。
+
+    Returns:
+        PID 字符串集合，可能为空集。
+    """
     if IS_WINDOWS:
         return _find_pids_windows(port)
     return _find_pids_unix(port)
 
 
-def _find_pids_windows(port):
+def _find_pids_windows(port: int) -> set[str]:
+    """Windows 下通过 netstat 获取占用端口的 PID 集合。"""
     stdout, _ = _run(["netstat", "-ano"])
-    pids = set()
+    pids: set[str] = set()
     suffix = f":{port}"
     for line in stdout.splitlines():
         parts = line.split()
@@ -53,9 +79,10 @@ def _find_pids_windows(port):
     return pids
 
 
-def _find_pids_unix(port):
+def _find_pids_unix(port: int) -> set[str]:
+    """Unix 下通过 lsof 获取占用端口的 PID 集合。"""
     stdout, _ = _run(["lsof", "-i", f":{port}", "-t"])
-    pids = set()
+    pids: set[str] = set()
     for line in stdout.splitlines():
         line = line.strip()
         if line.isdigit():
@@ -63,48 +90,69 @@ def _find_pids_unix(port):
     return pids
 
 
-def kill_pid(pid):
-    """Force kill a process by PID."""
+def kill_pid(pid: str) -> None:
+    """按 PID 强制结束进程。
+
+    Args:
+        pid: 目标进程的 PID 字符串。
+    """
     if IS_WINDOWS:
         _run(["taskkill", "/PID", pid, "/F"])
     else:
         _run(["kill", "-9", pid])
 
 
-def kill_port(port, label=""):
-    """Find and kill processes on the given port.
+def kill_port(port: int, label: str = "") -> int:
+    """查找并结束占用指定端口的进程。
 
-    Returns the number of killed processes.
+    Args:
+        port: 目标端口号。
+        label: 端口对应的业务标签，仅用于日志展示。
+
+    Returns:
+        被结束的进程数量。
     """
     label_text = f" ({label})" if label else ""
     pids = find_pids(port)
     if not pids:
-        print(f"Port {port}{label_text}: no process found")
+        logger.info("Port %s%s: no process found", port, label_text)
         return 0
     for pid in sorted(pids):
         kill_pid(pid)
-        print(f"Port {port}{label_text}: killed PID {pid}")
+        logger.info("Port %s%s: killed PID %s", port, label_text, pid)
     return len(pids)
 
 
-def main():
-    if len(sys.argv) > 1:
+def main(argv: Sequence[str] | None = None) -> int:
+    """脚本入口。
+
+    Args:
+        argv: 命令行参数列表，默认取 sys.argv[1:]。
+
+    Returns:
+        进程退出码，0 表示成功。
+    """
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    args = list(argv) if argv is not None else sys.argv[1:]
+    if args:
         try:
-            ports = [(int(arg), "") for arg in sys.argv[1:]]
+            ports = [(int(arg), "") for arg in args]
         except ValueError:
-            print("Error: port arguments must be integers")
-            sys.exit(1)
+            logger.error("Error: port arguments must be integers")
+            return 1
     else:
         ports = [(port, label) for port, label in DEFAULT_PORTS.items()]
 
-    print(f"Killing processes on {len(ports)} port(s)...\n")
+    logger.info("Killing processes on %d port(s)...\n", len(ports))
 
     total_killed = 0
     for port, label in ports:
         total_killed += kill_port(port, label)
 
-    print(f"\nDone! Killed {total_killed} process(es).")
+    logger.info("\nDone! Killed %d process(es).", total_killed)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
