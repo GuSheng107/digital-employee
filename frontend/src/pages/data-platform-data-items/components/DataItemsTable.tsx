@@ -83,7 +83,7 @@ export default function DataItemsTable({
           pageSize: pageSize,
           total: total,
           showSizeChanger: true,
-          showTotal: (t) => `共 ${t} 条`,
+          showTotal: (total) => `共 ${total} 条`,
           onChange: (p, ps) => onPageChange(p, ps),
         }}
         bordered

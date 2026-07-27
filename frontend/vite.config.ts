@@ -7,8 +7,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  // 读取 .env 中的代理目标地址（仅开发环境使用）
-  const env = loadEnv(mode, process.cwd(), '');
+  // 读取 .env 中的代理目标地址（仅开发环境使用，只加载 VITE_ 前缀变量）
+  const env = loadEnv(mode, process.cwd());
   const backendAgentTarget = env.VITE_BACKEND_AGENT_TARGET || 'http://127.0.0.1:8765';
   const dataPlatformTarget = env.VITE_DATA_PLATFORM_TARGET || 'http://127.0.0.1:8010';
 

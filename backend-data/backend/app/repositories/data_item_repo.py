@@ -37,6 +37,14 @@ class DataItemRepository:
         return list(self.session.scalars(statement))
 
     def count(self, namespace: str | None = None) -> int:
+        """统计未软删的数据条目数量。
+
+        Args:
+            namespace: 可选命名空间过滤条件，为 None 时统计全量。
+
+        Returns:
+            符合条件的记录数，无数据时返回 0。
+        """
         statement = select(func.count()).select_from(DataItem).where(DataItem.deleted_at.is_(None))
         if namespace:
             statement = statement.where(DataItem.namespace == namespace)

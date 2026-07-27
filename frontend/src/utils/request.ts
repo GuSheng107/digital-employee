@@ -5,6 +5,20 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from 'axios';
 
+/** 响应体形状探测：是否包含指定字段 */
+function hasField<T extends string>(body: unknown, field: T): body is Record<T, unknown> {
+  return body != null && typeof body === 'object' && field in body;
+}
+
+/** 从 unknown 响应体中安全读取 string 类型 message 字段 */
+function readMessageField(body: unknown, fallback: string): string {
+  if (hasField(body, 'message')) {
+    const msg = body.message;
+    if (typeof msg === 'string') return msg;
+  }
+  return fallback;
+}
+
 /**
  * BaseRequest — 所有平台请求类的抽象基类。
  *
@@ -22,12 +36,10 @@ import axios, {
  */
 export abstract class BaseRequest {
   protected instance: AxiosInstance;
-  protected baseURL: string;
 
   constructor(baseURL: string) {
-    this.baseURL = baseURL;
     this.instance = axios.create({
-      baseURL: this.baseURL,
+      baseURL,
       timeout: 10000,
       headers: {
         'Content-Type': 'application/json',
@@ -56,11 +68,7 @@ export abstract class BaseRequest {
 
   /** 从响应体提取错误消息，子类可覆写 */
   protected getErrorMessage(body: unknown): string {
-    if (body && typeof body === 'object' && 'message' in body) {
-      const msg = (body as { message?: unknown }).message;
-      if (typeof msg === 'string') return msg;
-    }
-    return '请求失败';
+    return readMessageField(body, '请求失败');
   }
 
   // ── 公共固定实现 ────────────────────────────────
@@ -89,25 +97,28 @@ export abstract class BaseRequest {
   protected getHttpErrorMessage(error: unknown): string {
     if (!(error instanceof Error)) return '请求失败';
 
-    const axiosError = error as { response?: { status: number; data?: unknown }; message?: string };
-    if (axiosError.response) {
-      const { status, data } = axiosError.response;
-      switch (status) {
-        case 401:
-          this.onAuthError(status);
-          return '登录状态已过期，请重新登录';
-        case 403:
-          return '您没有权限访问该资源';
-        case 500:
-          return '服务器内部错误，请稍后再试';
-        default:
-          return this.getErrorMessage(data) || '网络请求异常';
+    if (hasField(error, 'response')) {
+      const response = error.response as { status: number; data?: unknown } | undefined;
+      if (response) {
+        const { status, data } = response;
+        switch (status) {
+          case 401:
+            this.onAuthError(status);
+            return '登录状态已过期，请重新登录';
+          case 403:
+            return '您没有权限访问该资源';
+          case 500:
+            return '服务器内部错误，请稍后再试';
+          default:
+            return this.getErrorMessage(data) || '网络请求异常';
+        }
       }
-    } else if (axiosError.message?.includes('timeout')) {
-      return '请求超时，请检查网络连接';
-    } else {
-      return '无法连接到服务器';
     }
+
+    if (hasField(error, 'message') && typeof error.message === 'string') {
+      if (error.message.includes('timeout')) return '请求超时，请检查网络连接';
+    }
+    return '无法连接到服务器';
   }
 
   /**

@@ -9,6 +9,18 @@ export interface AgentApiResponse<T> {
   data: T;
 }
 
+/** 类型守卫：判断响应体是否为 backend-agent 响应信封形状 */
+function isAgentResponse(body: unknown): body is AgentApiResponse<unknown> {
+  return (
+    body != null &&
+    typeof body === 'object' &&
+    'code' in body &&
+    'message' in body &&
+    'data' in body &&
+    typeof (body as { code: unknown }).code === 'number'
+  );
+}
+
 /**
  * BackendAgentRequest — 对接 backend-agent (port 8765) 的请求类。
  *
@@ -21,22 +33,16 @@ class BackendAgentRequest extends BaseRequest {
   }
 
   protected isSuccess(body: unknown): boolean {
-    return (
-      body != null &&
-      typeof body === 'object' &&
-      'code' in body &&
-      (body as AgentApiResponse<unknown>).code === 200
-    );
+    return isAgentResponse(body) && body.code === 200;
   }
 
   protected extractData(body: unknown): unknown {
-    return (body as AgentApiResponse<unknown>).data;
+    return isAgentResponse(body) ? body.data : undefined;
   }
 
   protected getErrorMessage(body: unknown): string {
-    if (body && typeof body === 'object' && 'message' in body) {
-      const msg = (body as { message?: unknown }).message;
-      if (typeof msg === 'string') return msg;
+    if (isAgentResponse(body) && typeof body.message === 'string') {
+      return body.message;
     }
     return '业务请求失败';
   }

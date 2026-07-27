@@ -2,7 +2,7 @@
 
 ## 1. 文档目标与适用范围
 
-本规范适用于 `wecom-bot-agent-console` 前端仓库的日常开发、协作评审与开源贡献。
+本规范适用于 `digital-employee-frontend` 前端仓库的日常开发、协作评审与开源贡献。
 
 目标如下：
 

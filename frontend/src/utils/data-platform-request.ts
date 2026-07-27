@@ -7,6 +7,18 @@ export interface DataPlatformApiResponse<T> {
   data: T;
 }
 
+/** 类型守卫：判断响应体是否为数据中台响应信封形状 */
+function isDataPlatformResponse(body: unknown): body is DataPlatformApiResponse<unknown> {
+  return (
+    body != null &&
+    typeof body === 'object' &&
+    'success' in body &&
+    'message' in body &&
+    'data' in body &&
+    typeof (body as { success: unknown }).success === 'boolean'
+  );
+}
+
 /**
  * DataPlatformRequest — 对接 backend-data (port 8010) 的请求类。
  *
@@ -19,22 +31,16 @@ class DataPlatformRequest extends BaseRequest {
   }
 
   protected isSuccess(body: unknown): boolean {
-    return (
-      body != null &&
-      typeof body === 'object' &&
-      'success' in body &&
-      (body as DataPlatformApiResponse<unknown>).success === true
-    );
+    return isDataPlatformResponse(body) && body.success === true;
   }
 
   protected extractData(body: unknown): unknown {
-    return (body as DataPlatformApiResponse<unknown>).data;
+    return isDataPlatformResponse(body) ? body.data : undefined;
   }
 
   protected getErrorMessage(body: unknown): string {
-    if (body && typeof body === 'object' && 'message' in body) {
-      const msg = (body as { message?: unknown }).message;
-      if (typeof msg === 'string') return msg;
+    if (isDataPlatformResponse(body) && typeof body.message === 'string') {
+      return body.message;
     }
     return '数据中台请求失败';
   }

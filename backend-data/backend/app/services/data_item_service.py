@@ -28,6 +28,16 @@ class DataItemService:
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[DataItem], int]:
+        """分页查询并返回 (items, total)。
+
+        Args:
+            namespace: 可选命名空间过滤条件，为 None 时不过滤。
+            limit: 单页最大条目数，默认 50。
+            offset: 查询偏移量，默认 0。
+
+        Returns:
+            二元组 (当前页数据条目列表, 符合过滤条件的总数)。
+        """
         items = self.repository.list(namespace=namespace, limit=limit, offset=offset)
         total = self.repository.count(namespace=namespace)
         return items, total
