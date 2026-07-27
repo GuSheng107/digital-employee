@@ -1,0 +1,56 @@
+﻿.statusCard {
+  min-height: 150px;
+  padding: 16px;
+  overflow: hidden;
+  border: 1px solid #dde4ee;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #9aa5b5;
+}
+
+.ok .dot {
+  background: #1f9d69;
+}
+
+.error .dot {
+  background: #d64545;
+}
+
+.title {
+  font-weight: 650;
+}
+
+.state {
+  margin-top: 18px;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.messageText {
+  display: -webkit-box;
+  min-height: 38px;
+  margin: 10px 0;
+  overflow: hidden;
+  color: #697589;
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.latency {
+  color: #4d6685;
+  font-size: 12px;
+}

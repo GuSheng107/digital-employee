@@ -18,6 +18,9 @@ const MemoryManagementView = lazy(() => import('./pages/MemoryManagementView'));
 const TaskManagementView = lazy(() => import('./pages/TaskManagementView'));
 const SystemSettingsView = lazy(() => import('./pages/SystemSettingsView'));
 const ConversationsView = lazy(() => import('./pages/ConversationsView'));
+const DataPlatformDashboard = lazy(() => import('./pages/data-platform-dashboard/DataPlatformDashboard'));
+const DataPlatformDataItems = lazy(() => import('./pages/data-platform-data-items/DataPlatformDataItems'));
+const DataPlatformSystemConfig = lazy(() => import('./pages/data-platform-system-config/DataPlatformSystemConfig'));
 
 export const router = createBrowserRouter([
   { path: '/login', element: (<GuestGuard><LoginView /></GuestGuard>) },
@@ -36,6 +39,9 @@ export const router = createBrowserRouter([
       { path: 'memory', element: <Suspense fallback={<PageLoader />}><MemoryManagementView /></Suspense> },
       { path: 'tasks', element: <Suspense fallback={<PageLoader />}><TaskManagementView /></Suspense> },
       { path: 'settings', element: <Suspense fallback={<PageLoader />}><SystemSettingsView /></Suspense> },
+      { path: 'data-platform/dashboard', element: <Suspense fallback={<PageLoader />}><DataPlatformDashboard /></Suspense> },
+      { path: 'data-platform/data-items', element: <Suspense fallback={<PageLoader />}><DataPlatformDataItems /></Suspense> },
+      { path: 'data-platform/system-config', element: <Suspense fallback={<PageLoader />}><DataPlatformSystemConfig /></Suspense> },
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },
