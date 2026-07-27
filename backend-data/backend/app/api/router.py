@@ -5,7 +5,8 @@ from app.api.routes import cache, data_items, health, storage, system_config
 
 
 api_router = APIRouter()
-# 健康检查端点对外豁免，便于 K8s/负载均衡探活。
+# 基础健康检查端点对外豁免，便于 K8s/负载均衡探活；
+# /health/dependencies 在端点级别单独挂载 API Key 认证。
 api_router.include_router(health.router, prefix="/health", tags=["health"])
 # 业务端点统一挂载 API Key 认证依赖。
 api_router.include_router(
