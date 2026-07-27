@@ -31,7 +31,7 @@ export default function DataItemsTable({
   onShowJson,
   onEdit,
   onDelete,
-}: DataItemsTableProps) {
+}: DataItemsTableProps): React.ReactElement {
   const columns: ColumnsType<DataItem> = [
     { title: 'Namespace', dataIndex: 'namespace', width: 150 },
     { title: 'Key', dataIndex: 'item_key', minWidth: 180 },

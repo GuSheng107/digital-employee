@@ -16,7 +16,7 @@ const STATE_TEXT: Record<StatusCardState, string> = {
 };
 
 // 跨页面复用的状态卡片，用于数据中台 Dashboard 与 SystemConfig
-export default function StatusCard({ title, status, message, latency }: StatusCardProps) {
+export default function StatusCard({ title, status, message, latency }: StatusCardProps): React.ReactElement {
   return (
     <section className={`${styles.statusCard} ${styles[status]}`}>
       <div className={styles.top}>

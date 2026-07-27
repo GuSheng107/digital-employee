@@ -7,7 +7,7 @@ export interface SystemConfigTableProps {
   rows: SystemConfigRow[];
 }
 
-export default function SystemConfigTable({ rows }: SystemConfigTableProps) {
+export default function SystemConfigTable({ rows }: SystemConfigTableProps): React.ReactElement {
   const columns: ColumnsType<SystemConfigRow> = [
     { title: '配置分组', dataIndex: 'group', width: 180 },
     {

@@ -23,15 +23,18 @@ const { Title, Text } = Typography;
 const DEFAULT_PAGE_SIZE = 10;
 
 function parsePayload(values: DataItemFormValues): DataItemPayload {
+  const raw: unknown = JSON.parse(values.itemValueText || '{}');
+  const itemValue: Record<string, unknown> =
+    raw != null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   return {
     namespace: values.namespace,
     item_key: values.itemKey,
     description: values.description,
-    item_value: JSON.parse(values.itemValueText || '{}'),
+    item_value: itemValue,
   };
 }
 
-export default function DataPlatformDataItems() {
+export default function DataPlatformDataItems(): React.ReactElement {
   const [loading, setLoading] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
   const [dialogOpen, setDialogOpen] = useState<boolean>(false);
@@ -137,8 +140,9 @@ export default function DataPlatformDataItems() {
     setJsonDialogOpen(true);
   }
 
+  // 初始数据加载：effect 仅在挂载时执行一次，loadItems 内部 setState 为异步流程，
+  // 不会在 effect 同步阶段触发级联渲染，符合 react-hooks 规范例外。
   useEffect(() => {
-    // 初始数据加载场景：异步函数内部 setState 不会同步触发级联渲染
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps

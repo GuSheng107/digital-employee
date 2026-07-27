@@ -12,7 +12,7 @@ function statusOf(ok?: boolean): StatusCardState {
   return ok ? 'ok' : 'error';
 }
 
-export default function SystemConfigStatusGrid({ dependencies }: SystemConfigStatusGridProps) {
+export default function SystemConfigStatusGrid({ dependencies }: SystemConfigStatusGridProps): React.ReactElement {
   return (
     <div className={styles.statusGrid}>
       <StatusCard

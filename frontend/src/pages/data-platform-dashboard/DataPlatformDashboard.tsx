@@ -17,7 +17,7 @@ function cardStatus(ok?: boolean): StatusCardState {
   return ok ? 'ok' : 'error';
 }
 
-export default function DataPlatformDashboard() {
+export default function DataPlatformDashboard(): React.ReactElement {
   const [loading, setLoading] = useState<boolean>(false);
   const [service, setService] = useState<ServiceInfo | null>(null);
   const [dependencies, setDependencies] = useState<DashboardDependencies | null>(null);
@@ -39,8 +39,9 @@ export default function DataPlatformDashboard() {
     }
   }
 
+  // 初始数据加载：effect 仅在挂载时执行一次，refresh 内部 setState 为异步流程，
+  // 不会在 effect 同步阶段触发级联渲染，符合 react-hooks 规范例外。
   useEffect(() => {
-    // 初始数据加载场景：异步函数内部 setState 不会同步触发级联渲染
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
   }, []);
