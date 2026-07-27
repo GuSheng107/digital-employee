@@ -1629,6 +1629,21 @@ wheels = [
 ]
 
 [[package]]
+name = "nacos-client"
+version = "0.1.0"
+source = { directory = "../backend-share/nacos-client" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.24.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
 name = "numpy"
 version = "2.2.6"
 source = { registry = "https://pypi.org/simple" }
@@ -3400,6 +3415,7 @@ dependencies = [
     { name = "langchain-mcp-adapters" },
     { name = "langchain-openai" },
     { name = "markdown" },
+    { name = "nacos-client" },
     { name = "olefile" },
     { name = "openai" },
     { name = "python-docx" },
@@ -3425,6 +3441,7 @@ requires-dist = [
     { name = "langchain-mcp-adapters", specifier = "~=0.2.0" },
     { name = "langchain-openai", specifier = "~=1.2.0" },
     { name = "markdown", specifier = ">=3.4" },
+    { name = "nacos-client", directory = "../backend-share/nacos-client" },
     { name = "olefile", specifier = ">=0.46" },
     { name = "openai", specifier = ">=1.0.0" },
     { name = "python-docx", specifier = ">=1.1.0" },

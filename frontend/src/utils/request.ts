@@ -5,6 +5,21 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from 'axios';
 
+/** HTTP 错误：保留 status/data/config 等结构化字段，便于调用方按状态码分支处理 */
+export class HttpError extends Error {
+  readonly status?: number;
+  readonly data?: unknown;
+  readonly config?: unknown;
+
+  constructor(message: string, opts: { status?: number; data?: unknown; config?: unknown } = {}) {
+    super(message);
+    this.name = 'HttpError';
+    this.status = opts.status;
+    this.data = opts.data;
+    this.config = opts.config;
+  }
+}
+
 /** 响应体形状探测：是否包含指定字段 */
 function hasField<T extends string>(body: unknown, field: T): body is Record<T, unknown> {
   return body != null && typeof body === 'object' && field in body;
@@ -32,7 +47,8 @@ function readMessageField(body: unknown, fallback: string): string {
  *   - getErrorMessage(body) 自定义错误文案
  *
  * 错误处理策略：基类不展示错误（不耦合 UI 库），仅将错误 normalize 为
- * 带 friendly message 的 Error 抛出。调用方在 catch 中自行展示。
+ * HttpError 抛出（携带 status/data/config 与 friendly message）。
+ * 调用方在 catch 中自行展示，也可通过 error.status 按状态码分支处理。
  */
 export abstract class BaseRequest {
   protected instance: AxiosInstance;
@@ -83,42 +99,64 @@ export abstract class BaseRequest {
       (error) => Promise.reject(error),
     );
 
-    // 响应拦截：normalize HTTP 错误为 friendly Error，不展示
+    // 响应拦截：normalize HTTP 错误为 HttpError（保留 status/data/config），
+    // 不展示错误（不耦合 UI 库），调用方在 catch 中自行展示
     this.instance.interceptors.response.use(
       (response: AxiosResponse) => response,
       (error) => {
-        const friendlyMessage = this.getHttpErrorMessage(error);
-        return Promise.reject(new Error(friendlyMessage));
+        const { message, status, data, config } = this.buildHttpError(error);
+        return Promise.reject(new HttpError(message, { status, data, config }));
       },
     );
   }
 
-  /** 将 HTTP 错误 normalize 为用户友好的消息字符串 */
-  protected getHttpErrorMessage(error: unknown): string {
-    if (!(error instanceof Error)) return '请求失败';
+  /** 将原始 axios 错误转换为 { message, status, data, config }，保留结构化字段 */
+  protected buildHttpError(error: unknown): {
+    message: string;
+    status?: number;
+    data?: unknown;
+    config?: unknown;
+  } {
+    if (!(error instanceof Error)) {
+      return { message: '请求失败' };
+    }
 
     if (hasField(error, 'response')) {
-      const response = error.response as { status: number; data?: unknown } | undefined;
+      const response = error.response as
+        | { status: number; data?: unknown; config?: unknown }
+        | undefined;
       if (response) {
-        const { status, data } = response;
+        const { status, data, config } = response;
+        let message: string;
         switch (status) {
           case 401:
             this.onAuthError(status);
-            return '登录状态已过期，请重新登录';
+            message = '登录状态已过期，请重新登录';
+            break;
           case 403:
-            return '您没有权限访问该资源';
+            message = '您没有权限访问该资源';
+            break;
           case 500:
-            return '服务器内部错误，请稍后再试';
+            message = '服务器内部错误，请稍后再试';
+            break;
           default:
-            return this.getErrorMessage(data) || '网络请求异常';
+            message = this.getErrorMessage(data) || '网络请求异常';
         }
+        return { message, status, data, config };
       }
     }
 
     if (hasField(error, 'message') && typeof error.message === 'string') {
-      if (error.message.includes('timeout')) return '请求超时，请检查网络连接';
+      if (error.message.includes('timeout')) {
+        return { message: '请求超时，请检查网络连接' };
+      }
     }
-    return '无法连接到服务器';
+    return { message: '无法连接到服务器' };
+  }
+
+  /** 将 HTTP 错误 normalize 为用户友好的消息字符串 */
+  protected getHttpErrorMessage(error: unknown): string {
+    return this.buildHttpError(error).message;
   }
 
   /**

@@ -57,6 +57,17 @@
   line-height: 1.55;
 }
 
+.configValuePre {
+  margin: 0;
+  padding: 4px 6px;
+  overflow: auto;
+  max-height: 120px;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 @media (max-width: 1180px) {
   .statusGrid {
     grid-template-columns: repeat(2, minmax(220px, 1fr));

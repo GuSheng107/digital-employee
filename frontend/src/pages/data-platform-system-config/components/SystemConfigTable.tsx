@@ -7,6 +7,17 @@ export interface SystemConfigTableProps {
   rows: SystemConfigRow[];
 }
 
+/** 渲染配置值：原始类型直接展示，对象/数组用 JSON.stringify 保留可读结构 */
+function renderConfigValue(value: unknown): React.ReactNode {
+  if (value === null || value === undefined) {
+    return '-';
+  }
+  if (typeof value === 'object') {
+    return <pre className={styles.configValuePre}>{JSON.stringify(value, null, 2)}</pre>;
+  }
+  return String(value);
+}
+
 export default function SystemConfigTable({ rows }: SystemConfigTableProps): React.ReactElement {
   const columns: ColumnsType<SystemConfigRow> = [
     { title: '配置分组', dataIndex: 'group', width: 180 },
@@ -17,7 +28,7 @@ export default function SystemConfigTable({ rows }: SystemConfigTableProps): Rea
         <Descriptions column={3} size="small" bordered>
           {Object.entries(values).map(([key, value]) => (
             <Descriptions.Item key={key} label={key}>
-              {String(value)}
+              {renderConfigValue(value)}
             </Descriptions.Item>
           ))}
         </Descriptions>

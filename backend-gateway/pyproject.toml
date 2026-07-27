@@ -14,7 +14,11 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "uvicorn>=0.49.0",
     "wecom-aibot-sdk>=1.0.8",
+    "nacos-client",
 ]
+
+[tool.uv.sources]
+nacos-client = { path = "../backend-share/nacos-client" }
 
 [dependency-groups]
 dev = [

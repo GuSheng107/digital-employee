@@ -162,10 +162,30 @@ def run_bot(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_nacos_config_to_environ() -> None:
+    """预留接入点：从 Nacos 拉取共享基础设施配置注入 os.environ。
+
+    backend-agent 当前无基础设施配置（DB/Redis/MinIO/RabbitMQ）可读，
+    此处作为未来转 Postgres 或接入其他基础设施时的预留入口。
+    nacos-client 包未安装 / NACOS_* 未配置时静默跳过，不影响启动。
+    """
+    try:
+        from nacos_client import NacosClient
+    except ImportError:
+        return  # nacos-client 未安装，仅本地开发场景
+
+    client = NacosClient.from_env_optional(default_data_id="dev.yaml")
+    if client is not None:
+        client.load_to_environ()
+
+
 def main() -> int:
     # 启动时尝试修复Mac SSL证书问题
     fix_mac_ssl_certificates()
-    
+
+    # 预留接入 Nacos 配置中心（当前无消费者，未来转 Postgres 时启用）
+    _load_nacos_config_to_environ()
+
     args = parse_args()
 
     if args.run_bot:

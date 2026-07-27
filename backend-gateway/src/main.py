@@ -9,8 +9,59 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
+
+# 启动时尽早加载 .env，让 Nacos 凭证（NACOS_*）可被 NacosClient 读到。
+# 必须在 import 业务模块（src.utils.minio_client 等）之前完成，
+# 因为这些模块在 import 时就会读环境变量。
+load_dotenv()
+
+# 从 Nacos 拉取共享基础设施配置并注入 os.environ，优先级高于本地 .env。
+# 失败时静默降级（缺凭证/包未安装/网络异常都仅打日志），不阻塞启动。
+
+from nacos_client import adapter as nacos_adapter
+
+
+def _adapt_nacos_to_gateway_env() -> None:
+    """把 Nacos 拍平的 key 适配到 backend-gateway 期望的字段名。
+
+    Nacos dev.yaml 用嵌套结构（minio.host / rabbitmq.host 等），
+    NacosClient.load_to_environ 拍平后注入 MINIO_HOST / RABBITMQ_HOST 等。
+    backend-gateway 代码用 os.getenv 读 MINIO_ENDPOINT / RABBITMQ_URL 等，
+    需要这层适配转换。
+
+    Nacos 优先级高于本地 .env：src 存在时覆盖 dst，确保 Nacos 配置生效。
+    本地调试时设 NACOS_SERVER_ADDR 为空可跳过 Nacos 拉取，回退到 .env。
+    """
+    # MinIO: host + api_port -> endpoint
+    nacos_adapter.compose_endpoint("MINIO_HOST", "MINIO_API_PORT", "MINIO_ENDPOINT")
+    nacos_adapter.copy_overwrite("MINIO_USERNAME", "MINIO_ACCESS_KEY")
+    nacos_adapter.copy_overwrite("MINIO_PASSWORD", "MINIO_SECRET_KEY")
+    # RabbitMQ: host + amqp_port + user + pass -> url（凭证 URL 编码在 adapter 内处理）
+    nacos_adapter.compose_rabbitmq_url()
+
+
+try:
+    from nacos_client import NacosClient
+
+    _nacos_client = NacosClient.from_env_optional(default_data_id="dev.yaml")
+    if _nacos_client is not None:
+        _nacos_client.load_to_environ()
+        _adapt_nacos_to_gateway_env()
+except Exception as _nacos_exc:  # noqa: BLE001
+    # 捕获所有异常（含 ImportError / NacosClient 内部异常 / YAML 解析异常），
+    # 统一降级到本地配置，避免任一环节失败阻断服务启动。
+    import logging
+    logging.getLogger("nacos_client").warning(
+        "[Nacos] 初始化失败 (%s: %s)，降级到本地配置。",
+        type(_nacos_exc).__name__,
+        _nacos_exc,
+    )
+
+
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from loguru import logger
 
@@ -99,6 +150,20 @@ app: FastAPI = FastAPI(
     description="智能机器人系统消息侧网关（三期：RabbitMQ 双模路由）",
     version="3.0.0",
     lifespan=lifespan,
+)
+
+# CORS 中间件：允许前端管理后台跨域调用 Admin API。
+# 默认放行本地开发前端端口（5173），可通过环境变量 CORS_ORIGINS 扩展。
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        *(origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()),
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["*"],
 )
 
 
