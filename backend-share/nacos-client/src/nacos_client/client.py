@@ -19,6 +19,15 @@ import yaml
 
 logger = logging.getLogger("nacos_client")
 
+# 抑制 nacos-sdk-python v1 内部 logger 在 loguru 环境下的 stream flush 错误。
+# nacos SDK 用 stdlib logging，被应用层 loguru InterceptHandler 拦截后 stream
+# 可能失效，导致 SDK 调用 logger.warning() 时触发 OSError: Bad file descriptor。
+# 给 nacos.* logger 显式加 NullHandler 并禁用 propagate，让 SDK 日志走我们的
+# NacosClient 自己的日志（fetch_config 已捕获所有异常并打 "[Nacos]" 前缀日志）。
+_nacos_sdk_logger = logging.getLogger("nacos")
+_nacos_sdk_logger.addHandler(logging.NullHandler())
+_nacos_sdk_logger.propagate = False
+
 
 class NacosConfigError(Exception):
     """Nacos 配置初始化相关异常（凭证缺失等）。"""
