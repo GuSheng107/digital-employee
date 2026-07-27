@@ -1,6 +1,12 @@
 import { Layout, Menu } from 'antd';
-import { AppstoreOutlined, BuildOutlined, DatabaseOutlined, DashboardOutlined, SettingOutlined, TableOutlined } from '@ant-design/icons';
-import { useState } from 'react';
+import {
+  AppstoreOutlined,
+  BuildOutlined,
+  DatabaseOutlined,
+  DashboardOutlined,
+  SettingOutlined,
+  TableOutlined,
+} from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import logo from '@/assets/images/avatar/logo.svg';
 import styles from '../index.module.css';
@@ -13,16 +19,9 @@ export default function SiderMenu(): React.ReactElement {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // 用户显式收起时优先级高于路由强制展开：在 data-platform 页面用户仍可手动折叠子菜单
-  // 路由变化时（导航到 data-platform）自动展开，除非用户已手动收起
-  const [dpManuallyClosed, setDpManuallyClosed] = useState<boolean>(false);
-  const isOnDataPlatform = location.pathname.startsWith('/data-platform');
-  const shouldOpen = (isOnDataPlatform && !dpManuallyClosed);
-  const openKeys = shouldOpen ? [DATA_PLATFORM_KEY] : [];
-
-  const handleOpenChange = (keys: string[]): void => {
-    setDpManuallyClosed(!keys.includes(DATA_PLATFORM_KEY));
-  };
+  // 常规菜单树模式：非受控展开，Menu 内部自管理 openKeys。
+  // 默认展开所有父菜单，之后完全由用户点击展开/折叠。
+  const defaultOpenKeys = [DATA_PLATFORM_KEY];
 
   const menuItems = [
     { key: '/', icon: <AppstoreOutlined />, label: '页面 A' },
@@ -51,9 +50,12 @@ export default function SiderMenu(): React.ReactElement {
         theme="dark"
         mode="inline"
         selectedKeys={selectedKeys}
-        openKeys={openKeys}
-        onOpenChange={handleOpenChange}
-        onClick={({ key }) => navigate(key)}
+        defaultOpenKeys={defaultOpenKeys}
+        onClick={({ key }) => {
+          // 父菜单（含 children）仅负责展开/折叠，不触发路由跳转
+          if (key === DATA_PLATFORM_KEY) return;
+          navigate(key);
+        }}
         items={menuItems}
       />
     </Sider>

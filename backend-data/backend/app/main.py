@@ -9,8 +9,9 @@ from loguru import logger
 
 from app.api.router import api_router
 from app.core.config import settings
+from app.schemas.common import ApiResponse
 from app.schemas.health import ServiceInfo
-from app.utils.response import fail_response
+from app.utils.response import fail_response, success_response
 
 
 @asynccontextmanager
@@ -85,13 +86,15 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
 
 
-@app.get("/", response_model=ServiceInfo)
-def root() -> ServiceInfo:
-    return ServiceInfo(
-        name=settings.app_name,
-        version=settings.app_version,
-        environment=settings.app_env,
-        status="running",
+@app.get("/", response_model=ApiResponse)
+def root() -> dict:
+    return success_response(
+        ServiceInfo(
+            name=settings.app_name,
+            version=settings.app_version,
+            environment=settings.app_env,
+            status="running",
+        ).model_dump()
     )
 
 

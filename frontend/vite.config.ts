@@ -18,6 +18,8 @@ export default defineConfig(({ mode }) => {
       alias: [{ find: '@', replacement: path.resolve(__dirname, 'src') }],
     },
     server: {
+      port: 5173,
+      strictPort: true,
       proxy: {
         // backend-agent，开发环境通过代理转发避免跨域
         '/backend-agent-api': {
