@@ -23,7 +23,7 @@
 
 使用 `uv` 自动创建虚拟环境并同步依赖：
 ```bash
-python -m uv sync
+uv sync
 ```
 
 ### 2. 配置文件说明
@@ -42,7 +42,7 @@ cp .env.example .env
 .venv\Scripts\python -m src.main
 ```
 
-运行后，管理端控制台会在 `http://127.0.0.1:8000` 启动，并在启动时完成 RabbitMQ 拓扑的声明与自动绑定。
+运行后，管理端控制台会在 `http://127.0.0.1:8864` 启动，并在启动时完成 RabbitMQ 拓扑的声明与自动绑定。
 
 ## RabbitMQ 拓扑设计
 

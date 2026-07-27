@@ -9,18 +9,17 @@ digital-employee/
 
 ## 运行方式
 
-主项目 `backend-gateway` 默认使用 `8000`，数据中台默认使用 `8010`。
+主项目 `backend-gateway` 默认使用 `8864`，数据中台默认使用 `8010`。
 
 推荐本地启动顺序：
 
 ```bash
 # 1. 启动主项目 Gateway
 cd backend-gateway
-python -m uv run python -m src.main
+uv run python -m src.main
 
 # 2. 启动数据中台
-cd ../backend-data
-./scripts/start.sh
+./scripts/data-platform/start.sh
 ```
 
 ## 调用方式
@@ -69,5 +68,5 @@ curl http://127.0.0.1:8010/api/v1/data-items
 - 不直接提交 `master`。
 - 不提交真实 `.env`。
 - 不提交密码、日志、缓存、虚拟环境、构建产物。
-- 数据中台不应和主项目 Gateway 共用 `8000` 端口。
+- 数据中台不应和主项目 Gateway 共用 `8864` 端口。
 - 数据库账号必须是受限业务账号，不得使用 PostgreSQL 管理员账号。

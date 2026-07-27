@@ -66,7 +66,11 @@ class WeChatBot(BaseBot):
             except Exception as exc:
                 logger.debug("[BotID: {}] 释放企业微信 SDK 连接异常: {}", self.bot_id, exc)
 
-            self._loop.call_soon_threadsafe(self._loop.stop)
+            try:
+                if self._loop.is_running():
+                    self._loop.call_soon_threadsafe(self._loop.stop)
+            except RuntimeError:
+                pass
             logger.info("[BotID: {}] 企业微信事件循环已收到停止信号。", self.bot_id)
 
     async def _main_co(self) -> None:

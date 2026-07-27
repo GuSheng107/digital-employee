@@ -47,21 +47,16 @@ docs/                 运维、CloudBeaver、主项目集成文档
 
 ```bash
 cd backend-data/backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+uv sync
 cp .env.example .env
-uvicorn app.main:app --host 127.0.0.1 --port 8010 --reload
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8010 --reload
 ```
 
-也可以使用 Linux 脚本：
+可以使用 Linux 脚本（位于根目录 `scripts/data-platform/`）：
 
 ```bash
-cd backend-data
-chmod +x scripts/*.sh
-./scripts/start.sh
-./scripts/status.sh
-./scripts/stop.sh
+chmod +x scripts/data-platform/*.sh
+./scripts/data-platform/start.sh
 ```
 
 ### 前端

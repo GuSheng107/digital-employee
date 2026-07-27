@@ -419,14 +419,6 @@ wecom-bot-agent/
 │       ├── binding_manager.py       # 管理员绑定管理
 │       ├── media_handler.py         # 媒体消息处理
 │       └── manual_reply_handler.py  # 人工回复处理
-├── web/                             # Vue 前端
-│   ├── src/
-│   │   ├── api/                     # API 请求封装
-│   │   ├── components/              # Vue 组件
-│   │   ├── composables/             # 组合式函数
-│   │   ├── views/                   # 页面视图
-│   │   └── styles/                  # 样式
-│   └── package.json
 ├── .skills/                         # Skill 系统
 │   └── system/
 │       ├── memory-creator/          # 记忆创建
@@ -435,8 +427,9 @@ wecom-bot-agent/
 │       ├── notify-me/               # 结果通知
 │       └── llm_factory.py           # 系统 Skill 共用 LLM 工厂
 ├── scripts/                         # 运维脚本
-│   ├── start-web.sh / start-web.cmd # 启动脚本
 │   └── clean-pycache.py             # 缓存清理
 └── tests/
     └── audit_memory_pipeline.py     # 记忆链路本地审计脚本
 ```
+
+> 管理端前端位于仓库根目录的 `frontend/`（React + TypeScript + Ant Design），由 `backend-agent` 通过 API 提供数据，不再托管于本目录。

@@ -21,9 +21,7 @@
 
 ```bash
 cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+uv sync
 ```
 
 ## 配置
@@ -103,5 +101,5 @@ router -> service -> repository/client wrapper
 ## 测试
 
 ```bash
-python -m pytest tests -q
+uv run pytest tests -q
 ```

@@ -50,7 +50,6 @@ _TEXT_EXTENSIONS = {".txt", ".md", ".json", ".csv"}
 def status(
     database_path: Path = Depends(get_database_path),
     manager: BotProcessManager = Depends(get_manager),
-    project_root: Path = Depends(get_project_root),
 ) -> dict[str, Any]:
     current_settings = load_settings_from_database(database_path)
     bots = list_bot_configs(database_path)
@@ -70,7 +69,6 @@ def status(
             "provider": current_settings.agent.provider,
             "model": active_provider.model if active_provider else "",
         },
-        "web": {"dist_exists": (project_root / "web" / "dist" / "index.html").exists()},
         "database": get_database_info(database_path),
     }
 

@@ -3,30 +3,11 @@
 ## 启动
 
 ```bash
-cd backend-data
-chmod +x scripts/*.sh
-./scripts/start.sh
+chmod +x scripts/data-platform/*.sh
+./scripts/data-platform/start.sh
 ```
 
 脚本会读取 `backend/.env` 中的 `APP_HOST` 和 `APP_PORT`，默认端口为 `8010`。
-
-## 停止
-
-```bash
-./scripts/stop.sh
-```
-
-## 状态检查
-
-```bash
-./scripts/status.sh
-```
-
-状态脚本会检查进程 PID，并调用：
-
-```text
-http://<APP_HOST>:<APP_PORT>/health
-```
 
 ## 日志位置
 
@@ -47,7 +28,7 @@ curl http://127.0.0.1:8010/api/v1/health/dependencies
 
 ### 端口被占用
 
-确认是否已有主项目 Gateway 或其他服务占用端口。数据中台默认使用 `8010`，主项目 Gateway 通常使用 `8000`。
+确认是否已有主项目 Gateway 或其他服务占用端口。数据中台默认使用 `8010`，主项目 Gateway 通常使用 `8864`。
 
 ### PostgreSQL 连接失败
 
