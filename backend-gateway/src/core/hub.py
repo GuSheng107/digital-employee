@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 import aio_pika
 from loguru import logger
+from pydantic import ValidationError
 
 from src.core.schemas import (
     MessageContent,
@@ -118,6 +119,8 @@ class MessageHub:
                 payload = json.loads(message.body.decode("utf-8"))
                 std_msg = StandardMessage(**payload)
                 await self.process_outbound(std_msg)
+            except (json.JSONDecodeError, ValidationError) as exc:
+                logger.error("[HUB-OUT] 出站消息解析失败: {}", exc)
             except Exception as exc:
                 logger.error("[HUB-OUT] 消费出站指令异常: {}", exc)
 

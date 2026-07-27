@@ -60,6 +60,21 @@ class BaseBot(abc.ABC):
         """返回最近一次异常信息。"""
         return self._last_error
 
+    @property
+    def is_zombie(self) -> bool:
+        """判断 Bot 是否处于僵尸状态。
+
+        僵尸状态指 ``_is_running`` 标记为 True 但底层线程已不存在或已死亡，
+        需要由 Watchdog 重新拉起。该属性用于将 ``_is_running`` 与 ``_thread``
+        的访问收拢在 Bot 内部，避免管理器直接读取私有字段。
+
+        Returns:
+            True 表示 Bot 处于僵尸状态，需要重启；False 表示正常运行或已正常停止。
+        """
+        if not self._is_running:
+            return False
+        return self._thread is None or not self._thread.is_alive()
+
     def start(self) -> None:
         """启动 Bot 实例。
 
