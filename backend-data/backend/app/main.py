@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -13,15 +14,16 @@ from app.utils.response import fail_response
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if settings.docs_enabled else None,
+    redoc_url="/redoc" if settings.docs_enabled else None,
+    openapi_url="/openapi.json" if settings.docs_enabled else None,
     lifespan=lifespan,
 )
 
@@ -36,9 +38,25 @@ app.add_middleware(
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """统一处理 HTTPException。
+
+    对 5xx 服务端异常进行日志记录并对外脱敏；4xx 客户端异常
+    沿用 detail 文案，便于调用方定位问题。
+    """
+    if exc.status_code >= 500:
+        logger.warning(
+            "[HTTPException] {} {} status={} detail={}",
+            request.method,
+            request.url.path,
+            exc.status_code,
+            exc.detail,
+        )
+        message = "internal server error"
+    else:
+        message = str(exc.detail) if exc.detail else "error"
     return JSONResponse(
         status_code=exc.status_code,
-        content=fail_response(message=str(exc.detail)),
+        content=fail_response(message=message),
     )
 
 
