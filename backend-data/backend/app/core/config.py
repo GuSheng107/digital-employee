@@ -12,6 +12,22 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(BASE_DIR / ".env")
 
 
+def _load_nacos_config_to_environ() -> None:
+    """启动时从 Nacos 拉取配置并注入 os.environ。
+
+    优先级高于本地 .env 文件，使 pydantic-settings 自动读到 Nacos 配置。
+    失败时静默降级（缺凭证/包未安装/网络异常都仅打日志），不阻塞启动。
+    """
+    try:
+        from nacos_client import NacosClient
+    except ImportError:
+        return  # nacos-client 未安装，仅本地开发场景
+
+    client = NacosClient.from_env_optional(default_data_id="dev.yaml")
+    if client is not None:
+        client.load_to_environ()
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),
@@ -160,6 +176,7 @@ ConnectionTarget = Literal["all", "postgres", "core_db", "vector_db", "redis", "
 
 @lru_cache
 def get_settings() -> Settings:
+    _load_nacos_config_to_environ()
     return Settings()
 
 

@@ -15,12 +15,16 @@ dependencies = [
     "loguru>=0.7",
     "pydantic>=2.5,<3.0",
     "pydantic-settings>=2.1",
+    "nacos-client",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=7.4",
 ]
+
+[tool.uv.sources]
+nacos-client = { path = "../../shared/nacos-client" }
 
 [build-system]
 requires = ["hatchling"]
