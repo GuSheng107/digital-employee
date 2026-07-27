@@ -1,6 +1,6 @@
 # 数字员工数据中台服务
 
-`digital-employee-data-platform` 是数字员工主项目旁路部署的数据访问服务。它只连接已经存在的 PostgreSQL 数据库和数据表，封装必要的数据查询、写入、缓存和对象存储接口。
+`backend-data` 是数字员工主项目旁路部署的数据访问服务。它只连接已经存在的 PostgreSQL 数据库和数据表，封装必要的数据查询、写入、缓存和对象存储接口。
 
 数据库结构管理不由本服务负责。建库、建表、字段调整、索引调整等结构变更统一由服务器独立部署的 CloudBeaver Community 完成。
 
@@ -28,9 +28,8 @@
 ## 技术栈
 
 - 后端：Python 3.10+、FastAPI、Uvicorn、SQLAlchemy 2.0、psycopg2-binary、redis-py、python-dotenv、MinIO SDK、Pydantic
-- 前端：Vue 3、Vite、TypeScript、Element Plus、Axios
+- 前端：由主项目 `frontend/` 统一管理，使用 React + TypeScript + Ant Design
 - 默认后端端口：`8010`
-- 默认前端端口：`5174`
 
 后端端口从 `8000` 调整为 `8010`，避免和主项目 `backend-gateway` 默认端口冲突。
 
@@ -38,7 +37,6 @@
 
 ```text
 backend/              后端服务
-frontend/             前端管理页面
 scripts/              Linux 启动、停止、状态检查脚本
 docs/                 运维、CloudBeaver、主项目集成文档
 ```
@@ -48,7 +46,7 @@ docs/                 运维、CloudBeaver、主项目集成文档
 ### 后端
 
 ```bash
-cd digital-employee-data-platform/backend
+cd backend-data/backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -59,7 +57,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8010 --reload
 也可以使用 Linux 脚本：
 
 ```bash
-cd digital-employee-data-platform
+cd backend-data
 chmod +x scripts/*.sh
 ./scripts/start.sh
 ./scripts/status.sh
@@ -68,19 +66,14 @@ chmod +x scripts/*.sh
 
 ### 前端
 
-```bash
-cd digital-employee-data-platform/frontend
-npm install
-cp .env.example .env
-npm run dev
-```
+前端代码已并入主项目 `frontend/`，请参考主项目 `frontend/README.md` 启动开发环境。开发环境下数据中台 API 通过 Vite dev server 代理自动转发到 `http://127.0.0.1:8010`。
 
 访问地址：
 
 - 后端根路径：`http://127.0.0.1:8010/`
 - 后端健康检查：`http://127.0.0.1:8010/health`
 - 后端 Swagger 文档：`http://127.0.0.1:8010/docs`
-- 前端页面：`http://127.0.0.1:5174`
+- 前端页面：通过主项目 `frontend/` 访问，路径为 `/data-platform/dashboard`、`/data-platform/data-items`、`/data-platform/system-config`
 
 ## 配置说明
 
@@ -132,11 +125,13 @@ MINIO_SECRET_KEY=minio_secret_key
 MINIO_DEFAULT_BUCKET=digital-employee
 ```
 
-前端配置：
+前端配置（在主项目 `frontend/` 下）：
 
 ```env
-VITE_API_BASE_URL=http://127.0.0.1:8010
+VITE_DATA_PLATFORM_API_BASE_URL=/data-platform-api
 ```
+
+开发环境默认通过 Vite dev server 代理转发到 `http://127.0.0.1:8010`，无需手动配置。
 
 ## 主要接口
 
@@ -162,7 +157,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8010
 ```text
 digital-employee 主项目
   -> HTTP API
-  -> digital-employee-data-platform
+  -> backend-data
   -> PostgreSQL / Redis / MinIO
 ```
 
@@ -181,11 +176,4 @@ digital-employee 主项目
 ```bash
 cd backend
 python -m pytest tests -q
-```
-
-前端：
-
-```bash
-cd frontend
-npm run build
 ```
