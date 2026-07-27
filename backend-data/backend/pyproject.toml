@@ -24,7 +24,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-nacos-client = { path = "../../shared/nacos-client" }
+nacos-client = { path = "../../backend-share/nacos-client" }
 
 [build-system]
 requires = ["hatchling"]

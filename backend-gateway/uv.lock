@@ -136,7 +136,7 @@ requires-dist = [
     { name = "lark-oapi", specifier = ">=1.4.8" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "minio", specifier = ">=7.2.20" },
-    { name = "nacos-client", directory = "../shared/nacos-client" },
+    { name = "nacos-client", directory = "../backend-share/nacos-client" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "uvicorn", specifier = ">=0.49.0" },
@@ -629,7 +629,7 @@ wheels = [
 [[package]]
 name = "nacos-client"
 version = "0.1.0"
-source = { directory = "../shared/nacos-client" }
+source = { directory = "../backend-share/nacos-client" }
 dependencies = [
     { name = "nacos-sdk-python" },
     { name = "pyyaml" },

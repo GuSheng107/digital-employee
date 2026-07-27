@@ -14,7 +14,7 @@ digital-employee 三个后端共享的 Nacos 配置中心轻量客户端。
 
 ```toml
 dependencies = [
-    "nacos-client = { path = "../../shared/nacos-client" }",
+    "nacos-client = { path = "../../backend-share/nacos-client" }",
 ]
 ```
 

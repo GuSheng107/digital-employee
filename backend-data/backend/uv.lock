@@ -117,7 +117,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.110,<1.0" },
     { name = "loguru", specifier = ">=0.7" },
     { name = "minio", specifier = ">=7.2" },
-    { name = "nacos-client", directory = "../../shared/nacos-client" },
+    { name = "nacos-client", directory = "../../backend-share/nacos-client" },
     { name = "psycopg2-binary", specifier = ">=2.9" },
     { name = "pydantic", specifier = ">=2.5,<3.0" },
     { name = "pydantic-settings", specifier = ">=2.1" },
@@ -439,7 +439,7 @@ wheels = [
 [[package]]
 name = "nacos-client"
 version = "0.1.0"
-source = { directory = "../../shared/nacos-client" }
+source = { directory = "../../backend-share/nacos-client" }
 dependencies = [
     { name = "nacos-sdk-python" },
     { name = "pyyaml" },
