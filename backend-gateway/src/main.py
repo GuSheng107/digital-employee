@@ -18,12 +18,60 @@ load_dotenv()
 
 # 从 Nacos 拉取共享基础设施配置并注入 os.environ，优先级高于本地 .env。
 # 失败时静默降级（缺凭证/包未安装/网络异常都仅打日志），不阻塞启动。
+
+
+def _copy_overwrite(src_key: str, dst_key: str) -> None:
+    """如果 src_key 存在，覆盖 dst_key（Nacos 优先级高于本地 .env）。"""
+    src = os.environ.get(src_key)
+    if src:
+        os.environ[dst_key] = src
+
+
+def _compose_endpoint(host_key: str, port_key: str, endpoint_key: str) -> None:
+    """如果 host+port 都存在，拼接为 host:port 覆盖 endpoint（Nacos 优先）。"""
+    host = os.environ.get(host_key)
+    port = os.environ.get(port_key)
+    if host and port:
+        os.environ[endpoint_key] = f"{host}:{port}"
+
+
+def _compose_rabbitmq_url() -> None:
+    """从 RABBITMQ_HOST + AMQP_PORT + USERNAME + PASSWORD 拼接 amqp:// URL。"""
+    host = os.environ.get("RABBITMQ_HOST")
+    port = os.environ.get("RABBITMQ_AMQP_PORT")
+    if not host or not port:
+        return
+    user = os.environ.get("RABBITMQ_USERNAME", "guest")
+    password = os.environ.get("RABBITMQ_PASSWORD", "guest")
+    os.environ["RABBITMQ_URL"] = f"amqp://{user}:{password}@{host}:{port}/"
+
+
+def _adapt_nacos_to_gateway_env() -> None:
+    """把 Nacos 拍平的 key 适配到 backend-gateway 期望的字段名。
+
+    Nacos dev.yaml 用嵌套结构（minio.host / rabbitmq.host 等），
+    NacosClient.load_to_environ 拍平后注入 MINIO_HOST / RABBITMQ_HOST 等。
+    backend-gateway 代码用 os.getenv 读 MINIO_ENDPOINT / RABBITMQ_URL 等，
+    需要这层适配转换。
+
+    Nacos 优先级高于本地 .env：src 存在时覆盖 dst，确保 Nacos 配置生效。
+    本地调试时设 NACOS_SERVER_ADDR 为空可跳过 Nacos 拉取，回退到 .env。
+    """
+    # MinIO: host + api_port -> endpoint
+    _compose_endpoint("MINIO_HOST", "MINIO_API_PORT", "MINIO_ENDPOINT")
+    _copy_overwrite("MINIO_USERNAME", "MINIO_ACCESS_KEY")
+    _copy_overwrite("MINIO_PASSWORD", "MINIO_SECRET_KEY")
+    # RabbitMQ: host + amqp_port + user + pass -> url
+    _compose_rabbitmq_url()
+
+
 try:
     from nacos_client import NacosClient
 
     _nacos_client = NacosClient.from_env_optional(default_data_id="dev.yaml")
     if _nacos_client is not None:
         _nacos_client.load_to_environ()
+        _adapt_nacos_to_gateway_env()
 except ImportError:
     pass  # nacos-client 未安装，仅本地开发场景
 
