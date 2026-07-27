@@ -17,6 +17,11 @@ export interface DataItemPayload {
   description: string;
 }
 
+export interface PaginatedDataItems {
+  items: DataItem[];
+  total: number;
+}
+
 // 表单初始值
 export const DEFAULT_FORM_VALUE: DataItemFormValues = {
   namespace: 'default',

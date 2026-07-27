@@ -22,6 +22,16 @@ class DataItemService:
     ) -> list[DataItem]:
         return self.repository.list(namespace=namespace, limit=limit, offset=offset)
 
+    def list_with_count(
+        self,
+        namespace: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[DataItem], int]:
+        items = self.repository.list(namespace=namespace, limit=limit, offset=offset)
+        total = self.repository.count(namespace=namespace)
+        return items, total
+
     def get(self, item_id: UUID) -> DataItem:
         item = self.repository.get(item_id)
         if item is None:

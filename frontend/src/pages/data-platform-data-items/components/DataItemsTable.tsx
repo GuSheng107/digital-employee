@@ -6,6 +6,10 @@ import type { DataItem } from '../types/data-items';
 export interface DataItemsTableProps {
   loading: boolean;
   dataSource: DataItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number, pageSize: number) => void;
   namespaceFilter: string;
   onNamespaceFilterChange: (value: string) => void;
   onQuery: () => void;
@@ -17,6 +21,10 @@ export interface DataItemsTableProps {
 export default function DataItemsTable({
   loading,
   dataSource,
+  total,
+  page,
+  pageSize,
+  onPageChange,
   namespaceFilter,
   onNamespaceFilterChange,
   onQuery,
@@ -70,7 +78,14 @@ export default function DataItemsTable({
         loading={loading}
         columns={columns}
         dataSource={dataSource}
-        pagination={false}
+        pagination={{
+          current: page,
+          pageSize: pageSize,
+          total: total,
+          showSizeChanger: true,
+          showTotal: (t) => `共 ${t} 条`,
+          onChange: (p, ps) => onPageChange(p, ps),
+        }}
         bordered
       />
     </>

@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.data_item import DataItem
@@ -35,6 +35,12 @@ class DataItemRepository:
             .offset(offset)
         )
         return list(self.session.scalars(statement))
+
+    def count(self, namespace: str | None = None) -> int:
+        statement = select(func.count()).select_from(DataItem).where(DataItem.deleted_at.is_(None))
+        if namespace:
+            statement = statement.where(DataItem.namespace == namespace)
+        return self.session.scalar(statement) or 0
 
     def get(self, item_id: UUID) -> DataItem | None:
         statement = select(DataItem).where(

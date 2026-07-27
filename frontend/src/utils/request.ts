@@ -4,13 +4,11 @@ import axios, {
   type AxiosResponse,
   type InternalAxiosRequestConfig,
 } from 'axios';
-import { message } from 'antd';
 
 /**
  * BaseRequest — 所有平台请求类的抽象基类。
  *
  * 子类需实现：
- *   - baseURL         目标后端地址
  *   - isSuccess(body) 业务成功判断
  *   - extractData(body) 从响应体提取业务数据
  *
@@ -18,6 +16,9 @@ import { message } from 'antd';
  *   - onRequest(config)  请求拦截（如加 token）
  *   - onAuthError()      401/403 处理（如清用户态）
  *   - getErrorMessage(body) 自定义错误文案
+ *
+ * 错误处理策略：基类不展示错误（不耦合 UI 库），仅将错误 normalize 为
+ * 带 friendly message 的 Error 抛出。调用方在 catch 中自行展示。
  */
 export abstract class BaseRequest {
   protected instance: AxiosInstance;
@@ -74,53 +75,49 @@ export abstract class BaseRequest {
       (error) => Promise.reject(error),
     );
 
-    // 响应拦截：只处理 HTTP 错误，业务解包在 wrapper 中做
+    // 响应拦截：normalize HTTP 错误为 friendly Error，不展示
     this.instance.interceptors.response.use(
       (response: AxiosResponse) => response,
       (error) => {
-        this.handleHttpError(error);
-        return Promise.reject(error);
+        const friendlyMessage = this.getHttpErrorMessage(error);
+        return Promise.reject(new Error(friendlyMessage));
       },
     );
   }
 
-  /** HTTP 层错误处理（timeout / 网络错误 / 4xx / 5xx） */
-  protected handleHttpError(error: unknown): void {
-    if (!(error instanceof Error)) return;
+  /** 将 HTTP 错误 normalize 为用户友好的消息字符串 */
+  protected getHttpErrorMessage(error: unknown): string {
+    if (!(error instanceof Error)) return '请求失败';
 
-    // axios error with response
     const axiosError = error as { response?: { status: number; data?: unknown }; message?: string };
     if (axiosError.response) {
       const { status, data } = axiosError.response;
       switch (status) {
         case 401:
-        case 403:
           this.onAuthError(status);
-          message.error(status === 401 ? '登录状态已过期，请重新登录' : '您没有权限访问该资源');
-          break;
+          return '登录状态已过期，请重新登录';
+        case 403:
+          return '您没有权限访问该资源';
         case 500:
-          message.error('服务器内部错误，请稍后再试');
-          break;
+          return '服务器内部错误，请稍后再试';
         default:
-          message.error(this.getErrorMessage(data) || '网络请求异常');
-          break;
+          return this.getErrorMessage(data) || '网络请求异常';
       }
     } else if (axiosError.message?.includes('timeout')) {
-      message.error('请求超时，请检查网络连接');
+      return '请求超时，请检查网络连接';
     } else {
-      message.error('无法连接到服务器');
+      return '无法连接到服务器';
     }
   }
 
   /**
    * 业务响应解包：校验 isSuccess，提取 data。
    * 消除审核报告 #7 的双重 as unknown as 断言。
+   * 业务失败时 throw Error，不展示（调用方 catch 展示）。
    */
   protected unwrapResponse<T>(body: unknown): T {
     if (!this.isSuccess(body)) {
-      const msg = this.getErrorMessage(body);
-      message.error(msg);
-      throw new Error(msg);
+      throw new Error(this.getErrorMessage(body));
     }
     return this.extractData(body) as T;
   }

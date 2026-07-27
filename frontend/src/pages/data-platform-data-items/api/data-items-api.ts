@@ -1,10 +1,18 @@
 import dataPlatformRequest from '@/utils/data-platform-request';
-import type { DataItem, DataItemPayload } from '../types/data-items';
+import type { DataItem, DataItemPayload, PaginatedDataItems } from '../types/data-items';
 
-// 列表查询，namespace 可选过滤
-export async function listDataItems(namespace?: string): Promise<DataItem[]> {
-  return dataPlatformRequest.get<DataItem[]>('/api/v1/data-items', {
-    params: { namespace: namespace || undefined },
+// 列表查询，namespace 可选过滤，支持分页
+export async function listDataItems(
+  namespace?: string,
+  limit?: number,
+  offset?: number,
+): Promise<PaginatedDataItems> {
+  return dataPlatformRequest.get<PaginatedDataItems>('/api/v1/data-items', {
+    params: {
+      namespace: namespace || undefined,
+      limit,
+      offset,
+    },
   });
 }
 
