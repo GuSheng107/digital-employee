@@ -1629,6 +1629,30 @@ wheels = [
 ]
 
 [[package]]
+name = "nacos-client"
+version = "0.1.0"
+source = { directory = "../shared/nacos-client" }
+dependencies = [
+    { name = "nacos-sdk-python" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "nacos-sdk-python", specifier = "<2" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
+name = "nacos-sdk-python"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/78/b8/619db69cf45a90fd3a9271ad744ea82abcdcfa83a293058cdbc0daf264f8/nacos-sdk-python-1.0.0.tar.gz", hash = "sha256:bafbaf7ade4f2a48cbeb87d863ded8149148fa514f6901dc916ec5644c8c6175", size = 21934, upload-time = "2024-07-24T03:26:19.976Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/a4/d3c1510d214b85c4e97ac5e59e46cd860e41229ac02ec73ad4c2f4a0d008/nacos_sdk_python-1.0.0-py3-none-any.whl", hash = "sha256:0c221de64e5a28babff693ba926a3d5698d6545ddd05584f80cac7a28168a991", size = 25134, upload-time = "2024-07-24T03:26:16.909Z" },
+]
+
+[[package]]
 name = "numpy"
 version = "2.2.6"
 source = { registry = "https://pypi.org/simple" }
@@ -3400,6 +3424,7 @@ dependencies = [
     { name = "langchain-mcp-adapters" },
     { name = "langchain-openai" },
     { name = "markdown" },
+    { name = "nacos-client" },
     { name = "olefile" },
     { name = "openai" },
     { name = "python-docx" },
@@ -3425,6 +3450,7 @@ requires-dist = [
     { name = "langchain-mcp-adapters", specifier = "~=0.2.0" },
     { name = "langchain-openai", specifier = "~=1.2.0" },
     { name = "markdown", specifier = ">=3.4" },
+    { name = "nacos-client", directory = "../shared/nacos-client" },
     { name = "olefile", specifier = ">=0.46" },
     { name = "openai", specifier = ">=1.0.0" },
     { name = "python-docx", specifier = ">=1.1.0" },

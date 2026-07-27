@@ -30,7 +30,11 @@ dependencies = [
   "python-multipart>=0.0.9",
   "uvicorn>=0.30.0",
   "wecom-aibot-sdk>=1.0.6",
+  "nacos-client",
 ]
+
+[tool.uv.sources]
+nacos-client = { path = "../shared/nacos-client" }
 
 [tool.setuptools.packages.find]
 include = ["agent_runtime*", "app*", "wecom_bot*"]
