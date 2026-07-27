@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     app_port: int = 8010
     api_prefix: str = "/api/v1"
     dependency_timeout_seconds: int = 3
+    # 用于保护非健康检查端点的 API Key；为空时跳过校验，生产环境务必配置。
+    api_key: str = Field(default="", repr=False)
 
     core_db_host: str = "127.0.0.1"
     core_db_port: int = 5432
@@ -61,6 +63,14 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def docs_enabled(self) -> bool:
+        """是否对外暴露 Swagger / ReDoc 文档站点。
+
+        生产环境关闭以减少攻击面，其余环境默认开启便于联调。
+        """
+        return self.app_env != "production"
 
     @staticmethod
     def _postgres_url(
@@ -113,37 +123,31 @@ class Settings(BaseSettings):
         return f"{scheme}://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
     def public_config(self) -> dict:
+        """返回可供前端展示的非敏感系统配置。
+
+        仅暴露静态的、面向排障与展示的元信息，剔除主机、端口、用户等
+        可能泄漏部署拓扑的字段。
+        """
         return {
             "app": {
                 "name": self.app_name,
                 "version": self.app_version,
                 "env": self.app_env,
-                "host": self.app_host,
-                "port": self.app_port,
                 "api_prefix": self.api_prefix,
             },
             "core_db": {
-                "host": self.core_db_host,
-                "port": self.core_db_port,
                 "database": self.core_db_name,
-                "user": self.core_db_user,
                 "sslmode": self.core_db_sslmode,
             },
             "vector_db": {
-                "host": self.vector_db_host,
-                "port": self.vector_db_port,
                 "database": self.vector_db_name,
-                "user": self.vector_db_user,
                 "sslmode": self.vector_db_sslmode,
             },
             "redis": {
-                "host": self.redis_host,
-                "port": self.redis_port,
                 "db": self.redis_db,
                 "ssl": self.redis_ssl,
             },
             "minio": {
-                "endpoint": self.minio_endpoint,
                 "secure": self.minio_secure,
                 "default_bucket": self.minio_default_bucket,
             },
