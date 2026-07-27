@@ -5,6 +5,7 @@
 """
 
 import os
+import secrets
 
 from fastapi import Header, HTTPException
 
@@ -17,6 +18,8 @@ async def verify_admin_api_key(
     当环境变量 ``GATEWAY_ADMIN_API_KEY`` 未配置时跳过校验，便于本地开发；
     生产环境应通过环境变量显式配置，以保护 Admin 接口。
 
+    使用 ``secrets.compare_digest`` 进行常量时间比较，避免时序攻击。
+
     Args:
         x_api_key: 请求头 ``X-API-Key`` 的值，缺失或为空表示未携带。
 
@@ -27,5 +30,5 @@ async def verify_admin_api_key(
     expected = os.getenv("GATEWAY_ADMIN_API_KEY", "").strip()
     if not expected:
         return
-    if x_api_key != expected:
+    if not x_api_key or not secrets.compare_digest(x_api_key, expected):
         raise HTTPException(status_code=401, detail="invalid api key")
