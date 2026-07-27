@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { message } from 'antd';
 import * as runtimeApi from '@/api/runtime';
-import type { Agent } from '@/api/agents';
-import type { Bot } from '@/api/bots';
+import type { Agent, AgentListResponse } from '@/api/agents';
+import type { Bot, BotListResponse, StartBotResponse } from '@/api/bots';
 
 // ── Core runtime state (mirrors Vue useRuntimeCore + useRuntimeConsole) ──
 
@@ -119,8 +119,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   // ── Bot actions ──
   loadBots: async () => {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result: any = await runtimeApi.getBots({ include_deleted: true });
+      const result = await runtimeApi.getBots({ include_deleted: true }) as BotListResponse;
       set({ bots: result.bots || [], botStatuses: result.statuses || {} });
       get().ensureActiveBot();
     } catch (error) {
@@ -133,8 +132,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     try {
       const kw = keyword !== undefined ? keyword : get().botKeyword;
       if (keyword !== undefined) set({ botKeyword: kw });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const response: any = await runtimeApi.getBots({ page, page_size: pageSize, keyword: kw });
+      const response = await runtimeApi.getBots({ page, page_size: pageSize, keyword: kw }) as BotListResponse;
       if (response?.bots) {
         set({
           bots: response.bots,
@@ -203,8 +201,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     next.add(botKey);
     set({ startingBots: next });
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result: any = await runtimeApi.startNamedBot(botKey);
+      const result = await runtimeApi.startNamedBot(botKey) as StartBotResponse;
       const { botPagination } = get();
       await get().loadBotsConfig(botPagination.page, botPagination.page_size);
       const warnings = Array.isArray(result?.warnings) ? result.warnings.filter(Boolean) : [];
@@ -250,9 +247,8 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   // ── Agent actions ──
   loadAgents: async () => {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result: any = await runtimeApi.getAgents();
-      set({ agents: result.agents || result || [] });
+      const result = await runtimeApi.getAgents() as AgentListResponse;
+      set({ agents: result.agents || [] });
     } catch (error) {
       message.error(String(error));
     }
@@ -295,9 +291,10 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   // ── System actions ──
   loadPlatformSettings: async () => {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const settings: any = await runtimeApi.getPlatformSettings();
-      set({ platformSettings: settings || {} });
+      const settings = await runtimeApi.getPlatformSettings();
+      set({
+        platformSettings: settings && typeof settings === 'object' ? settings as Record<string, unknown> : {},
+      });
     } catch (error) {
       message.error(String(error));
     }

@@ -4,9 +4,9 @@ import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useUserStore } from '@/store/user';
 import { loginConsole } from '@/api/auth';
 import brandMark from '/brand/wecom-agent-mark.svg';
-import './LoginView.css';
+import styles from './login-view.module.css';
 
-const { Title, Text } = Typography;
+const { Title } = Typography;
 
 interface LoginForm {
   username: string;
@@ -39,18 +39,18 @@ export default function LoginView() {
   };
 
   return (
-    <main className="login-shell">
-      <section className="login-panel">
-        <div className="login-brand">
-          <img className="login-brand__mark" src={brandMark} alt="数字员工" />
+    <main className={styles.loginShell}>
+      <section className={styles.loginPanel}>
+        <div className={styles.loginBrand}>
+          <img className={styles.loginBrandMark} src={brandMark} alt="数字员工" />
           <div>
-            <Text type="secondary">Local Runtime</Text>
-            <Title level={1} style={{ margin: 0, fontSize: 20 }}>企微数字员工V1.0</Title>
+            <p className={styles.loginEyebrow}>Local Runtime</p>
+            <Title level={1} className={styles.loginTitle}>企微数字员工V1.0</Title>
           </div>
         </div>
 
         <Form<LoginForm>
-          className="login-form"
+          className={styles.loginForm}
           layout="vertical"
           onFinish={handleSubmit}
           autoComplete="off"
@@ -73,16 +73,15 @@ export default function LoginView() {
               prefix={<LockOutlined />}
               autoComplete="current-password"
               placeholder="请输入密码"
-              onPressEnter={() => {}}
             />
           </Form.Item>
 
           {error && (
-            <div className="login-error">{error}</div>
+            <div className={styles.loginError}>{error}</div>
           )}
 
           <Button
-            className="login-submit"
+            className={styles.loginSubmit}
             type="primary"
             htmlType="submit"
             loading={loading}

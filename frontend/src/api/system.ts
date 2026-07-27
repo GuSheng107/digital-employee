@@ -119,8 +119,8 @@ export function triggerTask(taskKey: string) {
 
 // --- Platform Settings ---
 
-export function getPlatformSettings() {
-  return request.get('/platform-settings');
+export function getPlatformSettings(): Promise<Record<string, unknown>> {
+  return request.get('/platform-settings') as Promise<Record<string, unknown>>;
 }
 
 export function savePlatformSettings(settings: Record<string, unknown>) {

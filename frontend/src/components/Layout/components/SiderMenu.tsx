@@ -37,7 +37,7 @@ const menuItems: MenuItem[] = [
   { key: '/chats', icon: <MessageOutlined />, label: '会话管理' },
   { key: '/mcp', icon: <ApiOutlined />, label: 'MCP配置' },
   { key: '/skills', icon: <ThunderboltOutlined />, label: 'Skills配置' },
-  { key: '/projectLogs', icon: <FileTextOutlined />, label: '日志查询' },
+  { key: '/project-logs', icon: <FileTextOutlined />, label: '日志查询' },
   { key: '/data', icon: <FolderOpenOutlined />, label: '数据管理' },
   { key: '/feedback', icon: <StarOutlined />, label: '反馈分析' },
   { key: '/memory', icon: <BookOutlined />, label: '记忆管理' },
@@ -65,10 +65,7 @@ export default function SiderMenu() {
     <Sider
       theme="dark"
       width={260}
-      style={{
-        background: 'linear-gradient(180deg, #1f2937 0%, #111827 100%)',
-        borderRight: '1px solid #374151',
-      }}
+      className={styles.sider}
     >
       <div className={styles.brand}>
         <img className={styles.brandMark} src={brandMark} alt="WeCom Agent" />
@@ -96,10 +93,7 @@ export default function SiderMenu() {
             label: child.label,
           })),
         }))}
-        style={{
-          background: 'transparent',
-          borderInlineEnd: 'none',
-        }}
+        className={styles.siderMenu}
       />
     </Sider>
   );

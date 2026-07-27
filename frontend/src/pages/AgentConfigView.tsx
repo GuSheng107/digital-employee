@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Card, Table, Tag, Button, Modal, Input, Select, InputNumber, Switch, message, Space, Popconfirm } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons';
-import { getAgents, saveAgent, toggleAgent, testAgent, batchDeleteAgents } from '@/api/agents';
+import { getAgents, saveAgent, toggleAgent, testAgent, batchDeleteAgents, type AgentListResponse } from '@/api/agents';
 import { formatTime } from '@/utils/format';
 import type { ColumnsType } from 'antd/es/table';
 
@@ -50,9 +50,8 @@ export default function AgentConfigView() {
   const loadAgents = async () => {
     setLoading(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result: any = await getAgents();
-      setAgents(result.agents || result || []);
+      const result = await getAgents() as AgentListResponse;
+      setAgents(result.agents || []);
     } catch (e) { message.error(String(e)); }
     finally { setLoading(false); }
   };

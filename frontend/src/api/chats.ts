@@ -11,26 +11,77 @@ export interface ChatDetailParams {
   limit?: number;
 }
 
+export interface ChatMessagePart {
+  type: string;
+  text?: string;
+  url?: string;
+  preview_url?: string;
+  filename?: string;
+  file_size?: number;
+  mime_type?: string;
+  oversized?: boolean;
+}
+
+export interface ChatMessage {
+  id: string;
+  direction: string;
+  content: string;
+  sender_name?: string;
+  sender_id?: string;
+  sender_display_name?: string;
+  reply_status?: string;
+  reply_source?: string;
+  created_at?: string;
+  feedback?: { result: string; reason: string; count: number };
+  metadata?: { parts?: ChatMessagePart[] };
+}
+
+export interface Chat {
+  chat_id: string;
+  display_name?: string;
+  chat_type?: string;
+  conversation_kind?: string;
+  conversation_status?: string;
+  reply_mode?: string;
+  sender_name?: string;
+  sender_id?: string;
+  sender_display_name?: string;
+  unread_count?: number;
+  last_message_at?: string;
+  context?: { used_chars: number; limit_chars: number };
+  messages?: ChatMessage[];
+  external_chat_id?: string;
+  last_at?: string;
+}
+
 export interface ReplyModePayload {
   mode: string;
   [key: string]: unknown;
 }
 
-export function getChats(params: ChatListParams = {}) {
+export interface ChatListResponse {
+  chats: Chat[];
+}
+
+export interface ChatDetailResponse {
+  chat: Chat;
+}
+
+export function getChats(params: ChatListParams = {}): Promise<ChatListResponse> {
   const search = new URLSearchParams();
   if (params.bot_key) search.set('bot_key', params.bot_key);
   if (params.keyword) search.set('keyword', params.keyword);
   if (params.page) search.set('page', String(params.page));
   if (params.page_size) search.set('page_size', String(params.page_size));
   const query = search.toString();
-  return request.get(`/chats${query ? `?${query}` : ''}`);
+  return request.get(`/chats${query ? `?${query}` : ''}`) as Promise<ChatListResponse>;
 }
 
-export function getChatDetail(chatId: string, params: ChatDetailParams = {}) {
+export function getChatDetail(chatId: string, params: ChatDetailParams = {}): Promise<ChatDetailResponse> {
   const search = new URLSearchParams();
   if (params.limit) search.set('limit', String(params.limit));
   const query = search.toString();
-  return request.get(`/chats/${encodeURIComponent(chatId)}${query ? `?${query}` : ''}`);
+  return request.get(`/chats/${encodeURIComponent(chatId)}${query ? `?${query}` : ''}`) as Promise<ChatDetailResponse>;
 }
 
 export function deleteChats(chatIds: string[]) {

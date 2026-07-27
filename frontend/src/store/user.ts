@@ -1,8 +1,7 @@
 import { create } from 'zustand';
 import me from '@/assets/images/avatar/me.svg';
 import { clearAuthSession, getAccessToken, saveTokenPair, type TokenPairPayload } from '@/utils/authSession';
-import { getCurrentSession, type SessionUser } from '@/api/auth';
-import request from '@/utils/request';
+import { getCurrentSession, logoutConsole, type SessionUser } from '@/api/auth';
 
 interface UserState {
   username: string;
@@ -130,7 +129,7 @@ export const useUserStore = create<UserState>((set, get) => ({
     if (!isAuthenticated) return;
 
     try {
-      await request.post('/auth/logout');
+      await logoutConsole();
     } catch {
       // Client-side session removal is authoritative
     }

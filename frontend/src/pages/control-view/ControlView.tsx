@@ -2,30 +2,10 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Card, Tag, Button, message } from 'antd';
 import { PlayCircleOutlined, PauseCircleOutlined } from '@ant-design/icons';
 import { useRuntimeStore } from '@/store/runtime';
-import { getAiStatus, cancelAiWork, clearAiWork } from '@/api/agents';
+import { getAiStatus, cancelAiWork, clearAiWork, type AiStatus, type AiTask } from '@/api/agents';
 import { fetchWithAuth } from '@/utils/request';
+import type { Bot } from '@/api/bots';
 import { getAgentLabel, formatTimeOnly } from '@/utils/format';
-
-interface AiTask {
-  trace_id: string;
-  status: string;
-  stage?: string;
-  question?: string;
-  reasoning?: string;
-  error?: string;
-  chat_name?: string;
-  chat_id?: string;
-  conv_display_name?: string;
-  conv_chat_type?: string;
-  conv_sender_name?: string;
-  started_at?: string;
-}
-
-interface AiStatus {
-  busy: boolean;
-  active: AiTask[];
-  recent: AiTask[];
-}
 
 function stageLabel(stage?: string): string {
   const map: Record<string, string> = {
@@ -73,6 +53,18 @@ function reasoningPreview(task: AiTask): string {
     return stage ? `当前阶段：${stage}` : 'Agent 正在工作...';
   }
   return task?.error ? `异常：${task.error}` : '暂无思考链记录';
+}
+
+function getBotAgentProvider(bot: Bot): string {
+  return typeof bot.agent_provider === 'string' ? bot.agent_provider : '';
+}
+
+function getBotMetricCount(value: unknown): number {
+  return typeof value === 'number' ? value : 0;
+}
+
+function getBotPrompt(bot: Bot): string {
+  return typeof bot.system_prompt === 'string' ? bot.system_prompt : '';
 }
 
 export default function ControlView() {
@@ -166,7 +158,7 @@ export default function ControlView() {
     streamStoppedRef.current = false;
     loadBots();
     loadAgents();
-    getAiStatus().then((data) => setAiStatus(data as unknown as AiStatus)).catch(() => setAiStatus({ busy: false, active: [], recent: [] }));
+    getAiStatus().then((data) => setAiStatus(data)).catch(() => setAiStatus({ busy: false, active: [], recent: [] }));
     startStreamRef.current();
 
     return () => {
@@ -187,7 +179,7 @@ export default function ControlView() {
       await cancelAiWork(traceId);
       message.success('已发送取消请求');
       const status = await getAiStatus();
-      setAiStatus(status as unknown as AiStatus);
+      setAiStatus(status);
     } catch (e) {
       message.error(String(e));
     } finally {
@@ -206,7 +198,7 @@ export default function ControlView() {
       await clearAiWork(traceId);
       message.success('已清除任务');
       const status = await getAiStatus();
-      setAiStatus(status as unknown as AiStatus);
+      setAiStatus(status);
     } catch (e) {
       message.error(String(e));
     } finally {
@@ -233,22 +225,22 @@ export default function ControlView() {
                   <header style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                     <div>
                       <h3 style={{ margin: 0, color: '#111827', fontSize: 18 }}>{String(bot.name || bot.bot_key)}</h3>
-                      <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: 13 }}>{getAgentLabel((bot as Record<string, unknown>).agent_provider as string, agents)}</p>
+                      <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: 13 }}>{getAgentLabel(getBotAgentProvider(bot), agents)}</p>
                     </div>
                     <Tag color={status.running ? 'green' : 'default'}>{status.running ? '运行中' : '已停止'}</Tag>
                   </header>
 
                   <div className="metric-row metric-row--bot" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
-                    <div><span>MCP 数</span><strong>{(bot as Record<string, unknown>).enabled_mcp_count as number || 0}</strong></div>
-                    <div><span>Skills 数</span><strong>{(bot as Record<string, unknown>).enabled_skill_count as number || 0}</strong></div>
+                    <div><span>MCP 数</span><strong>{getBotMetricCount(bot.enabled_mcp_count)}</strong></div>
+                    <div><span>Skills 数</span><strong>{getBotMetricCount(bot.enabled_skill_count)}</strong></div>
                     <div><span>PID</span><strong>{status.pid || '-'}</strong></div>
                   </div>
 
                   <div className="prompt-preview" style={{ padding: '14px 16px', border: '1px solid #e5e7eb', borderRadius: 12, background: '#f9fafb' }}>
                     <span style={{ display: 'block', marginBottom: 6, color: '#6b7280', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.02em' }}>提示词</span>
                     <p style={{ margin: 0, color: '#111827', lineHeight: 1.7, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-word' }}
-                       title={String((bot as Record<string, unknown>).system_prompt || '')}>
-                      {String((bot as Record<string, unknown>).system_prompt || '').trim() || '未设置提示词'}
+                       title={getBotPrompt(bot)}>
+                      {getBotPrompt(bot).trim() || '未设置提示词'}
                     </p>
                   </div>
 

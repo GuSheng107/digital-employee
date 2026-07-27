@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Card, Table, Button, Modal, Input, Select, Switch, message, Space, Popconfirm, Tabs } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, LinkOutlined } from '@ant-design/icons';
-import { getBots, saveBot, batchDeleteBots, restoreDeletedBots, toggleBot, rebindBot, unbindBot, getBotSkills, saveBotSkills, getBotMcpServers, saveBotMcpServers } from '@/api/bots';
-import { getAgents } from '@/api/agents';
+import { getBots, saveBot, batchDeleteBots, restoreDeletedBots, toggleBot, rebindBot, unbindBot, getBotSkills, saveBotSkills, getBotMcpServers, saveBotMcpServers, type BotListResponse, type BotSkillsResponse, type BotMcpServersResponse, type SaveBotPayload } from '@/api/bots';
+import { getAgents, type AgentListResponse } from '@/api/agents';
 import { getSkills } from '@/api/skills';
 import { getMcpServers } from '@/api/skills';
 import type { ColumnsType } from 'antd/es/table';
@@ -41,16 +41,17 @@ export default function BotConfigView() {
   const loadBots = async () => {
     setLoading(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result: any = await getBots({ include_deleted: true });
+      const result = await getBots({ include_deleted: true }) as BotListResponse;
       setBots(result.bots || []);
     } catch (e) { message.error(String(e)); }
     finally { setLoading(false); }
   };
 
   const loadAgents = async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    try { const r: any = await getAgents(); setAgents(r.agents || r || []); } catch { /* ignore */ }
+    try {
+      const result = await getAgents() as AgentListResponse;
+      setAgents(result.agents || []);
+    } catch { /* ignore */ }
   };
 
   const loadSkills = async () => {
@@ -71,7 +72,7 @@ export default function BotConfigView() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await saveBot(editing as Record<string, unknown>, isEdit ? 'edit' : 'add');
+      await saveBot(editing as SaveBotPayload, isEdit ? 'edit' : 'add');
       message.success(isEdit ? 'Bot 已更新' : 'Bot 已创建');
       setDialogOpen(false);
       loadBots();
@@ -92,8 +93,10 @@ export default function BotConfigView() {
 
   const openSkillDialog = async (botKey: string) => {
     setEditBotKey(botKey);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    try { const r: any = await getBotSkills(botKey); setSkillsList(r.skill_names || []); } catch { setSkillsList([]); }
+    try {
+      const result = await getBotSkills(botKey) as BotSkillsResponse;
+      setSkillsList(result.skill_names || []);
+    } catch { setSkillsList([]); }
     setSkillDialogOpen(true);
   };
 
@@ -101,8 +104,10 @@ export default function BotConfigView() {
 
   const openMcpDialog = async (botKey: string) => {
     setEditBotKey(botKey);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    try { const r: any = await getBotMcpServers(botKey); setMcpList(r.server_ids || []); } catch { setMcpList([]); }
+    try {
+      const result = await getBotMcpServers(botKey) as BotMcpServersResponse;
+      setMcpList(result.server_ids || []);
+    } catch { setMcpList([]); }
     setMcpDialogOpen(true);
   };
 

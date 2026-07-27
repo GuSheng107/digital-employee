@@ -25,6 +25,13 @@
   border-bottom: 1px solid #e5e7eb;
 }
 
+.headerInner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 100%;
+}
+
 .eyebrow {
   margin: 0 0 2px;
   color: #3b82f6;
@@ -83,6 +90,15 @@
   transition: background 0.3s;
 }
 
+.userAvatar {
+  margin-right: 8px;
+}
+
+.userCaret {
+  font-size: 10px;
+  margin-left: 4px;
+}
+
 .userDropdown:hover {
   background: #f3f4f6;
 }
@@ -137,4 +153,14 @@
   margin-top: 2px;
   color: #9ca3af;
   font-size: 12px;
+}
+
+.sider {
+  background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
+  border-right: 1px solid #374151;
+}
+
+.siderMenu {
+  background: transparent;
+  border-inline-end: none !important;
 }

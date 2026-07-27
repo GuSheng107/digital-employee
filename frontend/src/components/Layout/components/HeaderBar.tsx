@@ -54,7 +54,7 @@ export default function HeaderBar({ onOpenUsers, onChangePassword, onExit }: Hea
 
   return (
     <Header className={styles.header}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' }}>
+      <div className={styles.headerInner}>
         <div>
           <p className={styles.eyebrow}>Local Runtime</p>
           <h1 className={styles.title}>企微数字员工V1.0</h1>
@@ -88,9 +88,9 @@ export default function HeaderBar({ onOpenUsers, onChangePassword, onExit }: Hea
           {username && (
             <Dropdown menu={{ items: userActionItems, onClick: handleUserClick }} placement="bottomRight">
               <span className={styles.userDropdown}>
-                <Avatar src={avatar} icon={<UserOutlined />} size="small" style={{ marginRight: 8 }} />
+                <Avatar src={avatar} icon={<UserOutlined />} size="small" className={styles.userAvatar} />
                 <span className={styles.username}>{displayName || username || '未登录'}</span>
-                <DownOutlined style={{ fontSize: 10, marginLeft: 4 }} />
+                <DownOutlined className={styles.userCaret} />
               </span>
             </Dropdown>
           )}

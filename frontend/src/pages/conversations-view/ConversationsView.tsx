@@ -2,28 +2,9 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { Card, Button, Input, Tag, Switch, Progress, Upload, message, Space, Empty, Tooltip, Avatar } from 'antd';
 import { EditOutlined, SendOutlined, PaperClipOutlined, LoadingOutlined, RobotOutlined, CompressOutlined } from '@ant-design/icons';
 import { useRuntimeStore } from '@/store/runtime';
-import { getChats, getChatDetail, deleteChats, updateChatDisplayName, markChatRead, compressChatContext, generateAiDraftStream, sendManualReply } from '@/api/chats';
-import { markAllBotChatsRead } from '@/api/bots';
+import { getChats, getChatDetail, deleteChats, updateChatDisplayName, markChatRead, compressChatContext, generateAiDraftStream, sendManualReply, type Chat, type ChatDetailResponse, type ChatListResponse } from '@/api/chats';
+import { markAllBotChatsRead, type Bot } from '@/api/bots';
 import { displayUserName, formatTime, conversationAvatar } from '@/utils/format';
-
-interface ChatMessage {
-  id: string; direction: string; content: string; sender_name?: string; sender_id?: string;
-  sender_display_name?: string; reply_status?: string; reply_source?: string;
-  created_at?: string; feedback?: { result: string; reason: string; count: number };
-  metadata?: { parts?: Array<{ type: string; text?: string; url?: string; preview_url?: string; filename?: string; file_size?: number; mime_type?: string; oversized?: boolean }> };
-}
-
-interface Chat {
-  chat_id: string; display_name?: string; chat_type?: string; conversation_kind?: string;
-  conversation_status?: string; reply_mode?: string; sender_name?: string; sender_id?: string;
-  sender_display_name?: string; unread_count?: number; last_message_at?: string;
-  context?: { used_chars: number; limit_chars: number };
-  messages?: ChatMessage[]; external_chat_id?: string; last_at?: string;
-}
-
-interface Bot {
-  bot_key: string; name?: string; bot_deleted?: boolean; unread_total?: number;
-}
 
 export default function ConversationsView() {
   const { bots, botStatuses, activeBotKey, selectBot } = useRuntimeStore();
@@ -54,8 +35,7 @@ export default function ConversationsView() {
     if (!activeBotKey) { setChats([]); return; }
     if (append) setLoadingMore(true); else setLoadingChats(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result: any = await getChats({ bot_key: activeBotKey, page: p, page_size: 20 });
+      const result = await getChats({ bot_key: activeBotKey, page: p, page_size: 20 }) as ChatListResponse;
       const list = result.chats || [];
       setChats((prev) => append ? [...prev, ...list] : list);
       setHasMore(list.length === 20);
@@ -72,10 +52,9 @@ export default function ConversationsView() {
   const handleSelectChat = async (chatId: string) => {
     setLoadingDetail(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const detail: any = await getChatDetail(chatId);
-      setActiveChat(detail.chat || detail);
-      setReplyMode(detail.chat?.reply_mode || 'manual');
+      const detail = await getChatDetail(chatId) as ChatDetailResponse;
+      setActiveChat(detail.chat);
+      setReplyMode(detail.chat?.reply_mode === 'ai' ? 'ai' : 'manual');
       scrollToBottom();
     } catch (e) { message.error(String(e)); }
     finally { setLoadingDetail(false); }
