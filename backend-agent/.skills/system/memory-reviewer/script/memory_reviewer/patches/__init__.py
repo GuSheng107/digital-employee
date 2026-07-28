@@ -1,1 +1,0 @@
-from memory_reviewer.patches.patch_applier import apply_patch_plan

@@ -17,5 +17,5 @@ echo   - Local URL: http://localhost:8864
 echo   - Health Check: http://localhost:8864/api/v1/health
 echo ===================================================
 
-uv run python -m src.main
+uv run uvicorn src.main:app --host 0.0.0.0 --port 8864
 pause

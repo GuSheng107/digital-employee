@@ -29,10 +29,10 @@ echo ===================================================
 
 echo [INFO] Starting Backend Data Service with uv...
 echo   - Local URL: http://!APP_HOST!:!APP_PORT!
-echo   - Health Check: http://!APP_HOST!:!APP_PORT!/health
+echo   - Health Check: http://!APP_HOST!:!APP_PORT!/api/v1/health
 echo   - API Docs:  http://!APP_HOST!:!APP_PORT!/docs
 echo ===================================================
 
-uv run uvicorn app.main:app --host !APP_HOST! --port !APP_PORT! --reload
+uv run uvicorn app.main:app --host !APP_HOST! --port !APP_PORT!
 endlocal
 pause
