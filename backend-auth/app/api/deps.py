@@ -3,6 +3,9 @@
 - ``verify_api_key``：保护非健康检查类业务端点（与 backend-data 一致）。
 - ``get_auth_service``：构造带数据库会话的 AuthService。
 - ``get_current_user``：从 Authorization 头解析 access_token，返回当前用户。
+
+异常策略：业务异常统一使用 ``api_common.ApiException`` 子类，由全局
+异常处理器转换为统一响应信封，路由层无需 try/except。
 """
 
 from __future__ import annotations
@@ -10,13 +13,14 @@ from __future__ import annotations
 import secrets
 from collections.abc import Generator
 
-from fastapi import Depends, Header, HTTPException, status
+from api_common import PermissionDeniedError, TokenInvalidError
+from fastapi import Depends, Header
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db_session
 from app.schemas.auth import UserInfo
-from app.services.auth_service import AuthError, AuthService, InvalidTokenError
+from app.services.auth_service import AuthService
 
 
 def verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
@@ -31,14 +35,13 @@ def verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
         x_api_key: 请求头 ``X-API-Key`` 的值，缺失或为空表示未携带。
 
     Raises:
-        HTTPException: 当 ``API_KEY`` 已配置但请求头缺失或不匹配时，
-            返回 401 未授权。
+        PermissionDeniedError: 当 ``API_KEY`` 已配置但请求头缺失或不匹配时。
     """
     expected = settings.api_key
     if not expected:
         return
     if not x_api_key or not secrets.compare_digest(x_api_key, expected):
-        raise HTTPException(status_code=401, detail="invalid api key")
+        raise PermissionDeniedError(message="invalid api key")
 
 
 def get_auth_service(
@@ -53,24 +56,19 @@ def get_auth_service(
 
 
 def _extract_bearer(authorization: str | None) -> str:
-    """从 Authorization 头解析 Bearer token。"""
+    """从 Authorization 头解析 Bearer token。
+
+    Raises:
+        TokenInvalidError: Authorization 头缺失、格式错误或 token 为空。
+    """
     if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="missing authorization header",
-        )
+        raise TokenInvalidError(message="missing authorization header")
     parts = authorization.split(" ", 1)
     if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="invalid authorization scheme",
-        )
+        raise TokenInvalidError(message="invalid authorization scheme")
     token = parts[1].strip()
     if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="empty bearer token",
-        )
+        raise TokenInvalidError(message="empty bearer token")
     return token
 
 
@@ -81,13 +79,8 @@ def get_current_user(
     """解析 access_token 并返回当前登录用户信息。
 
     Raises:
-        HTTPException: 401 当 token 无效/过期或用户被禁用。
+        TokenInvalidError: token 无效/过期。
+        UserDisabledError: 用户已被禁用。
     """
     token = _extract_bearer(authorization)
-    try:
-        return service.get_current_user(token)
-    except (InvalidTokenError, AuthError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(exc),
-        ) from exc
+    return service.get_current_user(token)

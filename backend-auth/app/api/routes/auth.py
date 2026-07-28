@@ -4,11 +4,15 @@
 - POST /auth/refresh：用 refresh_token 换新的双 token。
 - POST /auth/logout：登出，撤销当前 token。
 - GET  /auth/me：返回当前登录用户信息（含角色与权限码）。
+
+异常策略：业务异常统一使用 ``api_common.ApiException`` 子类，由全局
+异常处理器转换为统一响应信封，路由层无需 try/except。
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from api_common import ApiResponse, TokenInvalidError, success_response
+from fastapi import APIRouter, Depends, Request
 
 from app.api.deps import get_auth_service, get_current_user
 from app.schemas.auth import (
@@ -18,14 +22,7 @@ from app.schemas.auth import (
     TokenPair,
     UserInfo,
 )
-from app.schemas.common import ApiResponse
-from app.services.auth_service import (
-    AuthService,
-    InvalidCredentialsError,
-    InvalidTokenError,
-    UserDisabledError,
-)
-from app.utils.response import success_response
+from app.services.auth_service import AuthService
 
 router = APIRouter()
 
@@ -38,17 +35,11 @@ def login(
 ) -> dict:
     """用户名密码登录，签发双 token。"""
     client_ip = request.client.host if request.client else None
-    try:
-        token_pair: TokenPair = service.login(
-            username=payload.username,
-            password=payload.password,
-            client_ip=client_ip,
-        )
-    except (InvalidCredentialsError, UserDisabledError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(exc),
-        ) from exc
+    token_pair: TokenPair = service.login(
+        username=payload.username,
+        password=payload.password,
+        client_ip=client_ip,
+    )
     return success_response(token_pair.model_dump())
 
 
@@ -58,13 +49,7 @@ def refresh(
     service: AuthService = Depends(get_auth_service),
 ) -> dict:
     """用 refresh_token 换取新的双 token。"""
-    try:
-        token_pair: TokenPair = service.refresh(payload.refresh_token)
-    except InvalidTokenError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(exc),
-        ) from exc
+    token_pair: TokenPair = service.refresh(payload.refresh_token)
     return success_response(token_pair.model_dump())
 
 
@@ -84,10 +69,7 @@ def logout(
     if authorization.lower().startswith("bearer "):
         access_token = authorization[7:].strip()
     if not access_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="missing access_token",
-        )
+        raise TokenInvalidError(message="missing access_token")
     refresh_token = payload.refresh_token if payload else None
     service.logout(access_token=access_token, refresh_token=refresh_token)
     return success_response(message="logged out")

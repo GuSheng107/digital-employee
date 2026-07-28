@@ -1,6 +1,6 @@
 import type { InternalAxiosRequestConfig } from 'axios';
 import { BaseRequest } from './request';
-import { useUserStore } from '../store/user';
+import { useUserStore } from '../store/user-store';
 
 /** backend-agent 响应信封：{ code, message, data } */
 export interface AgentApiResponse<T> {
@@ -48,15 +48,14 @@ class BackendAgentRequest extends BaseRequest {
   }
 
   protected onRequest(config: InternalAxiosRequestConfig): void {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('access_token');
     if (token && config.headers) {
       config.headers['Authorization'] = `Bearer ${token}`;
     }
   }
 
   protected onAuthError(): void {
-    useUserStore.getState().clearUserInfo();
-    localStorage.removeItem('token');
+    useUserStore.getState().clearAuth();
   }
 }
 

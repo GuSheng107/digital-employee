@@ -5,26 +5,29 @@ description = "Digital Employee Data Platform Backend Service"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.110,<1.0",
-    "uvicorn[standard]>=0.35,<1.0",
-    "SQLAlchemy>=2.0,<3.0",
-    "psycopg2-binary>=2.9",
-    "redis>=5.0,<6.0",
-    "python-dotenv>=1.0",
-    "minio>=7.2",
-    "loguru>=0.7",
-    "pydantic>=2.5,<3.0",
-    "pydantic-settings>=2.1",
-    "nacos-client",
+    "fastapi==0.140.7",
+    "uvicorn[standard]==0.51.0",
+    "SQLAlchemy==2.0.51",
+    "psycopg2-binary==2.9.12",
+    "redis==5.3.1",
+    "python-dotenv==1.2.2",
+    "minio==7.2.15",
+    "loguru==0.7.3",
+    "pydantic==2.13.4",
+    "pydantic-settings==2.14.2",
+    "nacos-client==0.1.0",
+    "api-common==0.1.0",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest>=7.4",
+    "pytest==7.4.4",
+    "ruff==0.6.9",
 ]
 
 [tool.uv.sources]
 nacos-client = { path = "../../backend-share/nacos-client" }
+api-common = { path = "../../backend-share/api-common" }
 
 [build-system]
 requires = ["hatchling"]

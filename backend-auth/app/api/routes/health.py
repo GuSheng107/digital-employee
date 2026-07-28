@@ -6,13 +6,12 @@
 
 from __future__ import annotations
 
+from api_common import ApiResponse, success_response
 from fastapi import APIRouter, Depends
 
 from app.api.deps import verify_api_key
-from app.schemas.common import ApiResponse
 from app.schemas.health import ServiceInfo
 from app.services.health_service import HealthService
-from app.utils.response import success_response
 
 router = APIRouter()
 
