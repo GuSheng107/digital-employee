@@ -33,17 +33,11 @@ echo "  Digital Employee - 一键启动所有服务"
 echo "==================================================="
 echo ""
 
-echo "[INFO] 步骤 1/5: 清理全项目 Python 缓存..."
+echo "[INFO] 步骤 1/4: 清理全项目 Python 缓存..."
 uv run python "$SCRIPT_DIR/clean-pycache.py" || true
 echo ""
 
-echo "[INFO] 步骤 2/5: 启动 Backend Agent 服务 (8765)..."
-bash "$SCRIPT_DIR/backend-agent/start.sh" &
-AGENT_PID=$!
-echo "Backend Agent shell PID: $AGENT_PID"
-wait_for_health "Backend Agent" "http://localhost:8765/health" 10 || true
-
-echo "[INFO] 步骤 3/5: 启动 Backend Gateway 网关服务 (8864)..."
+echo "[INFO] 步骤 2/4: 启动 Backend Gateway 网关服务 (8864)..."
 if [ -f "$SCRIPT_DIR/backend-gateway/start.sh" ]; then
     bash "$SCRIPT_DIR/backend-gateway/start.sh" &
     GATEWAY_PID=$!
@@ -51,17 +45,17 @@ if [ -f "$SCRIPT_DIR/backend-gateway/start.sh" ]; then
     wait_for_health "Backend Gateway" "http://localhost:8864/api/v1/health" 10 || true
 fi
 
-echo "[INFO] 步骤 4/5: 启动 Backend Data 数据中台服务 (8010)..."
+echo "[INFO] 步骤 3/4: 启动 Backend Data 数据中台服务 (8010)..."
 if [ -f "$SCRIPT_DIR/data-platform/start.sh" ]; then
     bash "$SCRIPT_DIR/data-platform/start.sh" &
     # 注意：data-platform/start.sh 内部用 nohup 后台启动 uvicorn 后立即退出，
     # 此处 $! 是 bash 子 shell PID 而非 uvicorn 进程 PID，仅用于 start-all 退出码跟踪
     DATA_SHELL_PID=$!
     echo "Backend Data shell PID: $DATA_SHELL_PID"
-    wait_for_health "Backend Data" "http://localhost:8010/health" 15 || true
+    wait_for_health "Backend Data" "http://localhost:8010/api/v1/health" 15 || true
 fi
 
-echo "[INFO] 步骤 5/5: 启动 Frontend 前端开发服务 (5173)..."
+echo "[INFO] 步骤 4/4: 启动 Frontend 前端开发服务 (5173)..."
 bash "$SCRIPT_DIR/frontend/start-web.sh" &
 FRONTEND_PID=$!
 echo "Frontend Dev Server PID: $FRONTEND_PID"
@@ -69,7 +63,6 @@ echo "Frontend Dev Server PID: $FRONTEND_PID"
 echo ""
 echo "==================================================="
 echo "  所有后台服务已拉起！"
-echo "  - Backend Agent:   http://localhost:8765"
 echo "  - Backend Gateway: http://localhost:8864"
 echo "  - Backend Data:    http://localhost:8010"
 echo "  - Frontend Dev:    http://localhost:5173"

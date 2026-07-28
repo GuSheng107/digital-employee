@@ -1,7 +1,7 @@
-.PHONY: help install install-agent install-gateway install-frontend \
-	dev dev-agent dev-gateway dev-frontend \
+.PHONY: help install install-gateway install-data install-frontend \
+	dev dev-gateway dev-data dev-frontend \
 	infra-up infra-down infra-status build build-frontend \
-	test-agent lint-gateway lint-frontend check clean
+	lint-gateway lint-frontend check clean
 
 PYTHON ?= python
 NPM ?= npm
@@ -14,15 +14,14 @@ help: ## Show available commands
 
 dev: infra-up ## Start local infrastructure and print service commands
 	@echo "Infrastructure is running. Start app services in separate terminals:"
-	@echo "  make dev-agent"
 	@echo "  make dev-gateway"
 	@echo "  make dev-frontend"
 
-dev-agent: ## Start backend-agent on port 8765
-	cd backend-agent && $(UV) run python main.py --project-root .
-
 dev-gateway: ## Start backend-gateway on port 8864
-	cd backend-gateway && $(UV) run python -m src.main
+	cd backend-gateway && $(UV) run uvicorn src.main:app --host 0.0.0.0 --port 8864
+
+dev-data: ## Start backend-data on port 8010
+	cd backend-data/backend && $(UV) run uvicorn app.main:app --host 0.0.0.0 --port 8010
 
 dev-frontend: ## Start the React frontend development server
 	cd frontend && $(NPM) run dev
@@ -40,13 +39,13 @@ infra-status: ## Show infrastructure status
 
 # Installation
 
-install: install-agent install-gateway install-frontend ## Install all dependencies
-
-install-agent: ## Install backend-agent dependencies with uv
-	cd backend-agent && $(UV) sync
+install: install-gateway install-data install-frontend ## Install all dependencies
 
 install-gateway: ## Install backend-gateway dependencies with uv
 	cd backend-gateway && $(UV) sync
+
+install-data: ## Install backend-data dependencies with uv
+	cd backend-data/backend && $(UV) sync
 
 install-frontend: ## Install the React frontend dependencies
 	cd frontend && $(NPM) ci
@@ -60,19 +59,16 @@ build-frontend: ## Build the React frontend
 
 # Verification
 
-test-agent: ## Run backend-agent tests
-	cd backend-agent && $(UV) run python -m pytest tests
-
 lint-gateway: ## Run ruff against backend-gateway
 	cd backend-gateway && $(UV) run ruff check src
 
 lint-frontend: ## Run ESLint against the React frontend
 	cd frontend && $(NPM) run lint
 
-check: test-agent lint-gateway lint-frontend build-frontend ## Run repository checks available today
+check: lint-gateway lint-frontend build-frontend ## Run repository checks available today
 
 # Cleanup
 
 clean: ## Remove generated caches and frontend build output
 	$(PYTHON) scripts/clean-pycache.py
-	$(PYTHON) -c "import shutil; [shutil.rmtree(path, ignore_errors=True) for path in ('backend-agent/.pytest_cache', 'backend-gateway/.pytest_cache', 'frontend/dist')]"  # noqa: E501
+	$(PYTHON) -c "import shutil; [shutil.rmtree(path, ignore_errors=True) for path in ('backend-gateway/.pytest_cache', 'frontend/dist')]"  # noqa: E501

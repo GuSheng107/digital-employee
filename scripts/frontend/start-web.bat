@@ -14,6 +14,8 @@ if not exist "%PROJECT_ROOT%\frontend\package.json" goto NO_FRONTEND
 cd /d "%PROJECT_ROOT%\frontend"
 echo [INFO] Project dir: %PROJECT_ROOT%\frontend
 
+if not exist ".env" if exist ".env.example" copy ".env.example" ".env" >nul
+
 if not exist "%PROJECT_ROOT%\frontend\node_modules" (
   echo [INFO] node_modules not found, installing dependencies via npm...
   npm install
