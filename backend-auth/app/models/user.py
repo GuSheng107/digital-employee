@@ -17,6 +17,8 @@ from sqlalchemy.sql import func
 from app.models.base import Base
 
 if TYPE_CHECKING:
+    from app.models.menu import Menu
+    from app.models.permission import Permission
     from app.models.role import Role
 
 
@@ -57,6 +59,17 @@ class User(Base):
         "Role",
         secondary="user_roles",
         back_populates="users",
+        lazy="selectin",
+    )
+    # 用户独立权限/菜单（权限组模板复制后的副本，可个性化调整）
+    permissions: Mapped[list[Permission]] = relationship(
+        "Permission",
+        secondary="user_permissions",
+        lazy="selectin",
+    )
+    menus: Mapped[list[Menu]] = relationship(
+        "Menu",
+        secondary="user_menus",
         lazy="selectin",
     )
 

@@ -1,3 +1,4 @@
+import time
 from io import BytesIO
 
 from app.core.config import settings
@@ -61,4 +62,35 @@ class StorageService:
             "bucket": settings.minio_default_bucket,
             "object_name": self.test_object_name,
             "content": content,
+        }
+
+    def upload_file(
+        self,
+        *,
+        prefix: str,
+        filename: str,
+        data: bytes,
+        content_type: str = "application/octet-stream",
+    ) -> dict:
+        """通用文件上传，按 {prefix}/{timestamp}_{filename} 存储到 Minio 默认 bucket。
+
+        Args:
+            prefix: 对象名前缀，如 "avatars/1"（avatars/{user_id}）。
+            filename: 原始文件名。
+            data: 文件二进制内容。
+            content_type: MIME 类型。
+
+        Returns:
+            {"object_name": str, "file_url": str}
+        """
+        object_name = f"{prefix}/{int(time.time() * 1000)}_{filename}"
+        file_url = get_minio_client().upload_file(
+            object_name=object_name,
+            data=BytesIO(data),
+            length=len(data),
+            content_type=content_type,
+        )
+        return {
+            "object_name": object_name,
+            "file_url": file_url,
         }

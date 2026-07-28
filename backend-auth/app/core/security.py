@@ -1,6 +1,6 @@
 """密码哈希与 token 生成安全工具。
 
-- 密码哈希：passlib + bcrypt，单向不可逆，verify 时常量时间比较。
+- 密码哈希：bcrypt，单向不可逆，verify 时常量时间比较。
 - token 生成：secrets.token_urlsafe(32)，opaque 字符串，状态完全存 Redis。
 - 不使用 JWT：所有状态在服务端，支持主动失效，避免客户端签名无法撤销的问题。
 """
@@ -9,9 +9,7 @@ from __future__ import annotations
 
 import secrets
 
-from passlib.context import CryptContext
-
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+import bcrypt
 
 
 def hash_password(password: str) -> str:
@@ -23,7 +21,9 @@ def hash_password(password: str) -> str:
     Returns:
         bcrypt 哈希字符串（含 salt 与版本信息）。
     """
-    return _pwd_context.hash(password)
+    # bcrypt 限制密码最长 72 字节，超长截断
+    password_bytes = password.encode("utf-8")[:72]
+    return bcrypt.hashpw(password_bytes, bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
@@ -38,7 +38,9 @@ def verify_password(password: str, password_hash: str) -> bool:
         避免向上抛出异常暴露内部状态。
     """
     try:
-        return _pwd_context.verify(password, password_hash)
+        password_bytes = password.encode("utf-8")[:72]
+        hash_bytes = password_hash.encode("utf-8")
+        return bcrypt.checkpw(password_bytes, hash_bytes)
     except (ValueError, TypeError):
         return False
 

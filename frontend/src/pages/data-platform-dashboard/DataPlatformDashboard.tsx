@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Typography, message } from 'antd';
 import StatusCard from '@/components/status-card/StatusCard';
 import type { StatusCardState } from '@/components/status-card/StatusCard';
@@ -21,8 +21,10 @@ export default function DataPlatformDashboard(): React.ReactElement {
   const [loading, setLoading] = useState<boolean>(false);
   const [service, setService] = useState<ServiceInfo | null>(null);
   const [dependencies, setDependencies] = useState<DashboardDependencies | null>(null);
+  /** 防止 StrictMode 双调导致重复请求与重复 message */
+  const initializedRef = useRef(false);
 
-  async function refresh(): Promise<void> {
+  async function refresh(showSuccess = true): Promise<void> {
     setLoading(true);
     try {
       const [serviceInfo, dependencyResponse] = await Promise.all([
@@ -31,7 +33,10 @@ export default function DataPlatformDashboard(): React.ReactElement {
       ]);
       setService(serviceInfo);
       setDependencies(dependencyResponse);
-      message.success('状态已刷新');
+      // 初始加载（StrictMode 首次）不弹 success，避免双调弹两次
+      if (showSuccess && initializedRef.current) {
+        message.success('状态已刷新');
+      }
     } catch (error) {
       message.error(getDataPlatformErrorMessage(error));
     } finally {
@@ -39,11 +44,11 @@ export default function DataPlatformDashboard(): React.ReactElement {
     }
   }
 
-  // 初始数据加载：effect 仅在挂载时执行一次，refresh 内部 setState 为异步流程，
-  // 不会在 effect 同步阶段触发级联渲染，符合 react-hooks 规范例外。
+  // 初始数据加载：effect 仅在挂载时执行一次
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void refresh();
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+    void refresh(false);
   }, []);
 
   return (

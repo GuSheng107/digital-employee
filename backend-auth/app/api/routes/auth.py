@@ -1,5 +1,6 @@
-"""认证路由：登录、刷新、登出、当前用户信息。
+"""认证路由：注册、登录、刷新、登出、当前用户信息。
 
+- POST /auth/register：用户注册，校验邀请码，返回双 token。
 - POST /auth/login：用户名密码登录，返回双 token。
 - POST /auth/refresh：用 refresh_token 换新的双 token。
 - POST /auth/logout：登出，撤销当前 token。
@@ -19,12 +20,27 @@ from app.schemas.auth import (
     LoginRequest,
     LogoutRequest,
     RefreshRequest,
+    RegisterRequest,
     TokenPair,
     UserInfo,
 )
 from app.services.auth_service import AuthService
 
 router = APIRouter()
+
+
+@router.post("/register", response_model=ApiResponse)
+def register(
+    payload: RegisterRequest,
+    service: AuthService = Depends(get_auth_service),
+) -> dict:
+    """用户注册，校验邀请码，签发双 token。"""
+    token_pair: TokenPair = service.register(
+        username=payload.username,
+        password=payload.password,
+        invite_code=payload.invite_code,
+    )
+    return success_response(token_pair.model_dump())
 
 
 @router.post("/login", response_model=ApiResponse)

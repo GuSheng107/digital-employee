@@ -19,6 +19,18 @@ function isDataPlatformResponse(body: unknown): body is DataPlatformApiResponse<
   );
 }
 
+/** 从 data 字段中提取业务错误码（data.code），不存在则返回 undefined */
+function extractDataPlatformErrorCode(body: unknown): string | undefined {
+  if (isDataPlatformResponse(body)) {
+    const data = body.data;
+    if (data != null && typeof data === 'object' && 'code' in data) {
+      const code = (data as { code: unknown }).code;
+      if (typeof code === 'string' && code) return code;
+    }
+  }
+  return undefined;
+}
+
 /**
  * DataPlatformRequest — 对接 backend-data (port 8010) 的请求类。
  *
@@ -43,6 +55,11 @@ class DataPlatformRequest extends BaseRequest {
       return body.message;
     }
     return '数据中台请求失败';
+  }
+
+  /** 从 data.code 提取业务错误码（如 DEPENDENCY_UNAVAILABLE） */
+  protected getErrorCode(body: unknown): string | undefined {
+    return extractDataPlatformErrorCode(body);
   }
 }
 

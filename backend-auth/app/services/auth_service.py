@@ -15,9 +15,11 @@ pair key 建立 refresh_token 与 access_token 的配对关系，使 refresh 时
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 
 from api_common import (
+    DuplicateResourceError,
     InvalidCredentialsError,
     TokenInvalidError,
     UserDisabledError,
@@ -26,10 +28,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.enums import get_vip_display
 from app.core.redis_client import get_redis_client
-from app.core.security import generate_token, verify_password
+from app.core.security import generate_token, hash_password, verify_password
+from app.models.menu import Menu
+from app.models.role import Role
 from app.models.user import User
-from app.schemas.auth import TokenPair, UserInfo
+from app.schemas.auth import MenuNode, TokenPair, UserInfo
 
 
 class AuthService:
@@ -41,6 +46,71 @@ class AuthService:
         self._prefix = settings.token_redis_prefix
         self._access_ttl = settings.access_token_ttl_seconds
         self._refresh_ttl = settings.refresh_token_ttl_seconds
+
+    def register(self, username: str, password: str, invite_code: str) -> TokenPair:
+        """用户注册，校验邀请码，创建用户并签发双 token。
+
+        Args:
+            username: 用户名（4-64 字符）。
+            password: 明文密码（8-128 字符）。
+            invite_code: 邀请码。
+
+        Returns:
+            双 token 响应对象。
+
+        Raises:
+            InvalidCredentialsError: 邀请码无效或已用完。
+            DuplicateResourceError: 用户名已存在。
+        """
+        # 1. 校验邀请码
+        invite_key = f"invite_code:{invite_code}"
+        invite_data = self._redis.get_json(invite_key)
+        if invite_data is None:
+            raise InvalidCredentialsError(message="邀请码无效或已用完")
+        remaining = int(invite_data.get("remaining", 0))
+        if remaining <= 0:
+            raise InvalidCredentialsError(message="邀请码无效或已用完")
+
+        # 2. 校验用户名唯一
+        existing = self._fetch_user_by_username(username)
+        if existing is not None:
+            raise DuplicateResourceError(message="用户名已存在")
+
+        # 3. 创建用户
+        password_hash = hash_password(password)
+        user = User(
+            username=username,
+            password_hash=password_hash,
+            status=1,
+        )
+        self._session.add(user)
+        self._session.flush()  # 获取 user.id
+
+        # 4. 分配 user 角色（普通用户）
+        user_role = self._session.scalars(
+            select(Role).where(Role.code == "user", Role.deleted_at.is_(None))
+        ).first()
+        if user_role is not None:
+            user.roles.append(user_role)
+        self._session.commit()
+
+        # 5. 邀请码 remaining -1，按剩余过期时间回写 TTL
+        invite_data["remaining"] = remaining - 1
+        if invite_data["remaining"] <= 0:
+            self._redis.delete(invite_key)
+        else:
+            expires_at = invite_data.get("expires_at")
+            if expires_at:
+                ttl = int(expires_at - time.time())
+                if ttl > 0:
+                    self._redis.set_json(invite_key, invite_data, ttl_seconds=ttl)
+                else:
+                    self._redis.delete(invite_key)
+            else:
+                self._redis.set_json(invite_key, invite_data, ttl_seconds=604800)
+
+        # 6. 签发双 token
+        return self._issue_token_pair(user.id)
 
     def login(self, username: str, password: str, client_ip: str | None = None) -> TokenPair:
         """用户名密码登录，签发双 token。
@@ -125,7 +195,7 @@ class AuthService:
             access_token: 请求头携带的 access_token。
 
         Returns:
-            用户信息（含角色 code 列表与权限 code 列表）。
+            用户信息（含角色 code 列表、权限 code 列表与可见菜单树）。
 
         Raises:
             TokenInvalidError: access_token 无效或已过期。
@@ -141,9 +211,42 @@ class AuthService:
             raise UserDisabledError(message="用户已被禁用")
 
         role_codes = [r.code for r in user.roles]
-        permission_codes = [
-            p.code for role in user.roles for p in role.permissions
+        # 权限组语义：权限/菜单从用户独立集合读取（角色作为模板已复制到用户）
+        permission_codes = [p.code for p in user.permissions]
+        # super_admin（超管）和 manager（管理员）默认拥有所有可见菜单，
+        # 无需依赖 user_menus 快照——新增菜单后立即可见，便于维护。
+        # 其他用户仍走 user.menus 独立集合（由角色模板复制而来）。
+        admin_roles = {"super_admin", "manager"}
+        menu_set: dict[int, Menu] = {}
+        if admin_roles.intersection(role_codes):
+            admin_menus = self._session.scalars(
+                select(Menu).where(
+                    Menu.deleted_at.is_(None),
+                    Menu.menu_type != 3,
+                    Menu.visible.is_(True),
+                )
+            ).all()
+            menu_set = {m.id: m for m in admin_menus}
+        else:
+            for menu in user.menus:
+                if menu.deleted_at is None and menu.menu_type != 3 and menu.visible:
+                    menu_set[menu.id] = menu
+        menu_nodes = [
+            MenuNode(
+                id=menu.id,
+                parent_id=menu.parent_id,
+                menu_type=menu.menu_type,
+                title=menu.title,
+                path=menu.path,
+                component=menu.component,
+                icon=menu.icon,
+                permission=menu.permission,
+                sort=menu.sort,
+                visible=menu.visible,
+            )
+            for menu in menu_set.values()
         ]
+        menu_tree = self._build_menu_tree(menu_nodes)
         return UserInfo(
             id=user.id,
             username=user.username,
@@ -153,12 +256,38 @@ class AuthService:
             avatar_url=user.avatar_url,
             is_vip=user.is_vip,
             vip_level=user.vip_level,
+            vip_level_display=get_vip_display(user.vip_level),
             status=user.status,
             roles=role_codes,
             permissions=permission_codes,
+            menus=menu_tree,
         )
 
     # ---------- 内部工具方法 ----------
+
+    def _build_menu_tree(self, nodes: list[MenuNode]) -> list[MenuNode]:
+        """将扁平菜单列表构建为树形结构。
+
+        parent_id 为 0 或指向不存在节点时视为根节点；其余节点挂载到
+        对应父节点的 children 列表。全部节点（含子节点）按 sort 升序排序。
+
+        Args:
+            nodes: 扁平的菜单节点列表。
+
+        Returns:
+            根节点列表，每个根节点的 children 已按 sort 排序。
+        """
+        node_map = {n.id: n for n in nodes}
+        roots: list[MenuNode] = []
+        for node in nodes:
+            if node.parent_id == 0 or node.parent_id not in node_map:
+                roots.append(node)
+            else:
+                node_map[node.parent_id].children.append(node)
+        roots.sort(key=lambda n: n.sort)
+        for node in nodes:
+            node.children.sort(key=lambda n: n.sort)
+        return roots
 
     def _fetch_user_by_username(self, username: str) -> User | None:
         """按用户名查询未软删的用户。"""

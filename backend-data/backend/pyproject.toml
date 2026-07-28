@@ -17,6 +17,7 @@ dependencies = [
     "pydantic-settings==2.14.2",
     "nacos-client==0.1.0",
     "api-common==0.1.0",
+    "python-multipart>=0.0.32",
 ]
 
 [dependency-groups]

@@ -1,9 +1,9 @@
-import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Form, Input, Button, Alert } from 'antd';
-import { UserOutlined, LockOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Form, Input, Button, message } from 'antd';
+import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useUserStore, getLoginErrorMessage } from '@/store/user-store';
 import { HttpError } from '@/utils/request';
+import logo from '@/assets/images/avatar/logo.svg';
 import styles from './index.module.css';
 
 interface LoginFormValues {
@@ -16,18 +16,17 @@ export default function Login(): React.ReactElement {
   const [searchParams] = useSearchParams();
   const login = useUserStore((state) => state.login);
   const loading = useUserStore((state) => state.loading);
-  const [errorMessage, setErrorMessage] = useState<string>('');
 
   const handleSubmit = async (values: LoginFormValues): Promise<void> => {
-    setErrorMessage('');
     try {
       await login(values.username, values.password);
+      message.success('登录成功');
       // 登录成功后跳转到 redirect 参数指定的页面，默认首页
       const redirect = searchParams.get('redirect') || '/';
       navigate(redirect, { replace: true });
     } catch (error) {
-      const message = getLoginErrorMessage(error);
-      setErrorMessage(message);
+      // 用 message 全局提示替代 Alert，在深色背景上更醒目
+      message.error(getLoginErrorMessage(error));
     }
   };
 
@@ -43,7 +42,7 @@ export default function Login(): React.ReactElement {
         <div className={styles.brandContent}>
           <div className={styles.brandLogo}>
             <div className={styles.brandLogoIcon}>
-              <ThunderboltOutlined style={{ color: '#ffffff', fontSize: 24 }} />
+              <img src={logo} alt="logo" className={styles.brandLogoImg} />
             </div>
             <span className={styles.brandLogoText}>Digital Employee</span>
           </div>
@@ -59,25 +58,6 @@ export default function Login(): React.ReactElement {
             ，把重复交给 AI
           </p>
           <p className={styles.brandTagline}>CREATE · AUTOMATE · ELEVATE</p>
-
-          <div className={styles.brandFeatures}>
-            <div className={styles.brandFeature}>
-              <div className={styles.brandFeatureDot} />
-              <span>多平台 Bot 统一编排，飞书 / 企微一键接入</span>
-            </div>
-            <div className={styles.brandFeature}>
-              <div className={styles.brandFeatureDot} />
-              <span>双 token 安全鉴权，RBAC 细粒度权限管控</span>
-            </div>
-            <div className={styles.brandFeature}>
-              <div className={styles.brandFeatureDot} />
-              <span>Nacos 配置中心，去中心化弹性扩展</span>
-            </div>
-            <div className={styles.brandFeature}>
-              <div className={styles.brandFeatureDot} />
-              <span>数据中台 + 对象存储 + 消息队列开箱即用</span>
-            </div>
-          </div>
         </div>
 
         <div className={styles.brandFooter}>© 2026 Digital Employee. All rights reserved.</div>
@@ -88,15 +68,6 @@ export default function Login(): React.ReactElement {
         <div className={styles.formCard}>
           <h2 className={styles.formTitle}>欢迎回来</h2>
           <p className={styles.formSubtitle}>登录以开始你的创造之旅</p>
-
-          {errorMessage && (
-            <Alert
-              type="error"
-              message={errorMessage}
-              showIcon
-              className={styles.errorAlert}
-            />
-          )}
 
           <Form
             name="login"
@@ -113,7 +84,7 @@ export default function Login(): React.ReactElement {
               <div>
                 <label className={styles.formLabel}>用户名</label>
                 <Input
-                  prefix={<UserOutlined style={{ color: '#64748b' }} />}
+                  prefix={<UserOutlined style={{ color: '#94a3b8' }} />}
                   placeholder="请输入用户名"
                   className={styles.formInput}
                   size="large"
@@ -130,7 +101,7 @@ export default function Login(): React.ReactElement {
               <div>
                 <label className={styles.formLabel}>密码</label>
                 <Input.Password
-                  prefix={<LockOutlined style={{ color: '#64748b' }} />}
+                  prefix={<LockOutlined style={{ color: '#94a3b8' }} />}
                   placeholder="请输入密码"
                   className={styles.formInput}
                   size="large"
@@ -151,6 +122,10 @@ export default function Login(): React.ReactElement {
               </Button>
             </Form.Item>
           </Form>
+
+          <div className={styles.registerLink}>
+            还没有账号？<a onClick={() => navigate('/register')}>立即注册</a>
+          </div>
 
           <div className={styles.formFooter}>
             忘记密码？请联系系统管理员

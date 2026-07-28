@@ -4,12 +4,16 @@ import { Spin } from 'antd';
 import Layout from './components/Layout';
 import RequireAuth from './components/require-auth/RequireAuth';
 import Login from './pages/login/Login';
-import PageA from './pages/PageA';
-import PageB from './pages/PageB';
 import {
   DataPlatformDashboard,
   DataPlatformDataItems,
   DataPlatformSystemConfig,
+  InviteCode,
+  MenuManagement,
+  Register,
+  UserPermission,
+  UserProfile,
+  UserRegister,
 } from './router/lazy-pages';
 import { useUserStore } from './store/user-store';
 
@@ -46,6 +50,10 @@ export const router = createBrowserRouter([
     element: <Login />,
   },
   {
+    path: '/register',
+    element: withSuspense(<Register />),
+  },
+  {
     path: '/',
     element: (
       <AppInitializer>
@@ -55,14 +63,8 @@ export const router = createBrowserRouter([
       </AppInitializer>
     ),
     children: [
-      {
-        index: true,
-        element: <PageA />,
-      },
-      {
-        path: 'page-b',
-        element: <PageB />,
-      },
+      // 首页直接跳转到个人信息（原 PageA/PageB 占位页已移除）
+      { index: true, element: <Navigate to="/system/user/profile" replace /> },
       {
         path: 'data-platform/dashboard',
         element: withSuspense(<DataPlatformDashboard />),
@@ -74,6 +76,28 @@ export const router = createBrowserRouter([
       {
         path: 'data-platform/system-config',
         element: withSuspense(<DataPlatformSystemConfig />),
+      },
+      // 系统设置-用户：四个三级菜单对应路由
+      {
+        path: 'system/user/profile',
+        element: withSuspense(<UserProfile />),
+      },
+      {
+        path: 'system/user/register',
+        element: withSuspense(<UserRegister />),
+      },
+      {
+        path: 'system/user/permission',
+        element: withSuspense(<UserPermission />),
+      },
+      {
+        path: 'system/user/invite-code',
+        element: withSuspense(<InviteCode />),
+      },
+      // 系统设置-系统-菜单管理
+      {
+        path: 'system/menu',
+        element: withSuspense(<MenuManagement />),
       },
     ],
   },

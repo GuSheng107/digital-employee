@@ -230,7 +230,18 @@ export abstract class BaseRequest {
   }
 }
 
-/** 通用错误信息提取 */
+/** 通用错误信息提取。
+ *
+ * 如果是 HttpError 且携带业务码，返回 `[CODE] message` 格式；
+ * 否则返回纯 message。这样前端 message.error 能直接显示业务码+原因，
+ * 便于用户定位问题（如 [PERMISSION_DENIED] 无权限访问）。
+ */
 export function getRequestErrorMessage(error: unknown, fallback = '请求失败'): string {
+  if (error instanceof HttpError) {
+    if (error.code) {
+      return `[${error.code}] ${error.message}`;
+    }
+    return error.message;
+  }
   return error instanceof Error ? error.message : fallback;
 }

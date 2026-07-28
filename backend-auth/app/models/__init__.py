@@ -11,6 +11,7 @@ from app.models.menu import Menu, RoleMenu
 from app.models.permission import Permission, RolePermission
 from app.models.role import Role, UserRole
 from app.models.user import User
+from app.models.user_permission import UserMenu, UserPermission
 
 __all__ = [
     "Agent",
@@ -25,5 +26,7 @@ __all__ = [
     "RolePermission",
     "User",
     "UserBot",
+    "UserMenu",
+    "UserPermission",
     "UserRole",
 ]

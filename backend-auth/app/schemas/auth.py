@@ -12,6 +12,14 @@ class LoginRequest(BaseModel):
     password: str = Field(..., min_length=1, max_length=128)
 
 
+class RegisterRequest(BaseModel):
+    """注册请求。"""
+
+    username: str = Field(..., min_length=4, max_length=64)
+    password: str = Field(..., min_length=8, max_length=128)
+    invite_code: str = Field(..., min_length=1, max_length=32)
+
+
 class TokenPair(BaseModel):
     """双 token 响应。
 
@@ -39,6 +47,22 @@ class LogoutRequest(BaseModel):
     refresh_token: str | None = Field(default=None)
 
 
+class MenuNode(BaseModel):
+    """菜单树节点。"""
+
+    id: int
+    parent_id: int
+    menu_type: int
+    title: str
+    path: str | None = None
+    component: str | None = None
+    icon: str | None = None
+    permission: str | None = None
+    sort: int = 0
+    visible: bool = True
+    children: list[MenuNode] = Field(default_factory=list)
+
+
 class UserInfo(BaseModel):
     """当前登录用户信息。"""
 
@@ -50,6 +74,8 @@ class UserInfo(BaseModel):
     avatar_url: str | None = None
     is_vip: bool
     vip_level: int | None = 0
+    vip_level_display: str = "普通用户"
     status: int
     roles: list[str] = Field(default_factory=list)
     permissions: list[str] = Field(default_factory=list)
+    menus: list[MenuNode] = Field(default_factory=list)

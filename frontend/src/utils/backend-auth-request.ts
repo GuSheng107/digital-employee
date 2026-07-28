@@ -37,7 +37,8 @@ class BackendAuthRequest extends BaseRequest {
   private isRefreshing = false;
 
   private constructor() {
-    super(import.meta.env.VITE_BACKEND_AUTH_API_BASE_URL || '/backend-auth-api');
+    // 统一带 /api/v1 前缀，避免每个 api 文件重复写
+    super(import.meta.env.VITE_BACKEND_AUTH_API_BASE_URL || '/backend-auth-api/api/v1');
   }
 
   /** 单例获取，避免多次创建拦截器 */

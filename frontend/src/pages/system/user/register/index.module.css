@@ -1,0 +1,24 @@
+.container {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.tableWrapper {
+  background: var(--ant-color-bg-container);
+  border-radius: var(--ant-border-radius-lg);
+}
+
+@media (max-width: 760px) {
+  .toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

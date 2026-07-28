@@ -1,0 +1,42 @@
+.container {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.tableWrapper {
+  background: var(--ant-color-bg-container);
+  border-radius: var(--ant-border-radius-lg);
+  overflow: hidden;
+}
+
+.titleCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.menuTypeTag {
+  min-width: 44px;
+  text-align: center;
+}
+
+.pathText {
+  color: var(--ant-color-text-secondary);
+  font-family: var(--ant-font-family-code, monospace);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

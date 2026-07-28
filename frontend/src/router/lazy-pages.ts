@@ -11,3 +11,15 @@ export const DataPlatformDataItems = lazy(
 export const DataPlatformSystemConfig = lazy(
   () => import('@/pages/data-platform-system-config/DataPlatformSystemConfig'),
 );
+
+// 路由级懒加载：注册页分离到独立 chunk，减小登录页首屏 JS 体积
+export const Register = lazy(() => import('@/pages/register/Register'));
+
+// 系统设置-用户 四个子页面，按菜单 path 注册路由
+export const UserProfile = lazy(() => import('@/pages/system/user/profile/Profile'));
+export const UserRegister = lazy(() => import('@/pages/system/user/register/UserRegister'));
+export const UserPermission = lazy(() => import('@/pages/system/user/permission/UserPermission'));
+export const InviteCode = lazy(() => import('@/pages/system/user/invite-code/InviteCode'));
+
+// 系统设置-系统-菜单管理
+export const MenuManagement = lazy(() => import('@/pages/system/menu/MenuManagement'));

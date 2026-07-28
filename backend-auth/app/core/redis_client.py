@@ -98,6 +98,28 @@ class RedisClient:
             return None
         return json.loads(value)
 
+    def scan_keys(self, pattern: str) -> list[str]:
+        """扫描匹配模式的所有 key。
+
+        使用 SCAN 命令增量遍历，避免 KEYS 阻塞 Redis。返回结果顺序不保证，
+        调用方如需排序应自行处理。
+
+        Args:
+            pattern: glob 风格匹配模式，如 ``invite_code:*``。
+
+        Returns:
+            匹配的 key 列表，无匹配时返回空列表。
+        """
+        client = self._require_client()
+        keys: list[str] = []
+        cursor = 0
+        while True:
+            cursor, batch = client.scan(cursor=cursor, match=pattern, count=100)
+            keys.extend(batch)
+            if cursor == 0:
+                break
+        return keys
+
     def _require_client(self) -> Redis:
         """确保客户端已初始化并返回。"""
         self.init_client()

@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi==0.140.7",
     "uvicorn[standard]==0.51.0",
+    "python-multipart==0.0.20",
     "SQLAlchemy==2.0.51",
     "psycopg2-binary==2.9.12",
     "redis==5.3.1",
@@ -17,6 +18,7 @@ dependencies = [
     "passlib[bcrypt]==1.7.4",
     "nacos-client==0.1.0",
     "api-common==0.1.0",
+    "data-client==0.1.0",
 ]
 
 [dependency-groups]
@@ -28,6 +30,7 @@ dev = [
 [tool.uv.sources]
 nacos-client = { path = "../backend-share/nacos-client" }
 api-common = { path = "../backend-share/api-common" }
+data-client = { path = "../backend-share/data-client" }
 
 [build-system]
 requires = ["hatchling"]
@@ -47,6 +50,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 ignore = [
     "E501",
     "B008",   # FastAPI 推荐在默认参数中使用 Depends()，与项目惯例一致
+    "RUF001",  # 字符串中的中文全角标点
     "RUF002",  # docstring 中的中文全角标点
     "RUF003",  # 注释中的中文全角标点
     "RUF006",  # 字典字面量中的中文全角标点

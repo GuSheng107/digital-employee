@@ -1,0 +1,109 @@
+"""角色管理路由（需要 role:manage 权限）。"""
+
+from __future__ import annotations
+
+from api_common import ApiResponse, success_response
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from app.api.deps import get_db_session, require_admin
+from app.schemas.role import AssignMenusRequest, CreateRoleRequest, UpdateRoleRequest
+from app.services.role_service import RoleService
+
+router = APIRouter()
+
+
+@router.get(
+    "",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_admin)],
+)
+def list_roles(session: Session = Depends(get_db_session)) -> dict:
+    """列出所有角色。"""
+    service = RoleService(session)
+    return success_response(service.list_roles())
+
+
+@router.post(
+    "",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_admin)],
+)
+def create_role(
+    payload: CreateRoleRequest,
+    session: Session = Depends(get_db_session),
+) -> dict:
+    """创建自定义角色。"""
+    service = RoleService(session)
+    result = service.create_role(
+        code=payload.code,
+        name=payload.name,
+        description=payload.description,
+        menu_ids=payload.menu_ids,
+    )
+    return success_response(result)
+
+
+@router.put(
+    "/{role_id}",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_admin)],
+)
+def update_role(
+    role_id: int,
+    payload: UpdateRoleRequest,
+    session: Session = Depends(get_db_session),
+) -> dict:
+    """更新角色信息（名称/描述/菜单）。"""
+    service = RoleService(session)
+    result = service.update_role(
+        role_id=role_id,
+        name=payload.name,
+        description=payload.description,
+        menu_ids=payload.menu_ids,
+    )
+    return success_response(result)
+
+
+@router.delete(
+    "/{role_id}",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_admin)],
+)
+def delete_role(
+    role_id: int,
+    session: Session = Depends(get_db_session),
+) -> dict:
+    """删除角色（软删除，内置角色不可删）。"""
+    service = RoleService(session)
+    result = service.delete_role(role_id=role_id)
+    return success_response(result)
+
+
+@router.get(
+    "/{role_id}/menus",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_admin)],
+)
+def get_role_menus(
+    role_id: int, session: Session = Depends(get_db_session)
+) -> dict:
+    """获取角色关联的菜单列表。"""
+    service = RoleService(session)
+    return success_response(service.get_role_menus(role_id=role_id))
+
+
+@router.put(
+    "/{role_id}/menus",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_admin)],
+)
+def assign_menus(
+    role_id: int,
+    payload: AssignMenusRequest,
+    session: Session = Depends(get_db_session),
+) -> dict:
+    """分配角色菜单（覆盖式）。"""
+    service = RoleService(session)
+    result = service.assign_menus(role_id=role_id, menu_ids=payload.menu_ids)
+    return success_response(result)

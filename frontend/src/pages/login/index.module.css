@@ -79,6 +79,13 @@
   align-items: center;
   justify-content: center;
   box-shadow: 0 0 24px rgba(79, 70, 229, 0.5);
+  overflow: hidden;
+}
+
+.brandLogoImg {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
 }
 
 .brandLogoText {
@@ -139,29 +146,6 @@
   font-weight: 300;
 }
 
-.brandFeatures {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.brandFeature {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  color: #cbd5e1;
-  font-size: 15px;
-}
-
-.brandFeatureDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #4f46e5, #06b6d4);
-  box-shadow: 0 0 12px rgba(6, 182, 212, 0.6);
-  flex-shrink: 0;
-}
-
 .brandFooter {
   position: absolute;
   bottom: 40px;
@@ -187,20 +171,20 @@
 
 .formCard {
   width: 100%;
-  max-width: 380px;
+  max-width: 420px;
   animation: cardFadeIn 0.6s ease-out;
 }
 
 .formTitle {
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 700;
   color: #f1f5f9;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .formSubtitle {
-  font-size: 14px;
-  color: #64748b;
+  font-size: 16px;
+  color: #94a3b8;
   margin-bottom: 40px;
 }
 
@@ -214,21 +198,22 @@
 
 .formLabel {
   display: block;
-  font-size: 13px;
-  color: #94a3b8;
+  font-size: 15px;
+  color: #cbd5e1;
   margin-bottom: 8px;
   letter-spacing: 0.03em;
+  font-weight: 500;
 }
 
 .formInput {
   width: 100%;
-  height: 48px;
+  height: 52px;
   background: rgba(30, 41, 59, 0.6) !important;
   border: 1px solid rgba(71, 85, 105, 0.5) !important;
   border-radius: 10px !important;
   color: #f1f5f9 !important;
   padding: 0 16px !important;
-  font-size: 15px !important;
+  font-size: 16px !important;
   transition: all 0.3s !important;
 }
 
@@ -244,7 +229,7 @@
 }
 
 .formInput::placeholder {
-  color: #475569;
+  color: #64748b;
 }
 
 .formInput input {
@@ -253,24 +238,41 @@
 }
 
 .formInput input::placeholder {
-  color: #475569;
+  color: #64748b;
 }
 
-/* antd 密码输入框的图标颜色 */
-.formInput .anticon {
-  color: #64748b !important;
-}
-
-.formInput .anticon:hover {
+/* antd 输入框前缀图标颜色（UserOutlined/LockOutlined 等） */
+.formInput :global(.ant-input-prefix) .anticon,
+.formInput :global(.ant-input-prefix) svg,
+.formInput :global(.ant-input-prefix) span {
   color: #94a3b8 !important;
+}
+
+/* antd 密码输入框右侧"眼睛"可见性切换图标 - 提亮确保可见 */
+.formInput :global(.ant-input-suffix),
+.formInput :global(.ant-input-suffix) .anticon,
+.formInput :global(.ant-input-suffix) svg,
+.formInput :global(.ant-input-suffix) span,
+.formInput :global(.ant-input-password-icon),
+.formInput :global(.anticon-eye),
+.formInput :global(.anticon-eye-invisible),
+.formInput :global(svg[class*="eye"]) {
+  color: #e2e8f0 !important;
+  fill: currentColor !important;
+}
+
+.formInput :global(.ant-input-suffix):hover .anticon,
+.formInput :global(.ant-input-suffix):hover svg,
+.formInput :global(.ant-input-password-icon):hover {
+  color: #ffffff !important;
 }
 
 .submitButton {
   width: 100%;
-  height: 48px;
+  height: 52px;
   border: none !important;
   border-radius: 10px !important;
-  font-size: 15px !important;
+  font-size: 17px !important;
   font-weight: 600 !important;
   letter-spacing: 0.05em;
   background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #06b6d4 100%) !important;
@@ -297,8 +299,27 @@
 .formFooter {
   margin-top: 32px;
   text-align: center;
-  font-size: 13px;
-  color: #475569;
+  font-size: 15px;
+  color: #94a3b8;
+}
+
+.registerLink {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 16px;
+  color: #cbd5e1;
+}
+
+.registerLink a {
+  color: #818cf8;
+  cursor: pointer;
+  margin-left: 4px;
+  font-weight: 500;
+}
+
+.registerLink a:hover {
+  color: #a5b4fc;
+  text-decoration: underline;
 }
 
 /* ── 错误提示 ── */

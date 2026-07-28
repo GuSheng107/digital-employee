@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Modal, Typography, message } from 'antd';
 import {
   createDataItem,
@@ -49,6 +49,8 @@ export default function DataPlatformDataItems(): React.ReactElement {
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [currentJson, setCurrentJson] = useState<string>('');
   const [formValues, setFormValues] = useState<DataItemFormValues>(DEFAULT_FORM_VALUE);
+  /** 防止 StrictMode 双调导致重复请求与重复 message */
+  const initializedRef = useRef(false);
 
   async function loadItems(pageNum = page, pageSz = pageSize): Promise<void> {
     setLoading(true);
@@ -142,10 +144,10 @@ export default function DataPlatformDataItems(): React.ReactElement {
     setJsonDialogOpen(true);
   }
 
-  // 初始数据加载：effect 仅在挂载时执行一次，loadItems 内部 setState 为异步流程，
-  // 不会在 effect 同步阶段触发级联渲染，符合 react-hooks 规范例外。
+  // 初始数据加载：effect 仅在挂载时执行一次，StrictMode 双调时 ref 拦截第二次
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (initializedRef.current) return;
+    initializedRef.current = true;
     void loadItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

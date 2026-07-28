@@ -11,15 +11,16 @@ interface RequireAuthProps {
  * 路由守卫：未登录时重定向到 /login，保留原路径用于登录后回跳。
  *
  * 登录态恢复由 AppInitializer 统一处理，本组件只负责检查 isAuthenticated。
- * 恢复过程中（loading=true）显示全屏加载动画。
+ * 恢复过程中（restoring=true）显示全屏加载动画，避免在 restoreAuth 异步执行前
+ * 因初始 isAuthenticated=false 立即重定向到登录页。
  */
 export default function RequireAuth({ children }: RequireAuthProps): React.ReactElement {
   const location = useLocation();
   const isAuthenticated = useUserStore((state) => state.isAuthenticated);
-  const loading = useUserStore((state) => state.loading);
+  const restoring = useUserStore((state) => state.restoring);
 
   // 正在恢复登录态时显示加载动画
-  if (loading && !isAuthenticated) {
+  if (restoring && !isAuthenticated) {
     return (
       <div
         style={{
