@@ -29,7 +29,7 @@ get_env() {
   printf '%s' "$default_value"
 }
 
-APP_HOST="${APP_HOST:-$(get_env APP_HOST 127.0.0.1)}"
+APP_HOST="${APP_HOST:-$(get_env APP_HOST 0.0.0.0)}"
 APP_PORT="${APP_PORT:-$(get_env APP_PORT 8010)}"
 
 mkdir -p "$LOG_DIR" "$RUN_DIR"
@@ -47,4 +47,5 @@ echo "$!" > "$PID_FILE"
 echo "data platform backend started"
 echo "pid=$(cat "$PID_FILE")"
 echo "url=http://${APP_HOST}:${APP_PORT}"
+echo "health=http://${APP_HOST}:${APP_PORT}/api/v1/health"
 echo "log=$LOG_DIR/backend.log"

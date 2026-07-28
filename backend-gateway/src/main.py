@@ -44,7 +44,7 @@ def _adapt_nacos_to_gateway_env() -> None:
 try:
     from nacos_client import NacosClient
 
-    _nacos_client = NacosClient.from_env_optional(default_data_id="dev.yaml")
+    _nacos_client = NacosClient.from_env_optional()
     if _nacos_client is not None:
         _nacos_client.load_to_environ()
         _adapt_nacos_to_gateway_env()

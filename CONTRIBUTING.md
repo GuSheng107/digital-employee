@@ -150,11 +150,10 @@
 
 | 工具 | 版本要求 | 用途 |
 |------|----------|------|
-| Python | 3.10+ | Backend Agent |
-| Python | 3.11+ | Backend Gateway |
+| Python | 3.11+ | Backend Gateway / Backend Data / Backend Auth |
 | Node.js | 22.14.x | 根目录 React 前端（以 `frontend/package.json` 为准） |
-| uv | 当前稳定版 | Backend Gateway 依赖与命令管理 |
-| Docker Compose | 可选 | 启动 RabbitMQ 与 MinIO 本地依赖 |
+| uv | 当前稳定版 | 后端依赖与命令管理 |
+| Docker Compose | 可选 | 启动 RabbitMQ 与 MinIO 本地依赖（基础设施已部署在服务器，通过 Nacos 配置中心下发连接信息） |
 
 ### 克隆与安装
 
@@ -162,18 +161,19 @@
 git clone https://github.com/GuSheng107/digital-employee.git
 cd digital-employee
 
-# Backend Agent
-cd backend-agent
-uv sync
-cd ..
-
 # Backend Gateway
 cd backend-gateway
-python -m pip install uv
+pip install uv
 uv sync
 cp .env.example .env
 cp config/bot.template.json config/bot.json
 cd ..
+
+# Backend Data
+cd backend-data/backend
+uv sync
+cp .env.example .env
+cd ../..
 
 # React 管理端
 cd frontend
@@ -189,27 +189,21 @@ make build
 ### 启动项目
 
 ```bash
-# 启动 Backend Agent（Linux / macOS）
-./scripts/backend-agent/start.sh
+# 一键启动所有服务（Linux / macOS）
+./scripts/start-all.sh
 
-# 启动 Backend Agent（Windows）
-scripts\backend-agent\start.bat
+# 一键启动所有服务（Windows）
+scripts\start-all.bat
 
-# 启动代码当前依赖的 RabbitMQ 与 MinIO
-docker compose up -d
-
-# 启动 Backend Gateway（另开终端）
-cd backend-gateway
-uv run python -m src.main
-
-# 启动 React 新管理端开发服务器（另开终端，Linux / macOS）
-./scripts/frontend/start-web.sh
-
-# 或（Windows）
-scripts\frontend\start-web.bat
+# 或单独启动某个服务
+./scripts/backend-gateway/start.sh    # 网关 8864
+./scripts/data-platform/start.sh      # 数据中台 8010
+./scripts/frontend/start-web.sh       # 前端 5173
 ```
 
-Backend Agent 默认监听 <http://localhost:8765>（仅暴露 API），Backend Gateway 默认监听 <http://localhost:8864>。管理端前端位于根目录 `frontend/`，启动方式见上文的 `scripts/frontend/start-web.sh` / `scripts\frontend\start-web.bat`。
+Backend Gateway 默认监听 <http://localhost:8864>，Backend Data 默认监听 <http://localhost:8010>。管理端前端位于根目录 `frontend/`，启动方式见上文的 `scripts/frontend/start-web.sh` / `scripts\frontend\start-web.bat`。
+
+> 所有后端服务的 `.env` 已默认指向 prod 环境 Nacos（`106.54.60.80`，受限账号 `test`），新成员克隆代码后直接运行启动脚本即可连上基础设施。
 
 ---
 
@@ -293,9 +287,6 @@ BREAKING CHANGE: webhook platform configs must be migrated to grpc
 提交前按改动范围运行对应检查：
 
 ```bash
-# Backend Agent
-backend-agent/.venv/Scripts/python.exe -m pytest backend-agent/tests
-
 # Backend Gateway
 cd backend-gateway
 uv run ruff check src
@@ -314,11 +305,11 @@ npm run build
 
 当你需要修改数据库表结构时：
 
-1. 在 `backend-agent/scripts/db_migrations/` 下编写 **一次性脚本**（该目录可按需创建，不存在时新建即可）
-2. 脚本必须 **幂等**（重复运行不报错）
+1. 在 `backend-auth/docs/` 或对应服务的 `docs/` 目录下编写 **一次性 SQL 脚本**（不存在时新建即可）
+2. 脚本必须 **幂等**（重复运行不报错，使用 `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`）
 3. 脚本必须有 **注释文档**（开头说明用途和影响）
 4. **不保留** 旧数据结构，倾向一次性切换
-5. 脚本部署时运行一次，验证后删除
+5. 脚本部署时运行一次，验证后归档
 
 ---
 

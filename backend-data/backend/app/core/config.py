@@ -2,6 +2,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 from pydantic import AliasChoices, Field
@@ -25,7 +26,7 @@ def _load_nacos_config_to_environ() -> None:
     except ImportError:
         return  # nacos-client 未安装，仅本地开发场景
 
-    client = NacosClient.from_env_optional(default_data_id="dev.yaml")
+    client = NacosClient.from_env_optional()
     if client is not None:
         client.load_to_environ()
         _adapt_nacos_to_backend_data_env()
@@ -45,15 +46,19 @@ def _adapt_nacos_to_backend_data_env() -> None:
     # Postgres -> core_db_*
     nacos_adapter.copy_overwrite("POSTGRES_HOST", "CORE_DB_HOST")
     nacos_adapter.copy_overwrite("POSTGRES_PORT", "CORE_DB_PORT")
-    nacos_adapter.copy_overwrite("POSTGRES_DATABASE", "CORE_DB_NAME")
     nacos_adapter.copy_overwrite("POSTGRES_USERNAME", "CORE_DB_USER")
     nacos_adapter.copy_overwrite("POSTGRES_PASSWORD", "CORE_DB_PASSWORD")
-    # Postgres -> vector_db_*（dev.yaml 当前未区分 core/vector，复用同一组）
+    # 库名: 优先 core_database,兜底 database(dev.yaml 单库场景)
+    nacos_adapter.copy_overwrite("POSTGRES_DATABASE", "CORE_DB_NAME")
+    nacos_adapter.copy_overwrite("POSTGRES_CORE_DATABASE", "CORE_DB_NAME")
+    # Postgres -> vector_db_*
     nacos_adapter.copy_overwrite("POSTGRES_HOST", "VECTOR_DB_HOST")
     nacos_adapter.copy_overwrite("POSTGRES_PORT", "VECTOR_DB_PORT")
-    nacos_adapter.copy_overwrite("POSTGRES_DATABASE", "VECTOR_DB_NAME")
     nacos_adapter.copy_overwrite("POSTGRES_USERNAME", "VECTOR_DB_USER")
     nacos_adapter.copy_overwrite("POSTGRES_PASSWORD", "VECTOR_DB_PASSWORD")
+    # 库名: 优先 vector_database,兜底 database(dev.yaml 单库场景)
+    nacos_adapter.copy_overwrite("POSTGRES_DATABASE", "VECTOR_DB_NAME")
+    nacos_adapter.copy_overwrite("POSTGRES_VECTOR_DATABASE", "VECTOR_DB_NAME")
     # MinIO: host + api_port -> endpoint
     nacos_adapter.compose_endpoint("MINIO_HOST", "MINIO_API_PORT", "MINIO_ENDPOINT")
     nacos_adapter.copy_overwrite("MINIO_USERNAME", "MINIO_ACCESS_KEY")
@@ -95,6 +100,7 @@ class Settings(BaseSettings):
     redis_host: str = "127.0.0.1"
     redis_port: int = 6379
     redis_db: int = 0
+    redis_username: str = ""
     redis_password: str = Field(default="", repr=False)
     redis_ssl: bool = False
 
@@ -167,8 +173,17 @@ class Settings(BaseSettings):
 
     @property
     def redis_url(self) -> str:
-        auth = f":{self.redis_password}@" if self.redis_password else ""
+        """Redis 连接 URL，支持 ACL username 与含特殊字符的密码。
+
+        密码中的 ``@`` 等特殊字符会做 URL 编码，避免解析错位。
+        """
         scheme = "rediss" if self.redis_ssl else "redis"
+        if self.redis_username and self.redis_password:
+            auth = f"{quote(self.redis_username, safe='')}:{quote(self.redis_password, safe='')}@"
+        elif self.redis_password:
+            auth = f":{quote(self.redis_password, safe='')}@"
+        else:
+            auth = ""
         return f"{scheme}://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
     def public_config(self) -> dict:
