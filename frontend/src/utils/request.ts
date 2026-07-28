@@ -83,8 +83,19 @@ export abstract class BaseRequest {
   }
 
   /** 401/403 认证失败 hook，默认空实现。子类可覆写以清用户态 */
-  protected onAuthError(_status: number): void {
+  protected onAuthError(_status: number, _config?: unknown): void {
     // default: no-op
+  }
+
+  /**
+   * HTTP 错误恢复 hook。
+   *
+   * 子类可在错误标准化前尝试恢复请求（例如 access token 过期后刷新 token
+   * 并重放原请求）。返回 AxiosResponse 表示恢复成功；返回 undefined
+   * 则继续走统一 HttpError 构造流程。
+   */
+  protected recoverFromHttpError(_error: unknown): Promise<AxiosResponse | undefined> {
+    return Promise.resolve(undefined);
   }
 
   /** 从响应体提取错误消息，子类可覆写 */
@@ -113,7 +124,11 @@ export abstract class BaseRequest {
     // 不展示错误（不耦合 UI 库），调用方在 catch 中自行展示
     this.instance.interceptors.response.use(
       (response: AxiosResponse) => response,
-      (error) => {
+      async (error) => {
+        const recoveredResponse = await this.recoverFromHttpError(error);
+        if (recoveredResponse) {
+          return recoveredResponse;
+        }
         const { message, status, code, data, config } = this.buildHttpError(error);
         return Promise.reject(new HttpError(message, { status, code, data, config }));
       },
@@ -146,7 +161,7 @@ export abstract class BaseRequest {
           case 401:
             // 登录接口 401（INVALID_CREDENTIALS）与 token 过期 401（TOKEN_INVALID）
             // 都走这里：onAuthError 内部判断当前路径，登录页不跳转。
-            this.onAuthError(status);
+            this.onAuthError(status, config);
             message = backendMessage || '登录状态已过期，请重新登录';
             break;
           case 403:

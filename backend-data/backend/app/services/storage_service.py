@@ -1,8 +1,14 @@
 import time
 from io import BytesIO
+from urllib.parse import quote
 
 from app.core.config import settings
 from app.core.minio_client import get_minio_client
+from app.core.storage_constants import (
+    AVATAR_OBJECT_PREFIX,
+    AVATAR_ROUTE_PREFIX,
+    STORAGE_ROUTE_PREFIX,
+)
 
 
 class StorageService:
@@ -83,14 +89,52 @@ class StorageService:
         Returns:
             {"object_name": str, "file_url": str}
         """
-        object_name = f"{prefix}/{int(time.time() * 1000)}_{filename}"
-        file_url = get_minio_client().upload_file(
+        normalized_prefix = prefix.strip("/")
+        safe_filename = filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1] or "file"
+        object_name = (
+            f"{normalized_prefix}/{int(time.time() * 1000)}_{safe_filename}"
+            if normalized_prefix
+            else f"{int(time.time() * 1000)}_{safe_filename}"
+        )
+        storage_url = get_minio_client().upload_file(
             object_name=object_name,
             data=BytesIO(data),
             length=len(data),
             content_type=content_type,
         )
+        avatar_prefix = f"{AVATAR_OBJECT_PREFIX}/"
+        if object_name.startswith(avatar_prefix):
+            avatar_path = quote(object_name.removeprefix(avatar_prefix), safe="/")
+            file_url = (
+                f"{settings.api_prefix}{STORAGE_ROUTE_PREFIX}"
+                f"{AVATAR_ROUTE_PREFIX}/{avatar_path}"
+            )
+        else:
+            file_url = storage_url
         return {
             "object_name": object_name,
             "file_url": file_url,
         }
+
+    def download_avatar(self, avatar_path: str) -> tuple[bytes, str]:
+        """读取公开头像对象。
+
+        公开路由只能访问 ``avatars/`` 前缀，不能借此读取业务桶中的其他对象。
+
+        Args:
+            avatar_path: 去掉 ``avatars/`` 前缀后的对象路径。
+
+        Returns:
+            ``(文件字节, MIME 类型)``。
+
+        Raises:
+            ValueError: 路径为空或包含 ``.`` / ``..`` 非法片段。
+        """
+        normalized_path = avatar_path.strip("/")
+        path_segments = normalized_path.split("/")
+        if not normalized_path or any(segment in {"", ".", ".."} for segment in path_segments):
+            raise ValueError("invalid avatar path")
+        object_name = f"{AVATAR_OBJECT_PREFIX}/{normalized_path}"
+        return get_minio_client().download_file_with_content_type(
+            object_name=object_name,
+        )

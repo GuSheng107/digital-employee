@@ -1,11 +1,43 @@
-from fastapi import APIRouter, File, Form, UploadFile
+from api_common import ResourceNotFoundError, ValidationError
+from fastapi import APIRouter, File, Form, Response, UploadFile
+from minio.error import S3Error
 
+from app.core.storage_constants import (
+    AVATAR_ROUTE_PREFIX,
+    IMMUTABLE_ASSET_CACHE_CONTROL,
+)
 from app.schemas.common import ApiResponse
 from app.services.storage_service import StorageService
 from app.utils.response import success_response
 
 
 router = APIRouter()
+public_router = APIRouter()
+
+
+@public_router.get(f"{AVATAR_ROUTE_PREFIX}/{{avatar_path:path}}")
+def read_avatar(avatar_path: str) -> Response:
+    """公开读取头像。
+
+    浏览器的 ``img`` 请求无法携带业务 API Key，因此头像使用独立只读路由。
+    路由被严格限制在 MinIO ``avatars/`` 前缀，不暴露桶中其他业务对象。
+    """
+    try:
+        content, content_type = StorageService().download_avatar(avatar_path)
+    except ValueError as exc:
+        raise ValidationError(message="头像路径无效") from exc
+    except S3Error as exc:
+        if exc.code in {"NoSuchKey", "NoSuchObject"}:
+            raise ResourceNotFoundError(message="头像不存在") from exc
+        raise
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={
+            "Cache-Control": IMMUTABLE_ASSET_CACHE_CONTROL,
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post("/buckets/ensure", response_model=ApiResponse)

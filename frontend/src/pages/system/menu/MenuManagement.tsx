@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { Key, ReactNode } from 'react';
 import {
   Button,
   Form,
@@ -11,12 +12,24 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
   TreeSelect,
   Typography,
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
+import {
+  AppstoreOutlined,
+  ControlOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  EyeInvisibleOutlined,
+  EyeOutlined,
+  FolderOpenOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SafetyCertificateOutlined,
+} from '@ant-design/icons';
 import {
   createMenu,
   deleteMenu,
@@ -26,8 +39,13 @@ import {
   type MenuItem,
   type UpdateMenuPayload,
 } from '@/api/menu-api';
+import {
+  fetchPermissions,
+  type PermissionItem,
+} from '@/api/permission-api';
 import { useUserStore } from '@/store/user-store';
-import { HttpError } from '@/utils/request';
+import { getMenuIcon } from '@/constants/menu-icons';
+import { getRequestErrorMessage } from '@/utils/request';
 import styles from './index.module.css';
 
 const { Title } = Typography;
@@ -64,68 +82,95 @@ type MenuTreeNode = MenuItem & { children?: MenuTreeNode[] };
 
 /** 从请求错误中提取用户可读的提示文案 */
 function getErrorMessage(error: unknown): string {
-  return error instanceof HttpError ? error.message : '操作失败，请稍后重试';
+  return getRequestErrorMessage(error, '操作失败，请稍后重试');
 }
 
 /** 把扁平菜单列表构建为树形（用于父菜单 TreeSelect） */
 function buildTree(menus: MenuItem[]): TreeNode[] {
   const map = new Map<number, TreeNode>();
   menus.forEach((m) => {
-    map.set(m.id, { value: m.id, title: m.title, children: [] });
+    if (!map.has(m.id)) {
+      map.set(m.id, { value: m.id, title: m.title });
+    }
   });
   const roots: TreeNode[] = [];
   menus.forEach((m) => {
-    const node = map.get(m.id)!;
+    const node = map.get(m.id);
+    if (!node) return;
     if (m.parent_id === 0 || !map.has(m.parent_id)) {
       roots.push(node);
     } else {
-      map.get(m.parent_id)!.children!.push(node);
+      const parent = map.get(m.parent_id);
+      if (!parent) return;
+      if (!parent.children) {
+        parent.children = [];
+      }
+      parent.children.push(node);
     }
   });
   return roots;
 }
 
-/** 把扁平菜单列表构建为按层级顺序平铺的表格数据（记录每个节点深度）。
+/**
+ * 把扁平菜单列表构建为 Antd Table 树数据。
  *
- * 不使用 Table 的 expandable：展开/折叠列会带来 +/- 图标交互，且
- * Antd 在隐藏 expandIcon 时可能无法正确渲染子行。这里直接按父子层级
- * 顺序展开为普通行，标题列根据深度做缩进，视觉上仍是树形。
+ * dataSource 只返回根节点，子节点仅存在于父节点 ``children`` 中，避免同一
+ * 菜单被顶层与子层重复渲染。叶子节点不写空 children，因此不会出现无效的
+ * 展开按钮。重复 ID 只保留首次出现的数据，避免异常响应污染表格。
  */
-interface MenuTableRow extends MenuItem {
-  depth: number;
-}
-
-function buildTableData(menus: MenuItem[]): MenuTableRow[] {
+function buildTableData(menus: MenuItem[]): MenuTreeNode[] {
   const map = new Map<number, MenuTreeNode>();
   menus.forEach((m) => {
-    map.set(m.id, { ...m, children: [] });
-  });
-  const roots: MenuTreeNode[] = [];
-  map.forEach((node) => {
-    if (node.parent_id === 0 || !map.has(node.parent_id)) {
-      roots.push(node);
-    } else {
-      const parent = map.get(node.parent_id)!;
-      parent.children!.push(node);
+    if (!map.has(m.id)) {
+      map.set(m.id, { ...m });
     }
   });
-
-  const rows: MenuTableRow[] = [];
-  const walk = (nodes: MenuTreeNode[], depth: number): void => {
-    nodes.forEach((node) => {
-      rows.push({ ...node, depth });
-      if (node.children && node.children.length > 0) {
-        walk(node.children, depth + 1);
+  const roots: MenuTreeNode[] = [];
+  menus.forEach((menu) => {
+    const node = map.get(menu.id);
+    if (!node) return;
+    if (node.parent_id === 0 || !map.has(node.parent_id)) {
+      if (!roots.some((root) => root.id === node.id)) {
+        roots.push(node);
       }
-    });
-  };
-  walk(roots, 0);
-  return rows;
+    } else {
+      const parent = map.get(node.parent_id);
+      if (!parent) return;
+      if (!parent.children) {
+        parent.children = [];
+      }
+      if (!parent.children.some((child) => child.id === node.id)) {
+        parent.children.push(node);
+      }
+    }
+  });
+  return roots;
+}
+
+/** 返回实际拥有子节点的目录 ID，用于受控展开状态。 */
+function getExpandableDirectoryIds(menus: MenuItem[]): Key[] {
+  const parentIds = new Set(menus.map((menu) => menu.parent_id));
+  return menus
+    .filter((menu) => menu.menu_type === 1 && parentIds.has(menu.id))
+    .map((menu) => menu.id);
+}
+
+/** 未配置或无法识别图标时，按菜单类型提供稳定的语义化图标。 */
+function getFallbackIcon(menuType: number): ReactNode {
+  if (menuType === 1) {
+    return <FolderOpenOutlined />;
+  }
+  if (menuType === 3) {
+    return <ControlOutlined />;
+  }
+  return <AppstoreOutlined />;
 }
 
 export default function MenuManagement(): React.ReactElement {
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
   const [menus, setMenus] = useState<MenuItem[]>([]);
+  const [expandedRowKeys, setExpandedRowKeys] = useState<Key[]>([]);
+  const [permissions, setPermissions] = useState<PermissionItem[]>([]);
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -133,8 +178,18 @@ export default function MenuManagement(): React.ReactElement {
 
   const reloadMenus = useUserStore((state) => state.reloadMenus);
 
-  /** 表格数据：按层级顺序平铺，每行携带 depth 用于缩进 */
+  /** 表格数据：仅根节点进入 dataSource，子节点通过 children 嵌套 */
   const tableData = useMemo(() => buildTableData(menus), [menus]);
+
+  const menuSummary = useMemo(
+    () => ({
+      total: menus.length,
+      directories: menus.filter((menu) => menu.menu_type === 1).length,
+      pages: menus.filter((menu) => menu.menu_type === 2).length,
+      permissions: menus.filter((menu) => Boolean(menu.permission)).length,
+    }),
+    [menus],
+  );
 
   /** 父菜单树选项：包含「顶级」选项 */
   const parentTreeData = useMemo<TreeNode[]>(() => {
@@ -147,6 +202,7 @@ export default function MenuManagement(): React.ReactElement {
     try {
       const list = await fetchMenus();
       setMenus(list);
+      setExpandedRowKeys(getExpandableDirectoryIds(list));
     } catch (error) {
       message.error(getErrorMessage(error));
     } finally {
@@ -154,9 +210,29 @@ export default function MenuManagement(): React.ReactElement {
     }
   }
 
-  // 初始数据加载：effect 仅在挂载时执行一次
+  // 初始数据加载：菜单与权限码目录并行读取
   useEffect(() => {
-    void loadMenus();
+    let active = true;
+    void Promise.all([fetchMenus(), fetchPermissions()])
+      .then(([menuList, permissionList]) => {
+        if (!active) return;
+        setMenus(menuList);
+        setExpandedRowKeys(getExpandableDirectoryIds(menuList));
+        setPermissions(permissionList);
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          message.error(getErrorMessage(error));
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   /** 计算指定父菜单下的下一个排序值（同级最大 sort + 10，便于中间插入） */
@@ -265,67 +341,116 @@ export default function MenuManagement(): React.ReactElement {
     }
   }
 
-  const columns: ColumnsType<MenuTableRow> = [
+  const columns: ColumnsType<MenuTreeNode> = [
     {
       title: '标题',
       dataIndex: 'title',
-      width: 260,
-      render: (value: string, record: MenuTableRow) => (
-        <span
-          className={styles.titleCell}
-          style={{ paddingLeft: record.depth * 24 }}
-        >
-          {record.icon && <Tag>{record.icon}</Tag>}
-          <span>{value}</span>
+      width: 236,
+      render: (value: string, record: MenuTreeNode) => (
+        <span className={styles.titleCell}>
+          <Tooltip title={record.icon ? `图标：${record.icon}` : '未配置图标'}>
+            <span
+              className={`${styles.iconTile} ${
+                record.menu_type === 1 ? styles.directoryIcon : styles.menuIcon
+              }`}
+            >
+              {getMenuIcon(record.icon, getFallbackIcon(record.menu_type))}
+            </span>
+          </Tooltip>
+          <span className={styles.titleText}>{value}</span>
         </span>
       ),
     },
     {
       title: '类型',
       dataIndex: 'menu_type',
-      width: 90,
+      width: 78,
       render: (value: number) => {
         const meta = MENU_TYPE_META[value] ?? { label: '未知', color: 'default' };
-        return <Tag color={meta.color} className={styles.menuTypeTag}>{meta.label}</Tag>;
+        return (
+          <Tag
+            color={meta.color}
+            variant="filled"
+            className={styles.menuTypeTag}
+          >
+            {meta.label}
+          </Tag>
+        );
       },
     },
     {
       title: '路由路径',
       dataIndex: 'path',
-      width: 220,
+      width: 184,
       render: (value: string | null) =>
-        value ? <span className={styles.pathText}>{value}</span> : <span>-</span>,
+        value ? (
+          <Tooltip title={value}>
+            <code className={styles.pathText}>{value}</code>
+          </Tooltip>
+        ) : (
+          <span className={styles.emptyValue}>—</span>
+        ),
     },
     {
       title: '组件',
       dataIndex: 'component',
-      width: 200,
+      width: 168,
       render: (value: string | null) =>
-        value ? <span className={styles.pathText}>{value}</span> : <span>-</span>,
+        value ? (
+          <Tooltip title={value}>
+            <code className={styles.pathText}>{value}</code>
+          </Tooltip>
+        ) : (
+          <span className={styles.emptyValue}>—</span>
+        ),
     },
     {
       title: '权限码',
       dataIndex: 'permission',
-      width: 160,
+      width: 178,
       render: (value: string | null) =>
-        value ? <Tag color="purple">{value}</Tag> : <span>-</span>,
+        value ? (
+          <Tooltip title={value}>
+            <span className={styles.permissionCode}>
+              <SafetyCertificateOutlined />
+              <code>{value}</code>
+            </span>
+          </Tooltip>
+        ) : (
+          <span className={styles.emptyValue}>—</span>
+        ),
     },
     {
       title: '排序',
       dataIndex: 'sort',
-      width: 80,
+      width: 64,
+      align: 'center',
+      render: (value: number) => (
+        <span className={styles.sortValue}>{value}</span>
+      ),
     },
     {
       title: '可见',
       dataIndex: 'visible',
-      width: 80,
+      width: 74,
+      align: 'center',
       render: (value: boolean) =>
-        value ? <Tag color="green">显示</Tag> : <Tag>隐藏</Tag>,
+        value ? (
+          <span className={`${styles.visibilityBadge} ${styles.isVisible}`}>
+            <EyeOutlined />
+            显示
+          </span>
+        ) : (
+          <span className={`${styles.visibilityBadge} ${styles.isHidden}`}>
+            <EyeInvisibleOutlined />
+            隐藏
+          </span>
+        ),
     },
     {
       title: '操作',
       key: 'action',
-      width: 160,
+      width: 154,
       render: (_, record) => {
         // 根目录（顶级）不允许删除，避免误删顶层导航结构
         const isRoot = record.parent_id === 0;
@@ -337,6 +462,7 @@ export default function MenuManagement(): React.ReactElement {
             <Button
               type="link"
               size="small"
+              className={styles.actionButton}
               icon={<EditOutlined />}
               onClick={() => openEditModal(record)}
             >
@@ -351,6 +477,7 @@ export default function MenuManagement(): React.ReactElement {
               <Button
                 type="link"
                 size="small"
+                className={styles.actionButton}
                 icon={<EditOutlined />}
                 onClick={() => openEditModal(record)}
               >
@@ -360,6 +487,7 @@ export default function MenuManagement(): React.ReactElement {
                 type="link"
                 size="small"
                 danger
+                className={styles.actionButton}
                 icon={<DeleteOutlined />}
                 onClick={() =>
                   message.warning('该菜单下仍有子菜单，请先删除子菜单')
@@ -376,6 +504,7 @@ export default function MenuManagement(): React.ReactElement {
             <Button
               type="link"
               size="small"
+              className={styles.actionButton}
               icon={<EditOutlined />}
               onClick={() => openEditModal(record)}
             >
@@ -389,7 +518,13 @@ export default function MenuManagement(): React.ReactElement {
               cancelText="取消"
               okButtonProps={{ danger: true }}
             >
-              <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+              <Button
+                type="link"
+                size="small"
+                danger
+                className={styles.actionButton}
+                icon={<DeleteOutlined />}
+              >
                 删除
               </Button>
             </Popconfirm>
@@ -402,24 +537,80 @@ export default function MenuManagement(): React.ReactElement {
   return (
     <div className={styles.container}>
       <div className={styles.toolbar}>
-        <Title level={3} style={{ margin: 0 }}>
-          菜单管理
-        </Title>
-        <Space>
-          <Button onClick={() => void loadMenus()}>刷新</Button>
+        <div className={styles.headingBlock}>
+          <span className={styles.eyebrow}>ACCESS CONTROL · NAVIGATION</span>
+          <Title level={3} className={styles.pageTitle}>
+            菜单管理
+          </Title>
+          <p className={styles.pageDescription}>
+            维护系统导航层级、页面路由与权限标识
+          </p>
+        </div>
+        <Space className={styles.toolbarActions}>
+          <Button
+            icon={<ReloadOutlined />}
+            loading={loading}
+            onClick={() => void loadMenus()}
+          >
+            刷新
+          </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
             新建菜单
           </Button>
         </Space>
       </div>
 
+      <div className={styles.summaryGrid}>
+        <div className={styles.summaryItem}>
+          <span className={styles.summaryLabel}>全部节点</span>
+          <strong className={styles.summaryValue}>{menuSummary.total}</strong>
+        </div>
+        <div className={styles.summaryItem}>
+          <span className={styles.summaryLabel}>目录层级</span>
+          <strong className={styles.summaryValue}>
+            {menuSummary.directories}
+          </strong>
+        </div>
+        <div className={styles.summaryItem}>
+          <span className={styles.summaryLabel}>页面菜单</span>
+          <strong className={styles.summaryValue}>{menuSummary.pages}</strong>
+        </div>
+        <div className={styles.summaryItem}>
+          <span className={styles.summaryLabel}>权限绑定</span>
+          <strong className={styles.summaryValue}>
+            {menuSummary.permissions}
+          </strong>
+        </div>
+      </div>
+
       <div className={styles.tableWrapper}>
-        <Table<MenuTableRow>
+        <div className={styles.tableHeader}>
+          <div>
+            <span className={styles.tableTitle}>菜单结构</span>
+            <span className={styles.tableHint}>
+              目录节点支持展开，页面节点直接关联业务路由
+            </span>
+          </div>
+          <span className={styles.recordCount}>{menus.length} 条配置</span>
+        </div>
+        <Table<MenuTreeNode>
           rowKey="id"
           columns={columns}
           dataSource={tableData}
           loading={loading}
           pagination={false}
+          size="middle"
+          tableLayout="fixed"
+          scroll={{ x: 1136 }}
+          rowClassName={(record) =>
+            record.menu_type === 1 ? styles.directoryRow : styles.menuRow
+          }
+          expandable={{
+            expandedRowKeys,
+            onExpandedRowsChange: (keys) => setExpandedRowKeys([...keys]),
+            rowExpandable: (record) =>
+              record.menu_type === 1 && Boolean(record.children?.length),
+          }}
         />
       </div>
 
@@ -440,7 +631,10 @@ export default function MenuManagement(): React.ReactElement {
           onFinish={handleSubmit}
           onValuesChange={(changed) => {
             // 仅新建时联动：父菜单变化后自动填入同级下一个 sort
-            if (editingId === null && 'parent_id' in changed) {
+            if (
+              editingId === null
+              && typeof changed.parent_id === 'number'
+            ) {
               form.setFieldValue('sort', calcNextSort(changed.parent_id));
             }
           }}
@@ -513,10 +707,18 @@ export default function MenuManagement(): React.ReactElement {
           <Form.Item
             label="权限码"
             name="permission"
-            rules={[{ max: 128, message: '权限码不超过 128 字符' }]}
             extra="访问该菜单所需权限码；留空表示仅登录可见"
           >
-            <Input placeholder="如 user:write" />
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              placeholder="选择服务端已定义的权限码"
+              options={permissions.map((permission) => ({
+                value: permission.code,
+                label: `${permission.name}（${permission.code}）`,
+              }))}
+            />
           </Form.Item>
 
           <Form.Item label="排序" name="sort" rules={[{ required: true }]}>

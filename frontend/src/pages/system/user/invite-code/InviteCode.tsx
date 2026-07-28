@@ -20,7 +20,7 @@ import {
   type CreateInviteCodeResult,
   type InviteCodeItem,
 } from '@/api/invite-code-api';
-import { HttpError } from '@/utils/request';
+import { getRequestErrorMessage } from '@/utils/request';
 import styles from './index.module.css';
 
 const { Title, Text } = Typography;
@@ -40,7 +40,7 @@ function formatTimestamp(seconds: number): string {
 
 /** 从请求错误中提取用户可读的提示文案 */
 function getErrorMessage(error: unknown): string {
-  return error instanceof HttpError ? error.message : '操作失败，请稍后重试';
+  return getRequestErrorMessage(error, '操作失败，请稍后重试');
 }
 
 export default function InviteCode(): React.ReactElement {
@@ -76,7 +76,6 @@ export default function InviteCode(): React.ReactElement {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadInviteCodes();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function openCreateModal(): void {
@@ -274,7 +273,7 @@ export default function InviteCode(): React.ReactElement {
             <Tag className={styles.codeTag}>{createdResult.code}</Tag>
             <div className={styles.resultMeta}>
               <Text type="secondary">
-                剩余次数：{createdResult.remaining}　过期时间：
+                剩余次数：{createdResult.remaining} 过期时间：
                 {formatTimestamp(createdResult.expires_at)}
               </Text>
             </div>

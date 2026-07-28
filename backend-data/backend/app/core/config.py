@@ -1,4 +1,3 @@
-import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -80,6 +79,7 @@ class Settings(BaseSettings):
     app_port: int = 8010
     api_prefix: str = "/api/v1"
     dependency_timeout_seconds: int = 3
+    backend_auth_base_url: str = "http://127.0.0.1:8020"
     # 用于保护非健康检查端点的 API Key；为空时跳过校验，生产环境务必配置。
     api_key: str = Field(default="", repr=False)
 

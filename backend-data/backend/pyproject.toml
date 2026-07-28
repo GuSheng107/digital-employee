@@ -17,6 +17,7 @@ dependencies = [
     "pydantic-settings==2.14.2",
     "nacos-client==0.1.0",
     "api-common==0.1.0",
+    "auth-utils==0.1.0",
     "python-multipart>=0.0.32",
 ]
 
@@ -29,6 +30,7 @@ dev = [
 [tool.uv.sources]
 nacos-client = { path = "../../backend-share/nacos-client" }
 api-common = { path = "../../backend-share/api-common" }
+auth-utils = { path = "../../backend-share/auth-utils" }
 
 [build-system]
 requires = ["hatchling"]

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from api_common import ApiResponse, success_response
+from auth_utils import PermissionCode
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, require_admin
+from app.api.deps import get_db_session, require_permission
 from app.schemas.role import AssignMenusRequest, CreateRoleRequest, UpdateRoleRequest
 from app.services.role_service import RoleService
 
@@ -16,7 +17,14 @@ router = APIRouter()
 @router.get(
     "",
     response_model=ApiResponse,
-    dependencies=[Depends(require_admin)],
+    dependencies=[
+        Depends(
+            require_permission(
+                PermissionCode.USER_PERMISSION,
+                PermissionCode.USER_MANAGE,
+            )
+        )
+    ],
 )
 def list_roles(session: Session = Depends(get_db_session)) -> dict:
     """列出所有角色。"""
@@ -27,7 +35,7 @@ def list_roles(session: Session = Depends(get_db_session)) -> dict:
 @router.post(
     "",
     response_model=ApiResponse,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_permission(PermissionCode.USER_PERMISSION))],
 )
 def create_role(
     payload: CreateRoleRequest,
@@ -47,7 +55,7 @@ def create_role(
 @router.put(
     "/{role_id}",
     response_model=ApiResponse,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_permission(PermissionCode.USER_PERMISSION))],
 )
 def update_role(
     role_id: int,
@@ -68,7 +76,7 @@ def update_role(
 @router.delete(
     "/{role_id}",
     response_model=ApiResponse,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_permission(PermissionCode.USER_PERMISSION))],
 )
 def delete_role(
     role_id: int,
@@ -83,7 +91,7 @@ def delete_role(
 @router.get(
     "/{role_id}/menus",
     response_model=ApiResponse,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_permission(PermissionCode.USER_PERMISSION))],
 )
 def get_role_menus(
     role_id: int, session: Session = Depends(get_db_session)
@@ -96,7 +104,7 @@ def get_role_menus(
 @router.put(
     "/{role_id}/menus",
     response_model=ApiResponse,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_permission(PermissionCode.USER_PERMISSION))],
 )
 def assign_menus(
     role_id: int,

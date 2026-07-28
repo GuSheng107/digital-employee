@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from api_common import ApiResponse, ValidationError, success_response
+from auth_utils import PermissionCode
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db_session, require_admin
+from app.api.deps import get_current_user, get_db_session, require_permission
 from app.schemas.auth import UserInfo
 from app.schemas.user import (
     AssignRolesRequest,
@@ -21,7 +22,18 @@ from app.services.user_service import UserService
 router = APIRouter()
 
 
-@router.get("", response_model=ApiResponse, dependencies=[Depends(require_admin)])
+@router.get(
+    "",
+    response_model=ApiResponse,
+    dependencies=[
+        Depends(
+            require_permission(
+                PermissionCode.USER_MANAGE,
+                PermissionCode.USER_PERMISSION,
+            )
+        )
+    ],
+)
 def list_users(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
@@ -32,7 +44,11 @@ def list_users(
     return success_response(service.list_users(page=page, page_size=page_size))
 
 
-@router.post("", response_model=ApiResponse, dependencies=[Depends(require_admin)])
+@router.post(
+    "",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permission(PermissionCode.USER_MANAGE))],
+)
 def create_user(
     payload: CreateUserRequest,
     session: Session = Depends(get_db_session),
@@ -102,7 +118,9 @@ def upload_avatar(
 
 
 @router.put(
-    "/{user_id}/roles", response_model=ApiResponse, dependencies=[Depends(require_admin)]
+    "/{user_id}/roles",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permission(PermissionCode.USER_PERMISSION))],
 )
 def assign_roles(
     user_id: int,
@@ -121,7 +139,7 @@ def assign_roles(
 @router.put(
     "/{user_id}/password",
     response_model=ApiResponse,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_permission(PermissionCode.USER_MANAGE))],
 )
 def reset_user_password(
     user_id: int,
@@ -139,7 +157,7 @@ def reset_user_password(
 @router.get(
     "/{user_id}/menus",
     response_model=ApiResponse,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_permission(PermissionCode.USER_PERMISSION))],
 )
 def get_user_menus(
     user_id: int,
@@ -153,7 +171,7 @@ def get_user_menus(
 @router.put(
     "/{user_id}/menus",
     response_model=ApiResponse,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_permission(PermissionCode.USER_PERMISSION))],
 )
 def assign_user_menus(
     user_id: int,
@@ -172,7 +190,7 @@ def assign_user_menus(
 @router.get(
     "/{user_id}/permissions",
     response_model=ApiResponse,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_permission(PermissionCode.USER_PERMISSION))],
 )
 def get_user_permissions(
     user_id: int,
@@ -186,7 +204,7 @@ def get_user_permissions(
 @router.put(
     "/{user_id}/permissions",
     response_model=ApiResponse,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_permission(PermissionCode.USER_PERMISSION))],
 )
 def assign_user_permissions(
     user_id: int,

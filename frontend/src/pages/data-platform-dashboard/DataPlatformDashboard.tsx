@@ -2,15 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Typography, message } from 'antd';
 import StatusCard from '@/components/status-card/StatusCard';
 import type { StatusCardState } from '@/components/status-card/StatusCard';
+import { DATA_PLATFORM_API_BASE_URL } from '@/config/api-config';
 import { getDataPlatformErrorMessage } from '@/utils/data-platform-request';
 import { getDependencies, getServiceInfo } from './api/system-api';
 import type { ServiceInfo, DashboardDependencies } from './types/system';
 import styles from './index.module.css';
 
 const { Title, Text } = Typography;
-
-const dataPlatformApiBaseUrl =
-  import.meta.env.VITE_DATA_PLATFORM_API_BASE_URL || '/data-platform-api';
 
 function cardStatus(ok?: boolean): StatusCardState {
   if (ok === undefined) return 'unknown';
@@ -56,7 +54,7 @@ export default function DataPlatformDashboard(): React.ReactElement {
       <div className={styles.pageHeader}>
         <div>
           <Title level={3}>Dashboard</Title>
-          <Text type="secondary">当前 API 地址：{dataPlatformApiBaseUrl}</Text>
+          <Text type="secondary">当前 API 地址：{DATA_PLATFORM_API_BASE_URL}</Text>
         </div>
         <Button type="primary" loading={loading} onClick={() => void refresh()}>
           刷新状态

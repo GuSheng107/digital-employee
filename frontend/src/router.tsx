@@ -1,9 +1,12 @@
-import { Suspense, useEffect } from 'react';
+import { Suspense } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { Spin } from 'antd';
 import Layout from './components/Layout';
+import AppInitializer from './components/app-initializer/AppInitializer';
 import RequireAuth from './components/require-auth/RequireAuth';
+import RequirePermission from './components/require-permission/RequirePermission';
 import Login from './pages/login/Login';
+import { PERMISSION_CODE } from './constants/access-control';
 import {
   DataPlatformDashboard,
   DataPlatformDataItems,
@@ -15,7 +18,6 @@ import {
   UserProfile,
   UserRegister,
 } from './router/lazy-pages';
-import { useUserStore } from './store/user-store';
 
 // 懒加载页面统一 fallback
 const LazyFallback = (
@@ -28,20 +30,15 @@ function withSuspense(element: React.ReactElement): React.ReactElement {
   return <Suspense fallback={LazyFallback}>{element}</Suspense>;
 }
 
-/**
- * 应用初始化组件：在路由渲染前触发登录态恢复。
- *
- * 页面刷新时 store 状态丢失，但 localStorage 中的 token 仍在。
- * 此组件在应用挂载时调用 restoreAuth，避免每个 RequireAuth 重复触发。
- */
-function AppInitializer({ children }: { children: React.ReactElement }): React.ReactElement {
-  const restoreAuth = useUserStore((state) => state.restoreAuth);
-
-  useEffect(() => {
-    void restoreAuth();
-  }, [restoreAuth]);
-
-  return children;
+function withPermission(
+  element: React.ReactElement,
+  required: readonly string[],
+): React.ReactElement {
+  return (
+    <RequirePermission required={required}>
+      {withSuspense(element)}
+    </RequirePermission>
+  );
 }
 
 export const router = createBrowserRouter([
@@ -67,15 +64,24 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="/system/user/profile" replace /> },
       {
         path: 'data-platform/dashboard',
-        element: withSuspense(<DataPlatformDashboard />),
+        element: withPermission(
+          <DataPlatformDashboard />,
+          [PERMISSION_CODE.DATA_PLATFORM_DASHBOARD],
+        ),
       },
       {
         path: 'data-platform/data-items',
-        element: withSuspense(<DataPlatformDataItems />),
+        element: withPermission(
+          <DataPlatformDataItems />,
+          [PERMISSION_CODE.DATA_PLATFORM_DATA_ITEMS],
+        ),
       },
       {
         path: 'data-platform/system-config',
-        element: withSuspense(<DataPlatformSystemConfig />),
+        element: withPermission(
+          <DataPlatformSystemConfig />,
+          [PERMISSION_CODE.DATA_PLATFORM_CONFIG],
+        ),
       },
       // 系统设置-用户：四个三级菜单对应路由
       {
@@ -84,20 +90,32 @@ export const router = createBrowserRouter([
       },
       {
         path: 'system/user/register',
-        element: withSuspense(<UserRegister />),
+        element: withPermission(
+          <UserRegister />,
+          [PERMISSION_CODE.USER_MANAGE],
+        ),
       },
       {
         path: 'system/user/permission',
-        element: withSuspense(<UserPermission />),
+        element: withPermission(
+          <UserPermission />,
+          [PERMISSION_CODE.USER_PERMISSION],
+        ),
       },
       {
         path: 'system/user/invite-code',
-        element: withSuspense(<InviteCode />),
+        element: withPermission(
+          <InviteCode />,
+          [PERMISSION_CODE.INVITE_CODE_MANAGE],
+        ),
       },
       // 系统设置-系统-菜单管理
       {
         path: 'system/menu',
-        element: withSuspense(<MenuManagement />),
+        element: withPermission(
+          <MenuManagement />,
+          [PERMISSION_CODE.MENU_MANAGE],
+        ),
       },
     ],
   },

@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db_session
+from app.core.role_constants import ADMIN_ROLE_CODES, FULL_ACCESS_ROLE_CODES
 from app.schemas.auth import UserInfo
 from app.services.auth_service import AuthService
 
@@ -103,8 +104,7 @@ def require_admin(
     Raises:
         PermissionDeniedError: 当前用户不是管理员。
     """
-    admin_roles = {"super_admin", "manager"}
-    if not admin_roles.intersection(current_user.roles):
+    if not ADMIN_ROLE_CODES.intersection(current_user.roles):
         raise PermissionDeniedError(message="需要管理员权限")
     return current_user
 
@@ -118,7 +118,8 @@ def require_permission(
     与 ``require_admin`` 不同，本依赖基于用户的权限码列表校验，
     防止用户通过修改 token 绕过前端菜单隐藏直接访问接口。
 
-    super_admin 和 manager 角色拥有全部权限，直接放行。
+    仅 ``super_admin`` 拥有不可撤销的全权限旁路；``manager`` 必须通过
+    角色权限显式授权，避免“管理员角色等于永久万能权限”的越权风险。
 
     权限码来源于 ``permissions`` 表的 ``code`` 字段，也对应菜单的
     ``permission`` 字段。用户登录后持有的权限码 = ``user_permissions``
@@ -145,9 +146,8 @@ def require_permission(
     def _check(
         current_user: UserInfo = Depends(get_current_user),
     ) -> UserInfo:
-        # super_admin 和 manager 角色拥有全部权限，直接放行
-        admin_roles = {"super_admin", "manager"}
-        if admin_roles.intersection(current_user.roles):
+        # 最高权限账号旁路；普通管理员仍按显式权限码校验。
+        if FULL_ACCESS_ROLE_CODES.intersection(current_user.roles):
             return current_user
         # 检查用户是否持有任一所需权限码
         user_perms = set(current_user.permissions)

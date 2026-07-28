@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import me from '@/assets/images/avatar/me.svg';
+import { resolveAvatarUrl } from '@/utils/avatar-url';
 import {
   getCurrentUser,
   login,
@@ -55,6 +56,11 @@ function clearStoredTokens(): void {
   localStorage.removeItem('refresh_token');
 }
 
+/** 读取用户头像；私有 MinIO 历史地址统一转换为 backend-data 公开代理。 */
+function getUserAvatar(info: UserInfo): string {
+  return resolveAvatarUrl(info.avatar_url) ?? me;
+}
+
 export const useUserStore = create<AuthState>((set) => ({
   isAuthenticated: false,
   userInfo: null,
@@ -76,7 +82,7 @@ export const useUserStore = create<AuthState>((set) => ({
       set({
         isAuthenticated: true,
         userInfo: info,
-        avatar: info.avatar_url || me,
+        avatar: getUserAvatar(info),
         menus: info.menus ?? [],
         loading: false,
       });
@@ -98,7 +104,7 @@ export const useUserStore = create<AuthState>((set) => ({
       set({
         isAuthenticated: true,
         userInfo: info,
-        avatar: info.avatar_url || me,
+        avatar: getUserAvatar(info),
         menus: info.menus ?? [],
         loading: false,
       });
@@ -142,7 +148,7 @@ export const useUserStore = create<AuthState>((set) => ({
       set({
         isAuthenticated: true,
         userInfo: info,
-        avatar: info.avatar_url || me,
+        avatar: getUserAvatar(info),
         menus: info.menus ?? [],
         restoring: false,
       });
@@ -159,7 +165,7 @@ export const useUserStore = create<AuthState>((set) => ({
             set({
               isAuthenticated: true,
               userInfo: info,
-              avatar: info.avatar_url || me,
+              avatar: getUserAvatar(info),
               menus: info.menus ?? [],
               restoring: false,
             });
@@ -189,7 +195,7 @@ export const useUserStore = create<AuthState>((set) => ({
     const info = await getCurrentUser();
     set({
       userInfo: info,
-      avatar: info.avatar_url || me,
+      avatar: getUserAvatar(info),
       menus: info.menus ?? [],
     });
   },
@@ -198,13 +204,9 @@ export const useUserStore = create<AuthState>((set) => ({
 /** 获取用户友好的登录错误提示文案 */
 export function getLoginErrorMessage(error: unknown): string {
   if (error instanceof HttpError) {
-    // 限流单独提示
-    if (error.status === 429) {
-      return '请求过于频繁，请稍后再试';
-    }
-    // 其他所有登录错误（密码错误、用户不存在、网络异常、认证失败等）
-    // 统一提示"账号或密码有误"，避免泄露用户是否存在，提升安全性
-    return '账号或密码有误';
+    // 后端登录失败文案本身不区分“账号不存在”和“密码错误”，既避免
+    // 账号枚举，也可以安全展示统一错误码，便于用户和运维定位。
+    return getRequestErrorMessage(error, '账号或密码有误');
   }
   return '账号或密码有误';
 }
@@ -212,12 +214,8 @@ export function getLoginErrorMessage(error: unknown): string {
 /** 获取用户友好的注册错误提示文案 */
 export function getRegisterErrorMessage(error: unknown): string {
   if (error instanceof HttpError) {
-    // 优先使用后端返回的 message
-    if (error.message) {
-      return error.message;
-    }
     if (error.status === 429) {
-      return '请求过于频繁，请稍后再试';
+      return getRequestErrorMessage(error, '请求过于频繁，请稍后再试');
     }
   }
   return getRequestErrorMessage(error, '注册失败，请检查网络连接');

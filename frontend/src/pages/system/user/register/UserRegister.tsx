@@ -21,7 +21,12 @@ import {
   type UserListItem,
 } from '@/api/user-api';
 import { fetchRoles, type RoleItem } from '@/api/role-api';
-import { HttpError } from '@/utils/request';
+import {
+  getVipDisplayFallback,
+  ROLE_CODE,
+  VIP_LEVEL,
+} from '@/constants/access-control';
+import { getRequestErrorMessage } from '@/utils/request';
 import styles from './index.module.css';
 
 const { Title } = Typography;
@@ -47,7 +52,7 @@ function formatDateTime(value: string | null): string {
 
 /** 从请求错误中提取用户可读的提示文案 */
 function getErrorMessage(error: unknown): string {
-  return error instanceof HttpError ? error.message : '操作失败，请稍后重试';
+  return getRequestErrorMessage(error, '操作失败，请稍后重试');
 }
 
 export default function UserRegister(): React.ReactElement {
@@ -98,7 +103,7 @@ export default function UserRegister(): React.ReactElement {
     setRolesLoading(true);
     try {
       const response = await fetchRoles();
-      setRoles(response);
+      setRoles(response.filter((role) => role.code !== ROLE_CODE.SUPER_ADMIN));
     } catch (error) {
       message.error(getErrorMessage(error));
     } finally {
@@ -241,11 +246,17 @@ export default function UserRegister(): React.ReactElement {
       dataIndex: 'vip_level_display',
       width: 100,
       render: (display: string, record) => {
-        // 99 = 管理员特殊标记，紫色显示
-        if (record.vip_level === 99) return <Tag color="purple">{display || '管理员'}</Tag>;
+        const vipDisplay = display
+          || getVipDisplayFallback(record.vip_level, record.is_vip);
+        if (record.vip_level === VIP_LEVEL.SUPER_ADMIN) {
+          return <Tag color="purple">{vipDisplay}</Tag>;
+        }
+        if (record.vip_level === VIP_LEVEL.MANAGER) {
+          return <Tag color="blue">{vipDisplay}</Tag>;
+        }
         return record.is_vip
-          ? <Tag color="gold">{display || `VIP${record.vip_level}`}</Tag>
-          : <Tag>{display || '普通用户'}</Tag>;
+          ? <Tag color="gold">{vipDisplay}</Tag>
+          : <Tag>{vipDisplay}</Tag>;
       },
     },
     {

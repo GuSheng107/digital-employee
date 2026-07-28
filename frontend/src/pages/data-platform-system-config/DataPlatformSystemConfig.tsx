@@ -115,7 +115,6 @@ export default function DataPlatformSystemConfig(): React.ReactElement {
     if (initializedRef.current) return;
     initializedRef.current = true;
     void loadConfig();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

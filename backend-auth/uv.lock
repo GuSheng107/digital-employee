@@ -54,11 +54,23 @@ wheels = [
 ]
 
 [[package]]
+name = "auth-utils"
+version = "0.1.0"
+source = { directory = "../backend-share/auth-utils" }
+dependencies = [
+    { name = "httpx" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "httpx", specifier = "==0.28.1" }]
+
+[[package]]
 name = "backend-auth"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "api-common" },
+    { name = "auth-utils" },
     { name = "data-client" },
     { name = "fastapi" },
     { name = "loguru" },
@@ -83,6 +95,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "api-common", directory = "../backend-share/api-common" },
+    { name = "auth-utils", directory = "../backend-share/auth-utils" },
     { name = "data-client", directory = "../backend-share/data-client" },
     { name = "fastapi", specifier = "==0.140.7" },
     { name = "loguru", specifier = "==0.7.3" },

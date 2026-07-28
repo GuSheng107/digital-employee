@@ -101,6 +101,32 @@ class MinioClientWrapper:
             response.close()
             response.release_conn()
 
+    def download_file_with_content_type(
+        self,
+        *,
+        object_name: str,
+        bucket_name: str | None = None,
+    ) -> tuple[bytes, str]:
+        """下载对象内容及其存储时记录的 MIME 类型。
+
+        Args:
+            object_name: MinIO 对象名。
+            bucket_name: 可选桶名，默认使用业务桶。
+
+        Returns:
+            ``(文件字节, MIME 类型)``。
+        """
+        client = self._require_client()
+        bucket = bucket_name or self.bucket_name
+        stat = client.stat_object(bucket_name=bucket, object_name=object_name)
+        response = client.get_object(bucket_name=bucket, object_name=object_name)
+        try:
+            content = response.read()
+        finally:
+            response.close()
+            response.release_conn()
+        return content, stat.content_type or "application/octet-stream"
+
     def build_file_url(self, *, object_name: str, bucket_name: str | None = None) -> str:
         scheme = "https" if self.secure else "http"
         return f"{scheme}://{self.endpoint}/{bucket_name or self.bucket_name}/{object_name}"

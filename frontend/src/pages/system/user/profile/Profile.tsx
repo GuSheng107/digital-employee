@@ -6,6 +6,11 @@ import { UserOutlined, UploadOutlined } from '@ant-design/icons';
 import { useUserStore } from '@/store/user-store';
 import { updateProfile, uploadAvatar } from '@/api/user-api';
 import { getRequestErrorMessage } from '@/utils/request';
+import { resolveAvatarUrl } from '@/utils/avatar-url';
+import {
+  getVipDisplayFallback,
+  VIP_LEVEL,
+} from '@/constants/access-control';
 import styles from './index.module.css';
 
 const { Title } = Typography;
@@ -54,11 +59,13 @@ export default function Profile(): React.ReactElement {
     }
     setUploading(true);
     try {
-      const result = await uploadAvatar(file as File);
-      useUserStore.setState({
-        avatar: result.avatar_url,
-        userInfo: userInfo ? { ...userInfo, avatar_url: result.avatar_url } : userInfo,
-      });
+      const result = await uploadAvatar(file);
+      useUserStore.setState((state) => ({
+        avatar: resolveAvatarUrl(result.avatar_url) ?? state.avatar,
+        userInfo: state.userInfo
+          ? { ...state.userInfo, avatar_url: result.avatar_url }
+          : null,
+      }));
       message.success('头像更新成功');
     } catch (error) {
       message.error(getRequestErrorMessage(error, '头像上传失败'));
@@ -108,8 +115,9 @@ export default function Profile(): React.ReactElement {
 
   // VIP 展示文案：优先用后端返回的 vip_level_display，回退到本地映射
   const vipDisplay = userInfo.vip_level_display
-    || (userInfo.is_vip ? `VIP${userInfo.vip_level}` : '普通用户');
-  const isAdmin = userInfo.vip_level === 99;
+    || getVipDisplayFallback(userInfo.vip_level, userInfo.is_vip);
+  const isSuperAdmin = userInfo.vip_level === VIP_LEVEL.SUPER_ADMIN;
+  const isManager = userInfo.vip_level === VIP_LEVEL.MANAGER;
 
   return (
     <div className={styles.page}>
@@ -133,8 +141,10 @@ export default function Profile(): React.ReactElement {
             </Upload>
           </ImgCrop>
           <div className={styles.vipInfo}>
-            {isAdmin ? (
+            {isSuperAdmin ? (
               <Tag color="purple">{vipDisplay}</Tag>
+            ) : isManager ? (
+              <Tag color="blue">{vipDisplay}</Tag>
             ) : userInfo.is_vip ? (
               <Tag color="gold">{vipDisplay}</Tag>
             ) : (

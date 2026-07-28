@@ -11,10 +11,11 @@
 from __future__ import annotations
 
 from api_common import ApiResponse, success_response
+from auth_utils import PermissionCode
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, require_admin
+from app.api.deps import get_db_session, require_permission
 from app.schemas.menu import CreateMenuRequest, UpdateMenuRequest
 from app.services.menu_service import MenuService
 
@@ -24,7 +25,7 @@ router = APIRouter()
 @router.get(
     "",
     response_model=ApiResponse,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_permission(PermissionCode.MENU_MANAGE))],
 )
 def list_menus(session: Session = Depends(get_db_session)) -> dict:
     """列出所有菜单（扁平列表，按 parent_id、sort 升序）。"""
@@ -35,7 +36,7 @@ def list_menus(session: Session = Depends(get_db_session)) -> dict:
 @router.post(
     "",
     response_model=ApiResponse,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_permission(PermissionCode.MENU_MANAGE))],
 )
 def create_menu(
     payload: CreateMenuRequest,
@@ -60,7 +61,7 @@ def create_menu(
 @router.put(
     "/{menu_id}",
     response_model=ApiResponse,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_permission(PermissionCode.MENU_MANAGE))],
 )
 def update_menu(
     menu_id: int,
@@ -87,7 +88,7 @@ def update_menu(
 @router.delete(
     "/{menu_id}",
     response_model=ApiResponse,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_permission(PermissionCode.MENU_MANAGE))],
 )
 def delete_menu(
     menu_id: int,

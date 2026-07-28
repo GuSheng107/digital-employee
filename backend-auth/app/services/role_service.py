@@ -4,11 +4,18 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from api_common import DuplicateResourceError, PermissionDeniedError, ResourceNotFoundError
+from api_common import (
+    DuplicateResourceError,
+    PermissionDeniedError,
+    ResourceNotFoundError,
+    ValidationError,
+)
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.role_constants import PROTECTED_ROLE_CODES
 from app.models.menu import Menu
+from app.models.permission import Permission
 from app.models.role import Role
 
 
@@ -19,14 +26,28 @@ class RoleService:
         self._session = session
 
     def list_roles(self) -> list[dict]:
-        """列出所有角色（含关联的菜单 ID 列表）。"""
+        """列出可管理角色（含关联的菜单 ID 列表）。
+
+        ``super_admin`` 是系统最高权限身份，不属于可分配、可维护的业务角色，
+        因此不会出现在角色管理列表中。
+        """
         roles = self._session.scalars(
-            select(Role).where(Role.deleted_at.is_(None)).order_by(Role.id)
+            select(Role)
+            .where(
+                Role.deleted_at.is_(None),
+                Role.code.not_in(PROTECTED_ROLE_CODES),
+            )
+            .order_by(Role.id)
         ).all()
 
         items = []
         for role in roles:
+            # 防御性过滤：即使仓储测试桩或后续查询调整未应用 SQL 条件，
+            # 最高权限角色也不能进入管理端响应。
+            if role.code in PROTECTED_ROLE_CODES:
+                continue
             menu_ids = [m.id for m in role.menus if m.deleted_at is None]
+            permission_codes = sorted(permission.code for permission in role.permissions)
             items.append(
                 {
                     "id": role.id,
@@ -35,6 +56,7 @@ class RoleService:
                     "description": role.description,
                     "is_builtin": role.is_builtin,
                     "menu_ids": menu_ids,
+                    "permission_codes": permission_codes,
                 }
             )
         return items
@@ -58,6 +80,8 @@ class RoleService:
         Raises:
             DuplicateResourceError: 角色代码已存在。
         """
+        if code in PROTECTED_ROLE_CODES:
+            raise PermissionDeniedError(message="该角色代码由系统保留")
         existing = self._session.scalars(
             select(Role).where(Role.code == code, Role.deleted_at.is_(None))
         ).first()
@@ -74,12 +98,9 @@ class RoleService:
         self._session.flush()
 
         if menu_ids:
-            menus = list(
-                self._session.scalars(
-                    select(Menu).where(Menu.id.in_(menu_ids), Menu.deleted_at.is_(None))
-                ).all()
-            )
+            menus = self._load_menus(menu_ids)
             role.menus = menus
+            self._sync_role_permissions_from_menus(role, menus)
 
         self._session.commit()
 
@@ -90,6 +111,9 @@ class RoleService:
             "description": role.description,
             "is_builtin": role.is_builtin,
             "menu_ids": [m.id for m in role.menus if m.deleted_at is None],
+            "permission_codes": sorted(
+                permission.code for permission in role.permissions
+            ),
         }
 
     def update_role(
@@ -108,9 +132,7 @@ class RoleService:
             ResourceNotFoundError: 角色不存在。
             PermissionDeniedError: 尝试修改内置角色名称。
         """
-        role = self._session.get(Role, role_id)
-        if role is None or role.deleted_at is not None:
-            raise ResourceNotFoundError(message="角色不存在")
+        role = self._get_manageable_role(role_id)
 
         if name is not None:
             if role.is_builtin:
@@ -119,12 +141,9 @@ class RoleService:
         if description is not None:
             role.description = description
         if menu_ids is not None:
-            menus = list(
-                self._session.scalars(
-                    select(Menu).where(Menu.id.in_(menu_ids), Menu.deleted_at.is_(None))
-                ).all()
-            ) if menu_ids else []
+            menus = self._load_menus(menu_ids) if menu_ids else []
             role.menus = menus
+            self._sync_role_permissions_from_menus(role, menus)
 
         self._session.commit()
 
@@ -135,6 +154,9 @@ class RoleService:
             "description": role.description,
             "is_builtin": role.is_builtin,
             "menu_ids": [m.id for m in role.menus if m.deleted_at is None],
+            "permission_codes": sorted(
+                permission.code for permission in role.permissions
+            ),
         }
 
     def delete_role(self, *, role_id: int) -> dict:
@@ -146,9 +168,7 @@ class RoleService:
             ResourceNotFoundError: 角色不存在。
             PermissionDeniedError: 内置角色不可删除或角色仍关联用户。
         """
-        role = self._session.get(Role, role_id)
-        if role is None or role.deleted_at is not None:
-            raise ResourceNotFoundError(message="角色不存在")
+        role = self._get_manageable_role(role_id)
 
         if role.is_builtin:
             raise PermissionDeniedError(message="内置角色不可删除")
@@ -170,9 +190,7 @@ class RoleService:
 
     def get_role_menus(self, *, role_id: int) -> list[dict]:
         """获取角色关联的菜单列表。"""
-        role = self._session.get(Role, role_id)
-        if role is None or role.deleted_at is not None:
-            raise ResourceNotFoundError(message="角色不存在")
+        role = self._get_manageable_role(role_id)
 
         menus = [m for m in role.menus if m.deleted_at is None]
         return [
@@ -192,24 +210,83 @@ class RoleService:
 
     def assign_menus(self, *, role_id: int, menu_ids: list[int]) -> dict:
         """分配角色菜单（覆盖式）。"""
-        role = self._session.get(Role, role_id)
-        if role is None or role.deleted_at is not None:
-            raise ResourceNotFoundError(message="角色不存在")
+        role = self._get_manageable_role(role_id)
 
         # 查询目标菜单
         menus: list[Menu] = []
         if menu_ids:
-            menus = list(
-                self._session.scalars(
-                    select(Menu).where(Menu.id.in_(menu_ids), Menu.deleted_at.is_(None))
-                ).all()
-            )
+            menus = self._load_menus(menu_ids)
 
         # 覆盖式更新
         role.menus = menus
+        self._sync_role_permissions_from_menus(role, menus)
         self._session.commit()
 
         return {
             "role_id": role_id,
             "menu_ids": [m.id for m in role.menus],
+            "permission_codes": sorted(
+                permission.code for permission in role.permissions
+            ),
         }
+
+    def _load_menus(self, menu_ids: list[int]) -> list[Menu]:
+        """按 ID 加载未删除菜单，并拒绝不存在的菜单 ID。"""
+        menus = list(
+            self._session.scalars(
+                select(Menu).where(
+                    Menu.id.in_(menu_ids),
+                    Menu.deleted_at.is_(None),
+                )
+            ).all()
+        )
+        found_ids = {menu.id for menu in menus}
+        missing_ids = sorted(set(menu_ids) - found_ids)
+        if missing_ids:
+            missing_text = ", ".join(str(menu_id) for menu_id in missing_ids)
+            raise ValidationError(message=f"菜单不存在：{missing_text}")
+        return menus
+
+    def _sync_role_permissions_from_menus(
+        self,
+        role: Role,
+        menus: list[Menu],
+    ) -> None:
+        """用所选菜单的权限码同步角色权限。
+
+        菜单入口与接口权限共用一套权限码，避免出现“看得到页面但接口 403”
+        或“接口可调用但页面入口不可见”的双轨配置。
+        """
+        permission_codes = {
+            menu.permission
+            for menu in menus
+            if menu.permission
+        }
+        if not permission_codes:
+            role.permissions = []
+            return
+        permissions = list(
+            self._session.scalars(
+                select(Permission).where(Permission.code.in_(permission_codes))
+            ).all()
+        )
+        found_codes = {permission.code for permission in permissions}
+        missing_codes = sorted(permission_codes - found_codes)
+        if missing_codes:
+            raise ValidationError(
+                message=f"菜单引用了未定义权限码：{', '.join(missing_codes)}"
+            )
+        role.permissions = permissions
+
+    def _get_manageable_role(self, role_id: int) -> Role:
+        """读取可由通用角色管理接口维护的角色。
+
+        超级管理员角色属于平台安全边界；即使调用方知道数据库 ID，也不能
+        通过通用接口读取其菜单、修改或删除。
+        """
+        role = self._session.get(Role, role_id)
+        if role is None or role.deleted_at is not None:
+            raise ResourceNotFoundError(message="角色不存在")
+        if role.code in PROTECTED_ROLE_CODES:
+            raise PermissionDeniedError(message="超级管理员角色不允许维护")
+        return role

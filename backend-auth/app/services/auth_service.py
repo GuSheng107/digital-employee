@@ -29,7 +29,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.enums import get_vip_display
+from app.core.menu_constants import MenuType
 from app.core.redis_client import get_redis_client
+from app.core.role_constants import FULL_ACCESS_ROLE_CODES, ROLE_CODE_USER
 from app.core.security import generate_token, hash_password, verify_password
 from app.models.menu import Menu
 from app.models.role import Role
@@ -88,7 +90,10 @@ class AuthService:
 
         # 4. 分配 user 角色（普通用户）
         user_role = self._session.scalars(
-            select(Role).where(Role.code == "user", Role.deleted_at.is_(None))
+            select(Role).where(
+                Role.code == ROLE_CODE_USER,
+                Role.deleted_at.is_(None),
+            )
         ).first()
         if user_role is not None:
             user.roles.append(user_role)
@@ -113,7 +118,7 @@ class AuthService:
         return self._issue_token_pair(user.id)
 
     def login(self, username: str, password: str, client_ip: str | None = None) -> TokenPair:
-        """用户名密码登录，签发双 token。
+        """用户名密码登录，撤销旧会话后签发双 token。
 
         Args:
             username: 用户名。
@@ -134,6 +139,9 @@ class AuthService:
             raise UserDisabledError(message="用户已被禁用")
 
         self._update_login_state(user, client_ip)
+        # 单会话策略：同一账号后登录时立即撤销此前全部 access/refresh token。
+        # 旧端下一次访问受保护接口会收到 401 TOKEN_INVALID。
+        self._revoke_all_user_tokens(user.id)
         return self._issue_token_pair(user.id)
 
     def refresh(self, refresh_token: str) -> TokenPair:
@@ -210,26 +218,49 @@ class AuthService:
         if user.status != 1:
             raise UserDisabledError(message="用户已被禁用")
 
-        role_codes = [r.code for r in user.roles]
-        # 权限组语义：权限/菜单从用户独立集合读取（角色作为模板已复制到用户）
-        permission_codes = [p.code for p in user.permissions]
-        # super_admin（超管）和 manager（管理员）默认拥有所有可见菜单，
-        # 无需依赖 user_menus 快照——新增菜单后立即可见，便于维护。
-        # 其他用户仍走 user.menus 独立集合（由角色模板复制而来）。
-        admin_roles = {"super_admin", "manager"}
+        role_codes = [role.code for role in user.roles]
+        # 有效权限 = 角色权限并集 + 用户直接授权。角色调整可立即生效，
+        # 用户直接授权用于少量例外，不再依赖一次性复制后的权限快照。
+        permission_codes = sorted(
+            {
+                permission.code
+                for role in user.roles
+                for permission in role.permissions
+            }
+            | {permission.code for permission in user.permissions}
+        )
+
+        # 有效菜单 = 角色菜单并集 + 用户直接授权。最高权限角色可读取全部
+        # 可见菜单；其他角色还需通过菜单 permission 与有效权限的交叉校验。
         menu_set: dict[int, Menu] = {}
-        if admin_roles.intersection(role_codes):
+        if FULL_ACCESS_ROLE_CODES.intersection(role_codes):
             admin_menus = self._session.scalars(
                 select(Menu).where(
                     Menu.deleted_at.is_(None),
-                    Menu.menu_type != 3,
+                    Menu.menu_type != MenuType.ACTION,
                     Menu.visible.is_(True),
                 )
             ).all()
             menu_set = {m.id: m for m in admin_menus}
         else:
-            for menu in user.menus:
-                if menu.deleted_at is None and menu.menu_type != 3 and menu.visible:
+            effective_permissions = set(permission_codes)
+            candidate_menus = {
+                menu.id: menu
+                for role in user.roles
+                for menu in role.menus
+            }
+            candidate_menus.update({menu.id: menu for menu in user.menus})
+            for menu in candidate_menus.values():
+                has_permission = (
+                    menu.permission is None
+                    or menu.permission in effective_permissions
+                )
+                if (
+                    menu.deleted_at is None
+                    and menu.menu_type != MenuType.ACTION
+                    and menu.visible
+                    and has_permission
+                ):
                     menu_set[menu.id] = menu
         menu_nodes = [
             MenuNode(
@@ -367,6 +398,29 @@ class AuthService:
         self._redis.delete(key)
         if user_id is not None:
             self._redis.srem(self._user_tokens_key(user_id), token)
+
+    def _revoke_all_user_tokens(self, user_id: int) -> None:
+        """撤销用户的全部活跃 token，落实同账号单会话策略。
+
+        用户 token 集合同时保存 access 与 refresh token。为避免依赖 token
+        类型标记，对每个成员同时清理 access、refresh 与 pair key；不存在的
+        key 由 Redis ``DEL`` 安全忽略。最后删除集合本身，避免遗留脏成员。
+
+        Args:
+            user_id: 需要强制下线全部旧端的用户 ID。
+        """
+        user_tokens_key = self._user_tokens_key(user_id)
+        tokens = self._redis.smembers(user_tokens_key)
+        keys_to_delete = [user_tokens_key]
+        for token in tokens:
+            keys_to_delete.extend(
+                (
+                    self._access_key(token),
+                    self._refresh_key(token),
+                    self._pair_key(token),
+                )
+            )
+        self._redis.delete(*keys_to_delete)
 
     def _access_key(self, token: str) -> str:
         return f"{self._prefix}:access:{token}"

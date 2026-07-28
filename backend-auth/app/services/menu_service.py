@@ -8,11 +8,18 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from api_common import PermissionDeniedError, ResourceNotFoundError, ValidationError
+from api_common import (
+    DuplicateResourceError,
+    PermissionDeniedError,
+    ResourceNotFoundError,
+    ValidationError,
+)
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.menu_constants import MenuType
 from app.models.menu import Menu
+from app.models.permission import Permission
 
 
 class MenuService:
@@ -77,10 +84,13 @@ class MenuService:
         Raises:
             ValidationError: parent_id 指向不存在或已删除的菜单。
         """
-        if parent_id != 0:
-            parent = self._session.get(Menu, parent_id)
-            if parent is None or parent.deleted_at is not None:
-                raise ValidationError(message=f"父菜单不存在：{parent_id}")
+        self._validate_parent(parent_id)
+        self._validate_permission_code(permission)
+        self._ensure_unique_menu(
+            parent_id=parent_id,
+            title=title,
+            path=path,
+        )
 
         menu = Menu(
             parent_id=parent_id,
@@ -131,13 +141,12 @@ class MenuService:
             # 不允许把菜单挂到自己的子孙下（避免环）
             if parent_id != 0 and self._is_descendant(parent_id, menu_id):
                 raise ValidationError(message="不能将菜单挂载到其子菜单下")
-            if parent_id != 0:
-                parent = self._session.get(Menu, parent_id)
-                if parent is None or parent.deleted_at is not None:
-                    raise ValidationError(message=f"父菜单不存在：{parent_id}")
+            self._validate_parent(parent_id)
             menu.parent_id = parent_id
 
         if menu_type is not None:
+            if menu_type != MenuType.DIRECTORY and self._has_children(menu_id):
+                raise ValidationError(message="存在子菜单的目录不能改为菜单或按钮")
             menu.menu_type = menu_type
         if title is not None:
             menu.title = title
@@ -148,11 +157,20 @@ class MenuService:
         if icon is not None:
             menu.icon = icon
         if permission is not None:
-            menu.permission = permission
+            normalized_permission = permission or None
+            self._validate_permission_code(normalized_permission)
+            menu.permission = normalized_permission
         if sort is not None:
             menu.sort = sort
         if visible is not None:
             menu.visible = visible
+
+        self._ensure_unique_menu(
+            parent_id=menu.parent_id,
+            title=menu.title,
+            path=menu.path,
+            exclude_menu_id=menu.id,
+        )
 
         result = self._to_dict(menu)
         self._session.commit()
@@ -188,6 +206,70 @@ class MenuService:
         return {"menu_id": menu_id, "deleted": True}
 
     # ---------- 内部工具方法 ----------
+
+    def _validate_parent(self, parent_id: int) -> None:
+        """校验父节点存在且必须是目录。"""
+        if parent_id == 0:
+            return
+        parent = self._session.get(Menu, parent_id)
+        if parent is None or parent.deleted_at is not None:
+            raise ValidationError(message=f"父菜单不存在：{parent_id}")
+        if parent.menu_type != MenuType.DIRECTORY:
+            raise ValidationError(message="只有目录节点可以包含子菜单")
+
+    def _validate_permission_code(self, permission_code: str | None) -> None:
+        """拒绝菜单引用权限表中不存在的权限码。"""
+        if not permission_code:
+            return
+        permission_id = self._session.scalar(
+            select(Permission.id)
+            .where(Permission.code == permission_code)
+            .limit(1)
+        )
+        if permission_id is None:
+            raise ValidationError(message=f"权限码不存在：{permission_code}")
+
+    def _has_children(self, menu_id: int) -> bool:
+        """判断菜单是否存在未删除子节点。"""
+        child_id = self._session.scalar(
+            select(Menu.id)
+            .where(
+                Menu.parent_id == menu_id,
+                Menu.deleted_at.is_(None),
+            )
+            .limit(1)
+        )
+        return child_id is not None
+
+    def _ensure_unique_menu(
+        self,
+        *,
+        parent_id: int,
+        title: str,
+        path: str | None,
+        exclude_menu_id: int | None = None,
+    ) -> None:
+        """校验同级标题与非空路由路径唯一，防止真实重复菜单数据。"""
+        title_statement = select(Menu.id).where(
+            Menu.parent_id == parent_id,
+            Menu.title == title,
+            Menu.deleted_at.is_(None),
+        )
+        if exclude_menu_id is not None:
+            title_statement = title_statement.where(Menu.id != exclude_menu_id)
+        if self._session.scalar(title_statement.limit(1)) is not None:
+            raise DuplicateResourceError(message="同一父菜单下标题不能重复")
+
+        if not path:
+            return
+        path_statement = select(Menu.id).where(
+            Menu.path == path,
+            Menu.deleted_at.is_(None),
+        )
+        if exclude_menu_id is not None:
+            path_statement = path_statement.where(Menu.id != exclude_menu_id)
+        if self._session.scalar(path_statement.limit(1)) is not None:
+            raise DuplicateResourceError(message="菜单路由路径不能重复")
 
     def _is_descendant(self, candidate_id: int, ancestor_id: int) -> bool:
         """判断 candidate_id 是否为 ancestor_id 的子孙（避免环）。

@@ -1,4 +1,6 @@
 import { BaseRequest, getRequestErrorMessage } from './request';
+import { DATA_PLATFORM_API_BASE_URL } from '@/config/api-config';
+import type { InternalAxiosRequestConfig } from 'axios';
 
 /** 数据中台响应信封：{ success, message, data } */
 export interface DataPlatformApiResponse<T> {
@@ -39,11 +41,18 @@ function extractDataPlatformErrorCode(body: unknown): string | undefined {
  */
 class DataPlatformRequest extends BaseRequest {
   constructor() {
-    super(import.meta.env.VITE_DATA_PLATFORM_API_BASE_URL || '/data-platform-api');
+    super(DATA_PLATFORM_API_BASE_URL);
   }
 
   protected isSuccess(body: unknown): boolean {
     return isDataPlatformResponse(body) && body.success === true;
+  }
+
+  protected onRequest(config: InternalAxiosRequestConfig): void {
+    const accessToken = localStorage.getItem('access_token');
+    if (accessToken) {
+      config.headers.Authorization = `Bearer ${accessToken}`;
+    }
   }
 
   protected extractData(body: unknown): unknown {

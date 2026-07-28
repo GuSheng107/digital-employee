@@ -39,8 +39,9 @@ import {
   type UpdateRolePayload,
 } from '@/api/role-api';
 import type { MenuNode } from '@/api/auth-api';
+import { ROLE_CODE } from '@/constants/access-control';
 import { useUserStore } from '@/store/user-store';
-import { HttpError } from '@/utils/request';
+import { getRequestErrorMessage } from '@/utils/request';
 import styles from './index.module.css';
 
 const { Text } = Typography;
@@ -49,7 +50,7 @@ const DEFAULT_PAGE_SIZE = 20;
 
 /** 从请求错误中提取用户可读的提示文案 */
 function getErrorMessage(error: unknown): string {
-  return error instanceof HttpError ? error.message : '操作失败，请稍后重试';
+  return getRequestErrorMessage(error, '操作失败，请稍后重试');
 }
 
 /** 把后端菜单树（MenuNode[]）转换为 antd Tree 的 treeData 格式 */
@@ -66,6 +67,11 @@ function convertMenusToTreeData(menus: MenuNode[]): TreeDataNode[] {
   });
 }
 
+/** 超级管理员是平台保护角色，不进入通用角色维护列表。 */
+function getManageableRoles(roles: RoleItem[]): RoleItem[] {
+  return roles.filter((role) => role.code !== ROLE_CODE.SUPER_ADMIN);
+}
+
 interface RoleFormValues {
   code: string;
   name: string;
@@ -75,7 +81,7 @@ interface RoleFormValues {
 export default function UserPermission(): React.ReactElement {
   // ── 左栏：用户角色分配 ──
   const [users, setUsers] = useState<UserListItem[]>([]);
-  const [usersLoading, setUsersLoading] = useState<boolean>(false);
+  const [usersLoading, setUsersLoading] = useState<boolean>(true);
   const [usersTotal, setUsersTotal] = useState<number>(0);
   const [usersPage, setUsersPage] = useState<number>(1);
   const [usersPageSize, setUsersPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
@@ -90,7 +96,7 @@ export default function UserPermission(): React.ReactElement {
 
   // ── 右栏：角色管理 + 菜单分配 ──
   const [roles, setRoles] = useState<RoleItem[]>([]);
-  const [rolesLoading, setRolesLoading] = useState<boolean>(false);
+  const [rolesLoading, setRolesLoading] = useState<boolean>(true);
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
   const [checkedMenuIds, setCheckedMenuIds] = useState<number[]>([]);
   const [roleMenusSaving, setRoleMenusSaving] = useState<boolean>(false);
@@ -128,7 +134,18 @@ export default function UserPermission(): React.ReactElement {
     setRolesLoading(true);
     try {
       const response = await fetchRoles();
-      setRoles(response);
+      const manageableRoles = getManageableRoles(response);
+      setRoles(manageableRoles);
+      setSelectedRoleId((currentRoleId) => {
+        if (
+          currentRoleId !== null
+          && !manageableRoles.some((role) => role.id === currentRoleId)
+        ) {
+          setCheckedMenuIds([]);
+          return null;
+        }
+        return currentRoleId;
+      });
     } catch (error) {
       message.error(getErrorMessage(error));
     } finally {
@@ -151,8 +168,33 @@ export default function UserPermission(): React.ReactElement {
 
   // 初始数据加载：effect 仅在挂载时执行一次
   useEffect(() => {
-    void loadUsers(1, DEFAULT_PAGE_SIZE);
-    void loadRoles();
+    let active = true;
+    void Promise.all([
+      fetchUsers(1, DEFAULT_PAGE_SIZE),
+      fetchRoles(),
+    ])
+      .then(([userResponse, roleResponse]) => {
+        if (!active) return;
+        setUsers(userResponse.items);
+        setUsersTotal(userResponse.total);
+        setUsersPage(userResponse.page);
+        setUsersPageSize(userResponse.page_size);
+        setRoles(getManageableRoles(roleResponse));
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          message.error(getErrorMessage(error));
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setUsersLoading(false);
+          setRolesLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   function handleSelectUser(user: UserListItem): void {
@@ -389,7 +431,7 @@ export default function UserPermission(): React.ReactElement {
                     );
                   }}
                 >
-                  <Space direction="vertical">
+                  <Space orientation="vertical">
                     {roles.map((role) => (
                       <Checkbox key={role.code} value={role.code}>
                         {role.name}（{role.code}）
@@ -470,7 +512,7 @@ export default function UserPermission(): React.ReactElement {
             }}
             className={styles.roleList}
           >
-            <Space direction="vertical" style={{ width: '100%' }}>
+            <Space orientation="vertical" style={{ width: '100%' }}>
               {roles.map((role) => (
                 <div key={role.id} className={styles.roleRow}>
                   <Radio value={role.id}>

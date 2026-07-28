@@ -10,9 +10,10 @@
 from __future__ import annotations
 
 from api_common import ApiResponse, success_response
+from auth_utils import PermissionCode
 from fastapi import APIRouter, Depends
 
-from app.api.deps import require_admin
+from app.api.deps import require_permission
 from app.schemas.auth import UserInfo
 from app.schemas.invite_code import CreateInviteCodeRequest
 from app.services.invite_code_service import InviteCodeService
@@ -23,7 +24,9 @@ router = APIRouter()
 @router.post("", response_model=ApiResponse)
 def create_invite_code(
     payload: CreateInviteCodeRequest,
-    current_user: UserInfo = Depends(require_admin),
+    current_user: UserInfo = Depends(
+        require_permission(PermissionCode.INVITE_CODE_MANAGE)
+    ),
 ) -> dict:
     """创建邀请码，需要 invite_code:manage 权限。"""
     service = InviteCodeService()
@@ -38,7 +41,9 @@ def create_invite_code(
 @router.get(
     "",
     response_model=ApiResponse,
-    dependencies=[Depends(require_admin)],
+    dependencies=[
+        Depends(require_permission(PermissionCode.INVITE_CODE_MANAGE))
+    ],
 )
 def list_invite_codes() -> dict:
     """列出所有邀请码，需要 invite_code:manage 权限。"""

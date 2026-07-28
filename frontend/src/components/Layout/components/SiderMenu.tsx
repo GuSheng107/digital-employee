@@ -1,46 +1,15 @@
 import { Layout, Menu } from 'antd';
 import type { MenuProps } from 'antd';
-import {
-  AppstoreOutlined,
-  BuildOutlined,
-  DatabaseOutlined,
-  DashboardOutlined,
-  MenuOutlined,
-  SettingOutlined,
-  TableOutlined,
-  UserOutlined,
-  ProfileOutlined,
-  UserAddOutlined,
-  SafetyOutlined,
-  GiftOutlined,
-} from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useUserStore } from '@/store/user-store';
 import type { MenuNode } from '@/api/auth-api';
 import logo from '@/assets/images/avatar/logo.svg';
+import { getMenuIcon } from '@/constants/menu-icons';
 import styles from '../index.module.css';
 
 const { Sider } = Layout;
 
-const DATA_PLATFORM_KEY = 'data-platform';
-
 type MenuItem = NonNullable<MenuProps['items']>[number];
-
-/** 后端 icon 字符串到 antd 图标组件的映射 */
-const iconMap: Record<string, React.ReactNode> = {
-  AppstoreOutlined: <AppstoreOutlined />,
-  BuildOutlined: <BuildOutlined />,
-  DatabaseOutlined: <DatabaseOutlined />,
-  DashboardOutlined: <DashboardOutlined />,
-  MenuOutlined: <MenuOutlined />,
-  SettingOutlined: <SettingOutlined />,
-  TableOutlined: <TableOutlined />,
-  UserOutlined: <UserOutlined />,
-  ProfileOutlined: <ProfileOutlined />,
-  UserAddOutlined: <UserAddOutlined />,
-  SafetyOutlined: <SafetyOutlined />,
-  GiftOutlined: <GiftOutlined />,
-};
 
 /** 生成菜单 key：优先 path，回退到 menu-${id} */
 function menuKey(menu: MenuNode): string {
@@ -52,7 +21,7 @@ function convertMenusToItems(menus: MenuNode[]): MenuItem[] {
   return menus
     .filter((m) => m.visible)
     .map((menu) => {
-      const icon = menu.icon ? iconMap[menu.icon] : null;
+      const icon = getMenuIcon(menu.icon, null);
       const key = menuKey(menu);
       if (menu.children && menu.children.length > 0) {
         return {
@@ -85,20 +54,6 @@ function collectParentKeys(menus: MenuNode[]): Set<string> {
   return keys;
 }
 
-/** 默认菜单（fallback：后端未返回菜单数据时使用，兼容旧数据） */
-const defaultMenuItems: MenuItem[] = [
-  {
-    key: DATA_PLATFORM_KEY,
-    icon: <DatabaseOutlined />,
-    label: '数据中台',
-    children: [
-      { key: '/data-platform/dashboard', icon: <DashboardOutlined />, label: 'Dashboard' },
-      { key: '/data-platform/data-items', icon: <TableOutlined />, label: 'Data Items' },
-      { key: '/data-platform/system-config', icon: <SettingOutlined />, label: 'System Config' },
-    ],
-  } as MenuItem,
-];
-
 /** 递归收集所有含 children 的菜单 key（含多层），用于默认全展开 */
 function collectAllParentKeys(menus: MenuNode[]): string[] {
   const keys: string[] = [];
@@ -119,17 +74,12 @@ export default function SiderMenu(): React.ReactElement {
   const location = useLocation();
   const menus = useUserStore((s) => s.menus);
 
-  // 后端未返回菜单数据时使用默认菜单，保证数据库菜单未插入时也能正常使用
-  const useDynamic = menus.length > 0;
-  const items: MenuItem[] = useDynamic ? convertMenusToItems(menus) : defaultMenuItems;
-  const parentKeys = useDynamic
-    ? collectParentKeys(menus)
-    : new Set<string>([DATA_PLATFORM_KEY]);
+  // 空菜单代表未授权，不使用本地兜底菜单绕过服务端授权结果。
+  const items: MenuItem[] = convertMenusToItems(menus);
+  const parentKeys = collectParentKeys(menus);
 
   // 默认全展开：递归收集所有层级含 children 的菜单 key
-  const defaultOpenKeys = useDynamic
-    ? collectAllParentKeys(menus)
-    : [DATA_PLATFORM_KEY];
+  const defaultOpenKeys = collectAllParentKeys(menus);
 
   const selectedKeys = [location.pathname];
 

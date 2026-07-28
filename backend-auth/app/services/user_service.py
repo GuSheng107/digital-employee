@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from api_common import DuplicateResourceError, ResourceNotFoundError
+from api_common import (
+    DuplicateResourceError,
+    PermissionDeniedError,
+    ResourceNotFoundError,
+)
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.enums import get_vip_display
+from app.core.role_constants import ADMIN_ROLE_CODES, PROTECTED_ROLE_CODES
 from app.core.security import hash_password
 from app.models.menu import Menu
 from app.models.permission import Permission
@@ -28,7 +33,7 @@ class UserService:
         # 过滤条件：未软删 且 不拥有 super_admin/manager 角色（管理员不可见）
         base_filter = (
             User.deleted_at.is_(None),
-            ~User.roles.any(Role.code.in_(["super_admin", "manager"])),
+            ~User.roles.any(Role.code.in_(ADMIN_ROLE_CODES)),
         )
 
         # 查询总数
@@ -89,6 +94,10 @@ class UserService:
         role_codes: list[str] | None = None,
     ) -> dict:
         """管理员创建用户（不需要邀请码）。"""
+        requested_role_codes = set(role_codes or [])
+        if PROTECTED_ROLE_CODES.intersection(requested_role_codes):
+            raise PermissionDeniedError(message="不能通过用户管理接口分配超级管理员角色")
+
         # 校验用户名唯一
         existing = self._session.scalars(
             select(User).where(
@@ -142,6 +151,9 @@ class UserService:
           仍保留在用户独立集合中（避免误删用户后续手动添加的权限）
         - 简化处理：分配角色时只新增不删除（用户手动增删走单独接口）
         """
+        if PROTECTED_ROLE_CODES.intersection(role_codes):
+            raise PermissionDeniedError(message="不能通过用户管理接口分配超级管理员角色")
+
         user = self._session.get(User, user_id)
         if user is None or user.deleted_at is not None:
             raise ResourceNotFoundError(message="用户不存在")

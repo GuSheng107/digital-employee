@@ -18,6 +18,7 @@ dependencies = [
     "passlib[bcrypt]==1.7.4",
     "nacos-client==0.1.0",
     "api-common==0.1.0",
+    "auth-utils==0.1.0",
     "data-client==0.1.0",
 ]
 
@@ -30,6 +31,7 @@ dev = [
 [tool.uv.sources]
 nacos-client = { path = "../backend-share/nacos-client" }
 api-common = { path = "../backend-share/api-common" }
+auth-utils = { path = "../backend-share/auth-utils" }
 data-client = { path = "../backend-share/data-client" }
 
 [build-system]
