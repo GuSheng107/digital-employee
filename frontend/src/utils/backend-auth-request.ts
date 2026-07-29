@@ -23,6 +23,7 @@ function isAuthResponse(body: unknown): body is AuthApiResponse<unknown> {
 const SESSION_NEUTRAL_AUTH_PATHS = Object.freeze([
   '/auth/login',
   '/auth/register',
+  '/auth/captcha',
   '/auth/refresh',
 ]);
 

@@ -1,0 +1,126 @@
+.contentStack {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.searchPanel,
+.tablePanel {
+  padding: 16px;
+  background: rgb(255 255 255 / 94%);
+  border: 1px solid #e8ecf3;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 5%);
+}
+
+.searchPanel {
+  flex: none;
+}
+
+.tablePanel {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tableViewport {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.tableViewport :global(.ant-table-wrapper) {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.tableViewport :global(.ant-spin-nested-loading) {
+  min-height: 0;
+  flex: 1;
+}
+
+.tableViewport :global(.ant-pagination) {
+  flex: none;
+  margin-block: 12px 0;
+}
+
+.searchPanel :global(.log-query-filter-grid) {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 0 16px;
+}
+
+.searchPanel :global(.ant-form-item) {
+  margin-bottom: 12px;
+}
+
+.tablePanel :global(.ant-table-thead > tr > th) {
+  text-align: center;
+}
+
+.traceLayout {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.9fr) minmax(460px, 1.1fr);
+  gap: 18px;
+  min-height: 560px;
+}
+
+.traceTree,
+.traceDetail {
+  padding: 16px;
+  overflow: auto;
+  background: #f8fafc;
+  border: 1px solid #e5eaf2;
+  border-radius: 14px;
+}
+
+:global(.trace-tree-title) {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  max-width: 100%;
+}
+
+:global(.trace-tree-title > span:nth-child(2)) {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.trace-tree-title small) {
+  color: #64748b;
+}
+
+:global(.trace-payload pre) {
+  max-height: 460px;
+  margin-top: 12px;
+  padding: 16px;
+  overflow: auto;
+  color: #dbeafe;
+  font: 13px/1.65 "JetBrains Mono", "Cascadia Code", monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #0f172a;
+  border-radius: 10px;
+}
+
+@media (max-width: 1100px) {
+  .searchPanel :global(.log-query-filter-grid) {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  .traceLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .searchPanel :global(.log-query-filter-grid) {
+    grid-template-columns: 1fr;
+  }
+}

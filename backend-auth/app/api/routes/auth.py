@@ -16,7 +16,9 @@ from api_common import ApiResponse, TokenInvalidError, success_response
 from fastapi import APIRouter, Depends, Request
 
 from app.api.deps import _extract_bearer, get_auth_service, get_current_user
+from app.core.client_ip import resolve_client_ip
 from app.schemas.auth import (
+    CaptchaChallenge,
     LoginRequest,
     LogoutRequest,
     RefreshRequest,
@@ -27,6 +29,18 @@ from app.schemas.auth import (
 from app.services.auth_service import AuthService
 
 router = APIRouter()
+
+
+@router.get("/captcha", response_model=ApiResponse)
+def captcha(
+    request: Request,
+    service: AuthService = Depends(get_auth_service),
+) -> dict:
+    """生成登录与注册共用的短时算术图片验证码。"""
+    challenge: CaptchaChallenge = service.create_captcha(
+        resolve_client_ip(request)
+    )
+    return success_response(challenge.model_dump())
 
 
 @router.post("/register", response_model=ApiResponse)
@@ -42,7 +56,9 @@ def register(
         email=str(payload.email),
         phone=payload.phone,
         invite_code=payload.invite_code,
-        client_ip=request.client.host if request.client else None,
+        captcha_id=payload.captcha_id,
+        captcha_answer=payload.captcha_answer,
+        client_ip=resolve_client_ip(request),
     )
     return success_response(token_pair.model_dump())
 
@@ -54,10 +70,12 @@ def login(
     service: AuthService = Depends(get_auth_service),
 ) -> dict:
     """用户名密码登录，签发双 token。"""
-    client_ip = request.client.host if request.client else None
+    client_ip = resolve_client_ip(request)
     token_pair: TokenPair = service.login(
         username=payload.username,
         password=payload.password,
+        captcha_id=payload.captcha_id,
+        captcha_answer=payload.captcha_answer,
         client_ip=client_ip,
     )
     return success_response(token_pair.model_dump())

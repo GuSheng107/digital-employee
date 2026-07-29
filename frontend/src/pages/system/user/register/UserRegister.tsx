@@ -11,7 +11,6 @@ import {
   Switch,
   Table,
   Tag,
-  Typography,
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -44,11 +43,12 @@ import {
   PASSWORD_COMPLEXITY_PATTERN,
   normalizePhoneNumber,
 } from '@/utils/identity-validation';
+import SystemPage from '@/components/system-page/SystemPage';
+import {
+  createTablePagination,
+  DEFAULT_TABLE_PAGE_SIZE,
+} from '@/utils/table-pagination';
 import styles from './index.module.css';
-
-const { Title } = Typography;
-
-const DEFAULT_PAGE_SIZE = 20;
 
 interface CreateUserFormValues {
   username: string;
@@ -88,7 +88,7 @@ export default function UserRegister(): React.ReactElement {
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [page, setPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_TABLE_PAGE_SIZE);
 
   const [roles, setRoles] = useState<RoleItem[]>([]);
   const [rolesLoading, setRolesLoading] = useState<boolean>(false);
@@ -168,7 +168,7 @@ export default function UserRegister(): React.ReactElement {
   // 不会在 effect 同步阶段触发级联渲染，符合 react-hooks 规范例外。
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadUsers(1, DEFAULT_PAGE_SIZE);
+    void loadUsers(1, DEFAULT_TABLE_PAGE_SIZE);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -456,7 +456,9 @@ export default function UserRegister(): React.ReactElement {
     {
       title: '操作',
       key: 'action',
+      fixed: 'right',
       width: 330,
+      align: 'center',
       render: (_, record) => (
         <Space size={4}>
           <Button type="link" size="small" onClick={() => openAssignModal(record)}>
@@ -515,32 +517,32 @@ export default function UserRegister(): React.ReactElement {
   ];
 
   return (
-    <div className={styles.container}>
-      <div className={styles.toolbar}>
-        <Title level={3} style={{ margin: 0 }}>
-          用户管理
-        </Title>
+    <SystemPage
+      title="用户管理"
+      actions={(
         <Button type="primary" onClick={openCreateModal}>
           新建用户
         </Button>
-      </div>
+      )}
+    >
+      <div className={styles.container}>
 
-      <div className={styles.tableWrapper}>
-        <Table<UserListItem>
-          rowKey="id"
-          columns={columns}
-          dataSource={users}
-          loading={loading}
-          scroll={{ x: 1700 }}
-          pagination={{
-            current: page,
-            pageSize,
-            total,
-            showSizeChanger: true,
-            showTotal: (totalCount) => `共 ${totalCount} 条`,
-            onChange: handleTableChange,
-          }}
-        />
+        <div className={styles.tableWrapper}>
+          <Table<UserListItem>
+            rowKey="id"
+            columns={columns}
+            dataSource={users}
+            loading={loading}
+            sticky
+            scroll={{ x: 1780, y: 'calc(100vh - 250px)' }}
+            pagination={createTablePagination({
+              current: page,
+              pageSize,
+              total,
+              onChange: handleTableChange,
+            })}
+          />
+        </div>
       </div>
 
       <Modal
@@ -827,6 +829,6 @@ export default function UserRegister(): React.ReactElement {
           ) : null}
         </Form>
       </Modal>
-    </div>
+    </SystemPage>
   );
 }

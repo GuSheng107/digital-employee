@@ -13,15 +13,20 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from observability import TraceMiddleware, TraceService
 from psycopg2 import errorcodes
 from sqlalchemy.exc import ProgrammingError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.deps import close_auth_client
 from app.api.router import api_router
+from app.core.business_observability import configure_business_observability
 from app.core.config import settings
+from app.core.observability import persist_trace_batch
 from app.schemas.health import ServiceInfo
 from app.services.message_broker_service import get_message_broker_service
+
+configure_business_observability()
 
 
 @asynccontextmanager
@@ -49,14 +54,25 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
+app.add_middleware(
+    TraceMiddleware,
+    service=TraceService.BACKEND_DATA,
+    sink=persist_trace_batch,
+)
 
 
 @app.exception_handler(ApiException)
 async def api_exception_handler(request: Request, exc: ApiException) -> JSONResponse:
     """把业务异常转换为带错误码的统一响应信封。"""
+    headers = None
+    if exc.http_status == 429 and isinstance(exc.detail, dict):
+        retry_after = exc.detail.get("retry_after_seconds")
+        if isinstance(retry_after, int) and retry_after > 0:
+            headers = {"Retry-After": str(retry_after)}
     return JSONResponse(
         status_code=exc.http_status,
         content=exc.to_response(),
+        headers=headers,
     )
 
 

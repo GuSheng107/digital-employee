@@ -1,17 +1,18 @@
 import { Suspense } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
-import { Spin } from 'antd';
 import Layout from './components/Layout';
 import AppInitializer from './components/app-initializer/AppInitializer';
 import RequireAuth from './components/require-auth/RequireAuth';
 import RequirePermission from './components/require-permission/RequirePermission';
 import Login from './pages/login/Login';
+import { PageLoading } from './components/page-loading/PageLoading';
 import { PERMISSION_CODE } from './constants/access-control';
 import {
   DataPlatformDashboard,
   DataPlatformDataItems,
   DataPlatformSystemConfig,
   InviteCode,
+  LogQuery,
   MenuManagement,
   Register,
   UserPermission,
@@ -20,11 +21,7 @@ import {
 } from './router/lazy-pages';
 
 // 懒加载页面统一 fallback
-const LazyFallback = (
-  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
-    <Spin size="large" />
-  </div>
-);
+const LazyFallback = <PageLoading />;
 
 function withSuspense(element: React.ReactElement): React.ReactElement {
   return <Suspense fallback={LazyFallback}>{element}</Suspense>;
@@ -115,6 +112,13 @@ export const router = createBrowserRouter([
         element: withPermission(
           <MenuManagement />,
           [PERMISSION_CODE.MENU_MANAGE],
+        ),
+      },
+      {
+        path: 'system/log-query',
+        element: withPermission(
+          <LogQuery />,
+          [PERMISSION_CODE.OBSERVABILITY_LOG_VIEW],
         ),
       },
     ],

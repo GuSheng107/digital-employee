@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import secrets
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,16 @@ SERVICE_PORTS = (8010, 8020, 8864, 5173)
 HEALTH_ATTEMPTS = 40
 HEALTH_INTERVAL_SECONDS = 0.5
 HEALTH_TIMEOUT_SECONDS = 2.0
+SERVICE_API_KEY_ENV_NAME = "API_KEY"
+SERVICE_API_KEY_BYTES = 48
+PRODUCTION_ENVIRONMENT = {
+    "APP_ENV": "production",
+    "NACOS_NAMESPACE": "prod",
+}
+FRONTEND_PRODUCTION_ENVIRONMENT = {
+    "NODE_ENV": "production",
+    "VITE_APP_ENV": "production",
+}
 
 
 @dataclass(frozen=True)
@@ -80,6 +91,72 @@ def _ensure_env_file(project_directory: Path) -> Path:
     return env_path
 
 
+def _ensure_file_from_template(target: Path, template: Path) -> None:
+    """首次运行时从无敏感信息的模板创建本地配置。"""
+    if target.exists():
+        return
+    if not template.exists():
+        raise RuntimeError(f"缺少配置模板：{template}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(template, target)
+    LOGGER.info("已从模板创建本地配置：%s", target)
+
+
+def _persist_env_value(path: Path, key: str, value: str) -> None:
+    """原子更新 dotenv 中的单个值，保留其他本地配置。"""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    replacement = f"{key}={value}"
+    updated_lines: list[str] = []
+    replaced = False
+    for line in lines:
+        stripped = line.strip()
+        if (
+            not replaced
+            and not stripped.startswith("#")
+            and "=" in line
+            and line.split("=", 1)[0].strip() == key
+        ):
+            updated_lines.append(replacement)
+            replaced = True
+        else:
+            updated_lines.append(line)
+    if not replaced:
+        updated_lines.append(replacement)
+
+    temporary_path = path.with_name(
+        f".{path.name}.{secrets.token_hex(6)}.tmp"
+    )
+    try:
+        temporary_path.write_text(
+            "\n".join(updated_lines) + "\n",
+            encoding="utf-8",
+        )
+        if sys.platform != "win32":
+            temporary_path.chmod(0o600)
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def _ensure_service_api_key(env_path: Path) -> str:
+    """读取或生成持久化的服务间 API Key。"""
+    service_api_key = _read_env_file(env_path).get(
+        SERVICE_API_KEY_ENV_NAME,
+        "",
+    ).strip()
+    if service_api_key:
+        return service_api_key
+
+    service_api_key = secrets.token_urlsafe(SERVICE_API_KEY_BYTES)
+    _persist_env_value(
+        env_path,
+        SERVICE_API_KEY_ENV_NAME,
+        service_api_key,
+    )
+    LOGGER.info("已为 backend-data 生成并持久化服务间 API Key")
+    return service_api_key
+
+
 def _resolve_command(name: str, *, windows_name: str | None = None) -> str:
     """解析必需的可执行文件路径。"""
     candidate = windows_name if sys.platform == "win32" and windows_name else name
@@ -102,6 +179,18 @@ def _build_environment(
     return environment
 
 
+def _sync_python_project(uv: str, project_directory: Path) -> None:
+    """严格按锁文件安装项目及可编辑的本地 share 依赖。"""
+    LOGGER.info("正在同步 Python 依赖：%s", project_directory.name)
+    result = subprocess.run(
+        (uv, "sync", "--locked"),
+        cwd=project_directory,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Python 依赖同步失败：{project_directory}")
+
+
 def _build_service_specs() -> list[ServiceSpec]:
     """构造按依赖顺序排列的服务定义。"""
     uv = _resolve_command("uv")
@@ -114,18 +203,39 @@ def _build_service_specs() -> list[ServiceSpec]:
     auth_env_file = _ensure_env_file(auth_dir)
     gateway_env_file = _ensure_env_file(gateway_dir)
     frontend_env_file = _ensure_env_file(frontend_dir)
+    _ensure_file_from_template(
+        gateway_dir / "config" / "bot.json",
+        gateway_dir / "config" / "bot.template.json",
+    )
+    for project_directory in (data_dir, auth_dir, gateway_dir):
+        _sync_python_project(uv, project_directory)
     if not (frontend_dir / "node_modules").exists():
-        LOGGER.info("Frontend 依赖不存在，正在执行 npm install...")
+        install_command = (
+            (npm, "ci")
+            if (frontend_dir / "package-lock.json").exists()
+            else (npm, "install")
+        )
+        LOGGER.info("Frontend 依赖不存在，正在安装锁定依赖...")
         install_result = subprocess.run(
-            (npm, "install"),
+            install_command,
             cwd=frontend_dir,
             check=False,
         )
         if install_result.returncode != 0:
             raise RuntimeError("Frontend 依赖安装失败")
-    service_api_key = _read_env_file(data_env_file).get("API_KEY", "").strip()
-    if not service_api_key:
-        raise RuntimeError("backend-data/.env 中的 API_KEY 未配置，无法安全启动服务")
+    LOGGER.info("正在构建 Frontend production 产物...")
+    build_result = subprocess.run(
+        (npm, "run", "build"),
+        cwd=frontend_dir,
+        env=_build_environment(
+            frontend_env_file,
+            overrides=FRONTEND_PRODUCTION_ENVIRONMENT,
+        ),
+        check=False,
+    )
+    if build_result.returncode != 0:
+        raise RuntimeError("Frontend production 构建失败")
+    service_api_key = _ensure_service_api_key(data_env_file)
     data_client_overrides = {"BACKEND_DATA_API_KEY": service_api_key}
 
     return [
@@ -134,7 +244,10 @@ def _build_service_specs() -> list[ServiceSpec]:
             working_directory=data_dir,
             command=(uv, "run", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8010"),
             health_url="http://127.0.0.1:8010/api/v1/health",
-            environment=_build_environment(data_env_file),
+            environment=_build_environment(
+                data_env_file,
+                overrides=PRODUCTION_ENVIRONMENT,
+            ),
         ),
         ServiceSpec(
             name="Backend Auth",
@@ -143,7 +256,10 @@ def _build_service_specs() -> list[ServiceSpec]:
             health_url="http://127.0.0.1:8020/api/v1/health",
             environment=_build_environment(
                 auth_env_file,
-                overrides=data_client_overrides,
+                overrides={
+                    **PRODUCTION_ENVIRONMENT,
+                    **data_client_overrides,
+                },
             ),
         ),
         ServiceSpec(
@@ -153,15 +269,30 @@ def _build_service_specs() -> list[ServiceSpec]:
             health_url="http://127.0.0.1:8864/api/v1/health",
             environment=_build_environment(
                 gateway_env_file,
-                overrides=data_client_overrides,
+                overrides={
+                    **PRODUCTION_ENVIRONMENT,
+                    **data_client_overrides,
+                },
             ),
         ),
         ServiceSpec(
             name="Frontend",
             working_directory=frontend_dir,
-            command=(npm, "run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"),
+            command=(
+                npm,
+                "run",
+                "preview",
+                "--",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "5173",
+            ),
             health_url="http://127.0.0.1:5173",
-            environment=_build_environment(frontend_env_file),
+            environment=_build_environment(
+                frontend_env_file,
+                overrides=FRONTEND_PRODUCTION_ENVIRONMENT,
+            ),
         ),
     ]
 

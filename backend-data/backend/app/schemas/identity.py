@@ -70,6 +70,25 @@ class ConsumeIdentityRateLimitRequest(BaseModel):
     window_seconds: int = Field(..., ge=1, le=86400)
 
 
+class ResetIdentityRateLimitRequest(BaseModel):
+    """清除登录成功后的账号维度限流桶。"""
+
+    bucket: str = Field(..., pattern=r"^[a-z0-9_-]+$", max_length=32)
+    identifier_hash: str = Field(..., pattern=r"^[a-f0-9]{64}$")
+
+
+class VerifyIdentityCaptchaRequest(BaseModel):
+    """消费并校验一次性算术验证码。"""
+
+    captcha_id: str = Field(
+        ...,
+        min_length=20,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
+    captcha_answer: str = Field(..., min_length=1, max_length=3, pattern=r"^\d+$")
+
+
 class CreateIdentityUserRequest(BaseModel):
     """管理员创建用户的数据写入请求。"""
 

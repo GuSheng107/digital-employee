@@ -7,6 +7,7 @@ import {
   logout as logoutApi,
   register as registerApi,
   type MenuNode,
+  type LoginPayload,
   type RegisterRequest,
   type UserInfo,
 } from '@/api/auth-api';
@@ -27,7 +28,7 @@ interface AuthState {
   menus: MenuNode[];
 
   /** 用户名密码登录，成功后存储双 token 并拉取用户信息 */
-  login: (username: string, password: string) => Promise<void>;
+  login: (payload: LoginPayload) => Promise<void>;
   /** 用户注册，成功后存储双 token 并拉取用户信息（自动登录） */
   register: (payload: RegisterRequest) => Promise<void>;
   /** 登出，撤销 token 并清除登录态 */
@@ -70,10 +71,10 @@ export const useUserStore = create<AuthState>((set) => ({
   restoring: true,
   menus: [],
 
-  login: async (username: string, password: string) => {
+  login: async (payload: LoginPayload) => {
     set({ loading: true });
     try {
-      const tokenPair = await login({ username, password });
+      const tokenPair = await login(payload);
       persistAccessToken(tokenPair.access_token);
       persistRefreshToken(tokenPair.refresh_token);
 

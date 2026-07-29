@@ -2,6 +2,7 @@ import axios from 'axios';
 import { message } from 'antd';
 import { BACKEND_AUTH_API_BASE_URL } from '@/config/api-config';
 import { useUserStore } from '@/store/user-store';
+import { createTraceHeaders } from './trace-context';
 
 interface AuthApiEnvelope<T> {
   success: boolean;
@@ -31,7 +32,7 @@ async function requestTokenRefresh(refreshToken: string): Promise<boolean> {
     const response = await axios.post<AuthApiEnvelope<unknown>>(
       `${BACKEND_AUTH_API_BASE_URL}/auth/refresh`,
       { refresh_token: refreshToken },
-      { timeout: 10000 },
+      { timeout: 10000, headers: createTraceHeaders() },
     );
     if (
       response.data.success !== true

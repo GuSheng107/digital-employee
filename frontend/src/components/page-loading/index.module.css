@@ -1,0 +1,139 @@
+.page,
+.fullScreen {
+  display: grid;
+  place-content: center;
+  place-items: center;
+  gap: 14px;
+}
+
+.page {
+  min-height: 48vh;
+  color: #64748b;
+  background: transparent;
+}
+
+.fullScreen {
+  min-height: 100vh;
+  color: #cbd5e1;
+  background:
+    radial-gradient(circle at 50% 46%, rgba(45, 212, 191, 0.12), transparent 28%),
+    #070b12;
+}
+
+.loader {
+  position: relative;
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+}
+
+.loader img {
+  width: 26px;
+  height: 26px;
+  filter: hue-rotate(105deg) saturate(0.85);
+}
+
+.ring {
+  position: absolute;
+  border: 1px solid transparent;
+  border-radius: 50%;
+}
+
+.ringOuter {
+  inset: 0;
+  border-top-color: #2dd4bf;
+  border-right-color: rgba(45, 212, 191, 0.22);
+  animation: spin 1.15s linear infinite;
+}
+
+.ringInner {
+  inset: 8px;
+  border-bottom-color: #3b82f6;
+  border-left-color: rgba(59, 130, 246, 0.2);
+  animation: spinReverse 0.85s linear infinite;
+}
+
+.label {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+}
+
+.label::after {
+  content: '...';
+  animation: dots 1.4s steps(4, end) infinite;
+}
+
+.routeIndicator {
+  position: absolute;
+  z-index: 120;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 3px;
+  overflow: hidden;
+  pointer-events: none;
+  animation: indicatorExit 0.62s ease forwards;
+}
+
+.routeIndicator span {
+  display: block;
+  width: 38%;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2563eb, #2dd4bf, #84cc16);
+  box-shadow: 0 0 14px rgba(37, 99, 235, 0.42);
+  animation: indicatorMove 0.62s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spinReverse {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes dots {
+  0% {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  100% {
+    clip-path: inset(0);
+  }
+}
+
+@keyframes indicatorMove {
+  from {
+    transform: translateX(-110%);
+  }
+
+  to {
+    transform: translateX(265%);
+  }
+}
+
+@keyframes indicatorExit {
+  0%,
+  78% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ring,
+  .routeIndicator,
+  .routeIndicator span,
+  .label::after {
+    animation: none;
+  }
+}

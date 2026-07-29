@@ -18,6 +18,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
 from nacos_client import NacosClient
+from observability import TraceMiddleware, TraceService
+from observability import (
+    TraceContext,
+    bind_trace_context,
+    parse_uuid,
+    reset_trace_context,
+)
 
 from src.core.schemas import (
     BotConfig,
@@ -28,6 +35,7 @@ from src.core.schemas import (
 from src.manager import BotManager
 from src.utils.auth import close_auth_client, require_permission
 from src.utils.data_access import message_bus_client
+from src.utils.observability import export_trace_batch
 
 
 def _load_service_configuration() -> None:
@@ -63,12 +71,22 @@ async def _outbound_relay_loop() -> None:
             if not isinstance(raw_receipt, str) or not isinstance(payload, str):
                 raise ValueError("backend-data 返回了无效消息租约")
             receipt_id = raw_receipt
-
-            delivered = await hub.consume_outbound_payload(payload)
-            if delivered:
-                await message_bus_client.acknowledge(receipt_id)
-            else:
-                await message_bus_client.reject(receipt_id)
+            trace_id = parse_uuid(claimed.get("trace_id"))
+            parent_span_id = parse_uuid(claimed.get("parent_span_id"))
+            trace_token = None
+            if trace_id is not None and parent_span_id is not None:
+                trace_token = bind_trace_context(
+                    TraceContext(trace_id=trace_id, span_id=parent_span_id)
+                )
+            try:
+                delivered = await hub.consume_outbound_payload(payload)
+                if delivered:
+                    await message_bus_client.acknowledge(receipt_id)
+                else:
+                    await message_bus_client.reject(receipt_id)
+            finally:
+                if trace_token is not None:
+                    reset_trace_context(trace_token)
             finalized = True
         except asyncio.CancelledError:
             raise
@@ -124,6 +142,11 @@ app: FastAPI = FastAPI(
     description="智能机器人系统消息侧网关（基础设施经 backend-data 访问）",
     version="3.0.0",
     lifespan=lifespan,
+    docs_url=None if os.getenv("APP_ENV") == "production" else "/docs",
+    redoc_url=None if os.getenv("APP_ENV") == "production" else "/redoc",
+    openapi_url=(
+        None if os.getenv("APP_ENV") == "production" else "/openapi.json"
+    ),
 )
 
 
@@ -155,6 +178,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
+)
+app.add_middleware(
+    TraceMiddleware,
+    service=TraceService.BACKEND_GATEWAY,
+    sink=export_trace_batch,
 )
 
 

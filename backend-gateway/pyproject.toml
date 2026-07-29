@@ -16,13 +16,15 @@ dependencies = [
     "uvicorn[standard]==0.51.0",
     "wecom-aibot-sdk==1.0.8",
     "nacos-client==0.1.0",
+    "observability==0.1.0",
 ]
 
 [tool.uv.sources]
-nacos-client = { path = "../backend-share/nacos-client" }
-api-common = { path = "../backend-share/api-common" }
-auth-utils = { path = "../backend-share/auth-utils" }
-data-client = { path = "../backend-share/data-client" }
+nacos-client = { path = "../backend-share/nacos-client", editable = true }
+api-common = { path = "../backend-share/api-common", editable = true }
+auth-utils = { path = "../backend-share/auth-utils", editable = true }
+data-client = { path = "../backend-share/data-client", editable = true }
+observability = { path = "../backend-share/observability", editable = true }
 
 [dependency-groups]
 dev = [

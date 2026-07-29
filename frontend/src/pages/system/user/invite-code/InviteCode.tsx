@@ -1,13 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Button,
-  Card,
   Form,
   Input,
   InputNumber,
   Modal,
   Space,
-  Statistic,
   Table,
   Tag,
   Typography,
@@ -26,9 +24,14 @@ import {
   INVITE_CODE_MESSAGE,
   INVITE_CODE_PATTERN,
 } from '@/utils/identity-validation';
+import SystemPage from '@/components/system-page/SystemPage';
+import {
+  createTablePagination,
+  DEFAULT_TABLE_PAGE_SIZE,
+} from '@/utils/table-pagination';
 import styles from './index.module.css';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 interface CreateInviteCodeFormValues {
   customCode?: string;
@@ -52,7 +55,7 @@ function getErrorMessage(error: unknown): string {
 export default function InviteCode(): React.ReactElement {
   const [loading, setLoading] = useState<boolean>(false);
   const [page, setPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(10);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_TABLE_PAGE_SIZE);
   const [total, setTotal] = useState<number>(0);
   const [inviteCodes, setInviteCodes] = useState<InviteCodeItem[]>([]);
 
@@ -62,16 +65,10 @@ export default function InviteCode(): React.ReactElement {
 
   const [createdResult, setCreatedResult] = useState<CreateInviteCodeResult | null>(null);
 
-  const stats = useMemo(() => {
-    const total = inviteCodes.length;
-    const valid = inviteCodes.filter((item) => item.is_valid).length;
-    return { total, valid, invalid: total - valid };
-  }, [inviteCodes]);
-
-  async function loadInviteCodes(
-    pageNumber: number = page,
-    currentPageSize: number = pageSize,
-  ): Promise<void> {
+  const fetchPage = useCallback(async (
+    pageNumber: number,
+    currentPageSize: number,
+  ): Promise<void> => {
     setLoading(true);
     try {
       const response = await fetchInviteCodes(pageNumber, currentPageSize);
@@ -84,14 +81,22 @@ export default function InviteCode(): React.ReactElement {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  async function loadInviteCodes(
+    pageNumber: number = page,
+    currentPageSize: number = pageSize,
+  ): Promise<void> {
+    await fetchPage(pageNumber, currentPageSize);
   }
 
-  // 初始数据加载：effect 仅在挂载时执行一次，loadInviteCodes 内部 setState 为异步流程，
-  // 不会在 effect 同步阶段触发级联渲染，符合 react-hooks 规范例外。
+  // 把初始请求调度到下一轮任务，避免 effect 同步阶段触发状态级联更新。
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadInviteCodes(1, 10);
-  }, []);
+    const timerId = window.setTimeout(() => {
+      void fetchPage(1, DEFAULT_TABLE_PAGE_SIZE);
+    }, 0);
+    return () => window.clearTimeout(timerId);
+  }, [fetchPage]);
 
   function openCreateModal(): void {
     createForm.resetFields();
@@ -169,7 +174,9 @@ export default function InviteCode(): React.ReactElement {
     {
       title: '操作',
       key: 'action',
+      fixed: 'right',
       width: 100,
+      align: 'center',
       render: (_, record) => (
         <Button
           type="link"
@@ -184,56 +191,37 @@ export default function InviteCode(): React.ReactElement {
   ];
 
   return (
-    <div className={styles.container}>
-      <div className={styles.toolbar}>
-        <Title level={3} style={{ margin: 0 }}>
-          邀请码管理
-        </Title>
+    <SystemPage
+      title="邀请码管理"
+      actions={(
         <Space>
           <Button onClick={() => void loadInviteCodes()}>刷新</Button>
           <Button type="primary" onClick={openCreateModal}>
             新建邀请码
           </Button>
         </Space>
-      </div>
+      )}
+    >
+      <div className={styles.container}>
 
-      <div className={styles.statsCards}>
-        <Card className={styles.statCard}>
-          <Statistic title="总邀请码数" value={stats.total} />
-        </Card>
-        <Card className={styles.statCard}>
-          <Statistic
-            title="有效邀请码"
-            value={stats.valid}
-            styles={{ content: { color: '#52c41a' } }}
+        <div className={styles.tableWrapper}>
+          <Table<InviteCodeItem>
+            rowKey="code"
+            columns={columns}
+            dataSource={inviteCodes}
+            loading={loading}
+            sticky
+            scroll={{ x: 1060, y: 'calc(100vh - 250px)' }}
+            pagination={createTablePagination({
+              current: page,
+              pageSize,
+              total,
+              onChange: (nextPage, nextPageSize) => {
+                void loadInviteCodes(nextPage, nextPageSize);
+              },
+            })}
           />
-        </Card>
-        <Card className={styles.statCard}>
-          <Statistic
-            title="已用完/过期"
-            value={stats.invalid}
-            styles={{ content: { color: '#cf1322' } }}
-          />
-        </Card>
-      </div>
-
-      <div className={styles.tableWrapper}>
-        <Table<InviteCodeItem>
-          rowKey="code"
-          columns={columns}
-          dataSource={inviteCodes}
-          loading={loading}
-          pagination={{
-            current: page,
-            pageSize,
-            total,
-            showSizeChanger: true,
-            showTotal: (total) => `共 ${total} 条`,
-            onChange: (nextPage, nextPageSize) => {
-              void loadInviteCodes(nextPage, nextPageSize);
-            },
-          }}
-        />
+        </div>
       </div>
 
       <Modal
@@ -319,6 +307,6 @@ export default function InviteCode(): React.ReactElement {
           </div>
         ) : null}
       </Modal>
-    </div>
+    </SystemPage>
   );
 }

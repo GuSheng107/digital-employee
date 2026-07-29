@@ -19,6 +19,7 @@ dependencies = [
     "nacos-client==0.1.0",
     "api-common==0.1.0",
     "auth-utils==0.1.0",
+    "observability==0.1.0",
     "python-multipart>=0.0.32",
 ]
 
@@ -29,9 +30,10 @@ dev = [
 ]
 
 [tool.uv.sources]
-nacos-client = { path = "../../backend-share/nacos-client" }
-api-common = { path = "../../backend-share/api-common" }
-auth-utils = { path = "../../backend-share/auth-utils" }
+nacos-client = { path = "../../backend-share/nacos-client", editable = true }
+api-common = { path = "../../backend-share/api-common", editable = true }
+auth-utils = { path = "../../backend-share/auth-utils", editable = true }
+observability = { path = "../../backend-share/observability", editable = true }
 
 [build-system]
 requires = ["hatchling"]

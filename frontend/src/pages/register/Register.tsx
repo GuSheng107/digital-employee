@@ -19,6 +19,10 @@ import {
 } from '@/utils/identity-validation';
 import logo from '@/assets/images/avatar/logo.svg';
 import styles from './index.module.css';
+import { useRateLimitCountdown } from '@/hooks/use-rate-limit-countdown';
+import { getRateLimitRetryAfter } from '@/utils/request';
+import ArithmeticCaptchaInput from '@/components/arithmetic-captcha/ArithmeticCaptchaInput';
+import { useArithmeticCaptcha } from '@/hooks/use-arithmetic-captcha';
 
 interface RegisterFormValues {
   username: string;
@@ -27,17 +31,31 @@ interface RegisterFormValues {
   email: string;
   phone: string;
   invite_code: string;
+  captcha_answer: string;
 }
 
 export default function Register(): React.ReactElement {
   const navigate = useNavigate();
+  const [form] = Form.useForm<RegisterFormValues>();
   const register = useUserStore((state) => state.register);
   const loading = useUserStore((state) => state.loading);
+  const { remainingSeconds, startCountdown } = useRateLimitCountdown();
+  const {
+    challenge,
+    loading: captchaLoading,
+    error: captchaError,
+    refreshCaptcha,
+  } = useArithmeticCaptcha();
 
   const handleSubmit = async (values: RegisterFormValues): Promise<void> => {
     const normalizedPhone = normalizePhoneNumber(values.phone);
     if (!normalizedPhone) {
       message.error(`请输入有效的 ${PHONE_DIAL_PREFIX} 手机号码`);
+      return;
+    }
+    if (!challenge) {
+      message.error(captchaError ?? '请先获取验证码');
+      await refreshCaptcha();
       return;
     }
     try {
@@ -47,13 +65,19 @@ export default function Register(): React.ReactElement {
         email: values.email.trim().toLowerCase(),
         phone: normalizedPhone,
         invite_code: values.invite_code.trim().toUpperCase(),
+        captcha_id: challenge.captcha_id,
+        captcha_answer: values.captcha_answer,
       });
       message.success('注册成功');
       // 注册成功后自动登录，跳转首页
       navigate('/', { replace: true });
     } catch (error) {
+      const retryAfter = getRateLimitRetryAfter(error);
+      if (retryAfter) startCountdown(retryAfter);
       // 用 message 全局提示替代 Alert，在深色背景上更醒目
       message.error(getRegisterErrorMessage(error));
+      form.setFieldValue('captcha_answer', undefined);
+      await refreshCaptcha();
     }
   };
 
@@ -97,6 +121,7 @@ export default function Register(): React.ReactElement {
           <p className={styles.formSubtitle}>填写信息完成注册</p>
 
           <Form
+            form={form}
             name="register"
             layout="vertical"
             onFinish={handleSubmit}
@@ -240,15 +265,40 @@ export default function Register(): React.ReactElement {
               />
             </Form.Item>
 
+            <Form.Item
+              name="captcha_answer"
+              label={<span className={styles.formLabel}>图片验证码</span>}
+              rules={[
+                { required: true, message: '请输入计算结果' },
+                { pattern: /^\d{1,3}$/, message: '请输入正确的数字结果' },
+              ]}
+              className={styles.formField}
+            >
+              <ArithmeticCaptchaInput
+                challenge={challenge}
+                loading={captchaLoading}
+                error={captchaError}
+                onRefresh={() => {
+                  form.setFieldValue('captcha_answer', undefined);
+                  void refreshCaptcha();
+                }}
+              />
+            </Form.Item>
+
             <Form.Item className={styles.formField}>
               <Button
                 type="primary"
                 htmlType="submit"
                 loading={loading}
+                disabled={remainingSeconds > 0}
                 className={styles.submitButton}
                 size="large"
               >
-                {loading ? '注册中...' : '注 册'}
+                {loading
+                  ? '注册中...'
+                  : remainingSeconds > 0
+                    ? `${remainingSeconds} 秒后重试`
+                    : '注 册'}
               </Button>
             </Form.Item>
           </Form>

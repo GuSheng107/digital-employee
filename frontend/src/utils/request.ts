@@ -4,6 +4,7 @@ import axios, {
   type AxiosResponse,
   type InternalAxiosRequestConfig,
 } from 'axios';
+import { createTraceHeaders, TRACE_ID_HEADER } from './trace-context';
 
 /** HTTP 错误：保留 status/data/config/code 等结构化字段，便于调用方按状态码分支处理 */
 export class HttpError extends Error {
@@ -118,6 +119,12 @@ export abstract class BaseRequest {
     // 请求拦截：调用 hook
     this.instance.interceptors.request.use(
       (config: InternalAxiosRequestConfig) => {
+        if (!config.headers.has(TRACE_ID_HEADER)) {
+          const traceHeaders = createTraceHeaders();
+          Object.entries(traceHeaders).forEach(([key, value]) => {
+            config.headers.set(key, value);
+          });
+        }
         this.onRequest(config);
         return config;
       },
@@ -267,6 +274,23 @@ export function getRequestErrorMessage(error: unknown, fallback = '请求失败'
   return error instanceof Error ? error.message : fallback;
 }
 
+/** 从统一 429 响应的 data.detail 中读取服务端限流剩余秒数。 */
+export function getRateLimitRetryAfter(error: unknown): number | undefined {
+  if (!(error instanceof HttpError) || error.status !== 429) {
+    return undefined;
+  }
+  const detail = readNestedDetail(error.data);
+  if (
+    detail != null
+    && typeof detail === 'object'
+    && 'retry_after_seconds' in detail
+    && typeof detail.retry_after_seconds === 'number'
+  ) {
+    return Math.max(1, Math.ceil(detail.retry_after_seconds));
+  }
+  return undefined;
+}
+
 /** 兼容直接错误详情与统一响应信封两种 data 结构。 */
 function readNestedErrorCode(value: unknown): string | undefined {
   if (value == null || typeof value !== 'object') {
@@ -277,6 +301,19 @@ function readNestedErrorCode(value: unknown): string | undefined {
   }
   if ('data' in value) {
     return readNestedErrorCode(value.data);
+  }
+  return undefined;
+}
+
+function readNestedDetail(value: unknown): unknown {
+  if (value == null || typeof value !== 'object') {
+    return undefined;
+  }
+  if ('detail' in value) {
+    return value.detail;
+  }
+  if ('data' in value) {
+    return readNestedDetail(value.data);
   }
   return undefined;
 }

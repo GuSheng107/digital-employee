@@ -23,3 +23,4 @@ export const InviteCode = lazy(() => import('@/pages/system/user/invite-code/Inv
 
 // 系统设置-系统-菜单管理
 export const MenuManagement = lazy(() => import('@/pages/system/menu/MenuManagement'));
+export const LogQuery = lazy(() => import('@/pages/system/log-query/LogQuery'));

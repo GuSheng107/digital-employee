@@ -8,6 +8,7 @@ from app.api.routes import (
     health,
     identity,
     infrastructure,
+    observability,
     storage,
     system_config,
 )
@@ -62,6 +63,11 @@ api_router.include_router(
     prefix="/identity",
     tags=["identity-internal"],
     dependencies=[Depends(verify_api_key)],
+)
+api_router.include_router(
+    observability.router,
+    prefix="/observability",
+    tags=["observability"],
 )
 api_router.include_router(
     infrastructure.router,

@@ -7,6 +7,12 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from observability import (
+    TraceEventType,
+    TraceLevel,
+    propagation_headers,
+    record_trace_event,
+)
 
 from auth_utils.domain import ROLE_CODE_SUPER_ADMIN
 
@@ -67,7 +73,10 @@ class AuthClient:
         try:
             response = self._client.get(
                 f"{self._base_url}{AUTH_CONTEXT_PATH}",
-                headers={"Authorization": f"Bearer {access_token}"},
+                headers={
+                    **propagation_headers(),
+                    "Authorization": f"Bearer {access_token}",
+                },
             )
         except httpx.HTTPError as exc:
             raise AuthServiceUnavailableError("backend-auth unavailable") from exc
@@ -111,11 +120,70 @@ class AuthClient:
         required_permissions: tuple[str, ...],
     ) -> AuthenticatedUser:
         """校验用户持有任一目标权限；超级管理员拥有全权限旁路。"""
-        user = self.get_current_user(access_token)
+        try:
+            user = self.get_current_user(access_token)
+        except (AuthenticationError, AuthorizationError) as exc:
+            record_trace_event(
+                TraceEventType.AUTHORIZATION,
+                "AuthClient.require_any_permission",
+                level=TraceLevel.WARNING,
+                attributes={
+                    "authorized": False,
+                    "reason": type(exc).__name__,
+                    "required_permissions": required_permissions,
+                },
+            )
+            raise
         if user.must_change_password:
+            self._record_authorization(
+                user=user,
+                required_permissions=required_permissions,
+                authorized=False,
+                reason="password_change_required",
+            )
             raise AuthorizationError("password change required")
         if ROLE_CODE_SUPER_ADMIN in user.roles:
+            self._record_authorization(
+                user=user,
+                required_permissions=required_permissions,
+                authorized=True,
+                reason="super_admin",
+            )
             return user
         if not any(permission in user.permissions for permission in required_permissions):
+            self._record_authorization(
+                user=user,
+                required_permissions=required_permissions,
+                authorized=False,
+                reason="permission_denied",
+            )
             raise AuthorizationError("permission denied")
+        self._record_authorization(
+            user=user,
+            required_permissions=required_permissions,
+            authorized=True,
+            reason="permission_granted",
+        )
         return user
+
+    @staticmethod
+    def _record_authorization(
+        *,
+        user: AuthenticatedUser,
+        required_permissions: tuple[str, ...],
+        authorized: bool,
+        reason: str,
+    ) -> None:
+        """记录不含凭证的接口授权判定结果。"""
+        record_trace_event(
+            TraceEventType.AUTHORIZATION,
+            "AuthClient.require_any_permission",
+            level=TraceLevel.INFO if authorized else TraceLevel.WARNING,
+            attributes={
+                "authorized": authorized,
+                "reason": reason,
+                "required_permissions": required_permissions,
+                "roles": user.roles,
+                "username": user.username,
+            },
+        )

@@ -7,11 +7,14 @@ from __future__ import annotations
 
 import os
 import threading
+import gzip
+import json
 from datetime import datetime
 from typing import Any
 
 import httpx
 from api_common import ApiException, ServiceUnavailableError
+from observability import propagation_headers
 
 DEFAULT_BACKEND_DATA_BASE_URL = "http://127.0.0.1:8010"
 DEFAULT_TIMEOUT_SECONDS = 30.0
@@ -708,6 +711,62 @@ class DataClient:
             json={"receipt_id": receipt_id},
         )
 
+    def reset_identity_rate_limit(
+        self,
+        *,
+        bucket: str,
+        identifier_hash: str,
+    ) -> None:
+        """通过 backend-data 清除成功登录后的账号限流桶。"""
+        self._request(
+            "POST",
+            "/api/v1/identity/auth/rate-limit/reset",
+            json={
+                "bucket": bucket,
+                "identifier_hash": identifier_hash,
+            },
+        )
+
+    def create_identity_captcha(self) -> dict[str, Any]:
+        """要求 backend-data 生成并保存一次性算术验证码。"""
+        return self._request_dict(
+            "POST",
+            "/api/v1/identity/auth/captcha",
+        )
+
+    def verify_identity_captcha(
+        self,
+        *,
+        captcha_id: str,
+        captcha_answer: str,
+    ) -> None:
+        """要求 backend-data 一次性消费并校验算术验证码。"""
+        self._request(
+            "POST",
+            "/api/v1/identity/auth/captcha/verify",
+            json={
+                "captcha_id": captcha_id,
+                "captcha_answer": captcha_answer,
+            },
+        )
+
+    async def submit_trace_batch(self, payload: dict[str, Any]) -> None:
+        """使用 gzip 向 backend-data 上报可能包含长正文的日志批次。"""
+        serialized = json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        await self._async_request(
+            "POST",
+            "/api/v1/observability/events/batch",
+            content=gzip.compress(serialized),
+            headers={
+                "Content-Type": "application/json",
+                "Content-Encoding": "gzip",
+            },
+        )
+
     async def aclose(self) -> None:
         """关闭复用的异步 HTTP 连接池。"""
         if self._async_client is not None:
@@ -794,7 +853,8 @@ class DataClient:
         self,
         extra_headers: dict[str, str] | None = None,
     ) -> dict[str, str]:
-        headers = dict(extra_headers or {})
+        headers = propagation_headers()
+        headers.update(extra_headers or {})
         if self._api_key:
             headers["X-API-Key"] = self._api_key
         return headers

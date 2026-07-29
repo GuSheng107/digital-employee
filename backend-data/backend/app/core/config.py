@@ -109,6 +109,8 @@ class Settings(BaseSettings):
     access_token_ttl_seconds: int = 1800
     refresh_token_ttl_seconds: int = 604800
     password_change_redis_prefix: str = "auth:password-change-required"
+    captcha_redis_prefix: str = "auth:captcha"
+    captcha_ttl_seconds: int = 120
     invite_code_redis_prefix: str = "invite_code"
     invite_code_default_ttl_seconds: int = 604800
     message_relay_redis_prefix: str = "message-relay"
