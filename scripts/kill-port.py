@@ -70,6 +70,8 @@ def _find_pids_windows(port: int) -> set[str]:
         parts = line.split()
         if len(parts) < 5:
             continue
+        if parts[0].upper() == "TCP" and parts[3].upper() != "LISTENING":
+            continue
         local_addr = parts[1]
         if not local_addr.endswith(suffix):
             continue
@@ -81,7 +83,7 @@ def _find_pids_windows(port: int) -> set[str]:
 
 def _find_pids_unix(port: int) -> set[str]:
     """Unix 下通过 lsof 获取占用端口的 PID 集合。"""
-    stdout, _ = _run(["lsof", "-i", f":{port}", "-t"])
+    stdout, _ = _run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"])
     pids: set[str] = set()
     for line in stdout.splitlines():
         line = line.strip()
