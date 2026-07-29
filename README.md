@@ -84,8 +84,9 @@ digital-employee/
 scripts\start-all.bat
 
 # 或单独启动某个服务
-scripts\backend-gateway\start.bat
 scripts\data-platform\start.bat
+scripts\backend-auth\start.bat
+scripts\backend-gateway\start.bat
 scripts\frontend\start-web.bat
 ```
 
@@ -96,15 +97,18 @@ scripts\frontend\start-web.bat
 ./scripts/start-all.sh
 
 # 或单独启动某个服务
-./scripts/backend-gateway/start.sh
 ./scripts/data-platform/start.sh
+./scripts/backend-auth/start.sh
+./scripts/backend-gateway/start.sh
 ./scripts/frontend/start-web.sh
 ```
 
 启动脚本会自动：
 1. 复制 `.env.example` → `.env`（首次启动）
-2. 安装前端依赖（首次启动）
-3. 启动服务并打印健康检查地址
+2. 清理 `8010`、`8020`、`8864`、`5173` 上的旧项目进程
+3. 按 `backend-data` → `backend-auth` → `backend-gateway` → `frontend` 顺序启动
+4. 注入统一的服务间 API Key，并验证基础设施依赖与消息中间件拓扑
+5. 任一服务或依赖未就绪时结束本次启动并清理已启动进程
 
 > **注意**：启动脚本需要 `uv` 在 PATH 中。Windows 安装 uv：`pip install uv`；其他平台见 [uv 官方文档](https://docs.astral.sh/uv/)。
 
@@ -124,8 +128,14 @@ uv sync
 Copy-Item .env.example .env
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8010
 
+# backend-auth
+cd ..\..\backend-auth
+uv sync
+Copy-Item .env.example .env
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
+
 # frontend
-cd frontend
+cd ..\frontend
 npm ci
 npm run dev
 ```
