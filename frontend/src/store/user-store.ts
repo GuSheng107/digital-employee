@@ -6,7 +6,6 @@ import {
   login,
   logout as logoutApi,
   register as registerApi,
-  refreshToken,
   type MenuNode,
   type RegisterRequest,
   type UserInfo,
@@ -153,29 +152,7 @@ export const useUserStore = create<AuthState>((set) => ({
         menus: info.menus ?? [],
         restoring: false,
       });
-    } catch (error) {
-      // access_token 已失效，尝试用 refresh_token 恢复
-      if (error instanceof HttpError && error.status === 401) {
-        const storedRefreshToken = localStorage.getItem('refresh_token');
-        if (storedRefreshToken) {
-          try {
-            const newTokenPair = await refreshToken(storedRefreshToken);
-            persistAccessToken(newTokenPair.access_token);
-            persistRefreshToken(newTokenPair.refresh_token);
-            const info = await getCurrentUser();
-            set({
-              isAuthenticated: true,
-              userInfo: info,
-              avatar: getUserAvatar(info),
-              menus: info.menus ?? [],
-              restoring: false,
-            });
-            return;
-          } catch {
-            // refresh 也失败，清除登录态
-          }
-        }
-      }
+    } catch {
       clearStoredTokens();
       set({ restoring: false, isAuthenticated: false, userInfo: null, avatar: me, menus: [] });
     }

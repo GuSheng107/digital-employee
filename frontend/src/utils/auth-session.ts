@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { message } from 'antd';
 import { BACKEND_AUTH_API_BASE_URL } from '@/config/api-config';
 import { useUserStore } from '@/store/user-store';
 
@@ -68,10 +69,16 @@ export async function refreshAuthenticatedSession(): Promise<boolean> {
 }
 
 /** 清理本地会话并带原访问地址跳转登录页。 */
-export function invalidateSessionAndRedirect(): void {
+export function invalidateSessionAndRedirect(errorCode?: string): void {
+  const hadStoredSession =
+    localStorage.getItem('access_token') != null
+    || localStorage.getItem('refresh_token') != null;
   useUserStore.getState().clearAuth();
   const currentPath = window.location.pathname + window.location.search;
   if (window.location.pathname !== '/login') {
+    if (hadStoredSession && errorCode === 'SESSION_REPLACED') {
+      void message.warning('您的账号已在其他设备登录，请重新登录');
+    }
     window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`;
   }
 }

@@ -30,8 +30,8 @@ from app.services.auth_service import AuthService
 def verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
     """校验请求头 ``X-API-Key`` 是否与服务端配置一致。
 
-    当 ``API_KEY`` 未配置时跳过校验，便于本地开发；
-    生产环境应通过环境变量显式配置 ``API_KEY``。
+    当 ``API_KEY`` 未配置时按 fail-closed 返回服务不可用；
+    所有环境都应通过环境变量显式配置 ``API_KEY``。
 
     使用 ``secrets.compare_digest`` 进行常量时间比较，避免时序攻击。
 
@@ -39,7 +39,8 @@ def verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
         x_api_key: 请求头 ``X-API-Key`` 的值，缺失或为空表示未携带。
 
     Raises:
-        PermissionDeniedError: 当 ``API_KEY`` 已配置但请求头缺失或不匹配时。
+        ServiceUnavailableError: 当 ``API_KEY`` 未配置时。
+        TokenInvalidError: 当请求头缺失或不匹配时。
     """
     verify_service_api_key(provided=x_api_key, expected=settings.api_key)
 

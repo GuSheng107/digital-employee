@@ -7,7 +7,7 @@ from threading import Lock
 from typing import Any
 
 from redis import Redis
-from redis.exceptions import ResponseError
+from redis.exceptions import ResponseError, WatchError
 
 from app.core.config import settings
 
@@ -75,6 +75,27 @@ class RedisClientWrapper:
         """设置 key 的过期时间。"""
         return bool(self._require_client().expire(key, ttl_seconds))
 
+    def increment_with_ttl(self, key: str, *, ttl_seconds: int) -> int:
+        """在固定时间窗内原子递增计数并确保 TTL 存在。"""
+        client = self._require_client()
+        while True:
+            with client.pipeline() as pipeline:
+                try:
+                    pipeline.watch(key)
+                    current_value = pipeline.get(key)
+                    next_value = int(current_value) + 1 if current_value else 1
+                    remaining_ttl = int(pipeline.ttl(key)) if current_value else -1
+                    pipeline.multi()
+                    pipeline.set(
+                        key,
+                        next_value,
+                        ex=remaining_ttl if remaining_ttl > 0 else ttl_seconds,
+                    )
+                    pipeline.execute()
+                    return next_value
+                except WatchError:
+                    continue
+
     def scan_keys(self, pattern: str) -> list[str]:
         """使用 SCAN 增量读取匹配 key，避免 KEYS 阻塞 Redis。"""
         client = self._require_client()
@@ -101,6 +122,7 @@ class RedisClientWrapper:
         access_key_prefix: str,
         refresh_key_prefix: str,
         pair_key_prefix: str,
+        replaced_access_key_prefix: str,
         user_id: int,
         access_token: str,
         refresh_token: str,
@@ -143,6 +165,11 @@ class RedisClientWrapper:
             )
 
             if old_pair:
+                client.set(
+                    f"{replaced_access_key_prefix}{old_pair['access_token']}",
+                    "1",
+                    ex=access_ttl_seconds,
+                )
                 obsolete_keys = (
                     f"{access_key_prefix}{old_pair['access_token']}",
                     f"{refresh_key_prefix}{old_pair['refresh_token']}",
@@ -269,6 +296,10 @@ class RedisClientWrapper:
             self._require_client(),
             user_tokens_key,
         )
+
+    def exists(self, key: str) -> bool:
+        """判断指定 key 是否存在。"""
+        return bool(self._require_client().exists(key))
 
     def set_json(
         self,
@@ -626,9 +657,20 @@ class RedisClientWrapper:
         lock_key: str,
         lock_token: str,
     ) -> None:
-        """仅释放仍属于当前调用方的短租约锁。"""
-        if client.get(lock_key) == lock_token:
-            client.delete(lock_key)
+        """使用 WATCH/MULTI 原子释放仍属于当前调用方的短租约锁。"""
+        while True:
+            with client.pipeline() as pipeline:
+                try:
+                    pipeline.watch(lock_key)
+                    if pipeline.get(lock_key) != lock_token:
+                        pipeline.unwatch()
+                        return
+                    pipeline.multi()
+                    pipeline.delete(lock_key)
+                    pipeline.execute()
+                    return
+                except WatchError:
+                    continue
 
     @staticmethod
     def _relay_lock_key(relay_key: str) -> str:

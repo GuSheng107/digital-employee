@@ -9,7 +9,6 @@ import time
 from typing import Any
 
 import lark_oapi as lark
-from loguru import logger
 
 from lark_oapi.event.callback.model.p2_card_action_trigger import (
     P2CardActionTrigger,
@@ -69,7 +68,6 @@ class FeishuBot(BaseBot):
             loop: FastAPI/Uvicorn 运行中的主异步事件循环实例。
         """
         self.adapter.main_loop = loop
-        logger.info("[BotID: {}] 主事件循环已成功注入至适配器。", self.bot_id)
 
     def _run(self) -> None:
         """运行 Bot 连接维持（阻塞式，在独立子线程中工作）。"""
@@ -83,10 +81,6 @@ class FeishuBot(BaseBot):
                 import lark_oapi.ws.client
 
                 lark_oapi.ws.client.loop = self._loop
-
-                logger.info(
-                    "[BotID: {}] 正在建立飞书 WebSocket 通道连接...", self.bot_id
-                )
                 self.ws_client = lark.ws.Client(
                     self.app_id,
                     self.app_secret,
@@ -112,15 +106,9 @@ class FeishuBot(BaseBot):
                 self.ws_client.start()
                 # 正常连接退出（一般不退出，除非 self._is_running 设为 False 且断开连接）
                 break
-            except Exception as exc:
+            except Exception:
                 if not self._is_running:
                     break
-                logger.error(
-                    "[BotID: {}] 飞书 WebSocket 信道发生异常: {}, {} 秒后重试...",
-                    self.bot_id,
-                    exc,
-                    backoff,
-                )
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 60.0)
 
@@ -135,14 +123,11 @@ class FeishuBot(BaseBot):
                 )
                 try:
                     future.result(timeout=3.0)
-                except Exception as exc:
-                    logger.debug(
-                        "[BotID: {}] 释放网络连接时发生异常: {}", self.bot_id, exc
-                    )
+                except Exception:
+                    pass
 
         if self._loop is not None and self._loop.is_running():
             self._loop.call_soon_threadsafe(self._loop.stop)
-            logger.info("[BotID: {}] 事件循环已收到安全停止信号。", self.bot_id)
 
     def _handle_message(self, data: lark.im.v1.P2ImMessageReceiveV1) -> None:
         """接收长连接推送的消息事件，直接交由适配器翻译出站。
@@ -187,7 +172,6 @@ class FeishuBot(BaseBot):
             HEADER_MESSAGE_ID,
             HEADER_SEQ,
             HEADER_SUM,
-            HEADER_TRACE_ID,
             HEADER_TYPE,
         )
         from lark_oapi.ws.enum import MessageType as _MT
@@ -198,7 +182,6 @@ class FeishuBot(BaseBot):
 
             hs = frame.headers
             msg_id = _get_by_key_safe(hs, HEADER_MESSAGE_ID)
-            trace_id = _get_by_key_safe(hs, HEADER_TRACE_ID)
             sum_ = _get_by_key_safe(hs, HEADER_SUM)
             seq = _get_by_key_safe(hs, HEADER_SEQ)
             type_ = _get_by_key_safe(hs, HEADER_TYPE)
@@ -210,12 +193,6 @@ class FeishuBot(BaseBot):
                     return
 
             message_type = _MT(type_)
-            logger.debug(
-                "[WS-Patch] 收到帧: type={}, msg_id={}, trace_id={}",
-                message_type.value,
-                msg_id,
-                trace_id,
-            )
 
             resp = Response(code=http.HTTPStatus.OK)
             try:
@@ -233,13 +210,7 @@ class FeishuBot(BaseBot):
                 header.value = str(end - start)
                 if result is not None:
                     resp.data = base64.b64encode(JSON.marshal(result).encode(UTF_8))
-            except Exception as e:
-                logger.error(
-                    "[WS-Patch] 处理帧异常: type={}, msg_id={}, err={}",
-                    message_type.value,
-                    msg_id,
-                    e,
-                )
+            except Exception:
                 resp = Response(code=http.HTTPStatus.INTERNAL_SERVER_ERROR)
 
             frame.payload = JSON.marshal(resp).encode(UTF_8)
@@ -254,8 +225,3 @@ class FeishuBot(BaseBot):
 
         # 替换实例方法（直接替换为协程函数引用）
         ws_client._handle_data_frame = _patched_handle_data_frame
-
-        logger.info(
-            "[BotID: WS-Patch] 已成功对 lark.ws.Client._handle_data_frame "
-            "打补丁，CARD 帧将正常交由 EventDispatcherHandler 处理。"
-        )

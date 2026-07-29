@@ -15,6 +15,7 @@ from data_client import DataClient, get_data_client
 
 DEFAULT_MESSAGE_POLL_SECONDS = 20.0
 DEFAULT_DATA_RETRY_SECONDS = 5.0
+DEFAULT_STORAGE_OBJECT_MAX_SIZE_BYTES = 20 * 1024 * 1024
 
 
 def _read_positive_float(name: str, default: float) -> float:
@@ -28,11 +29,27 @@ def _read_positive_float(name: str, default: float) -> float:
     return value if value > 0 else default
 
 
+def _read_positive_int(name: str, default: int) -> int:
+    """读取正整数环境变量，非法值回退到命名默认值。"""
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
 class GatewayStorageClient:
     """保持适配器所需流接口，同时把对象存储执行委托给 backend-data。"""
 
     def __init__(self, data_client: DataClient | None = None) -> None:
         self._data = data_client
+        self._max_upload_size_bytes = _read_positive_int(
+            "STORAGE_OBJECT_MAX_SIZE_BYTES",
+            DEFAULT_STORAGE_OBJECT_MAX_SIZE_BYTES,
+        )
 
     def upload_file(
         self,
@@ -43,8 +60,12 @@ class GatewayStorageClient:
         content_type: str = "application/octet-stream",
     ) -> str:
         """通过 data-client 上传业务对象并返回存储 URL。"""
+        if length > self._max_upload_size_bytes:
+            raise ValueError("上传对象超过允许的大小上限")
         data.seek(0)
-        content = data.read()
+        content = data.read(self._max_upload_size_bytes + 1)
+        if len(content) > self._max_upload_size_bytes:
+            raise ValueError("上传对象超过允许的大小上限")
         if len(content) != length:
             length = len(content)
         result = self._get_data_client().upload_object(

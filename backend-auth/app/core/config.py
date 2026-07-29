@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     backend_data_base_url: str = "http://127.0.0.1:8010"
     backend_data_api_key: str = Field(default="", repr=False)
     phone_default_region: str = "CN"
+    login_rate_limit: int = 10
+    login_rate_window_seconds: int = 60
+    register_rate_limit: int = 5
+    register_rate_window_seconds: int = 300
 
     cors_origins: str = "http://127.0.0.1:5173,http://localhost:5173"
 

@@ -142,6 +142,26 @@ class DataClient:
             },
         )
 
+    def consume_identity_rate_limit(
+        self,
+        *,
+        bucket: str,
+        identifier_hash: str,
+        limit: int,
+        window_seconds: int,
+    ) -> dict[str, Any]:
+        """通过 backend-data 消费认证接口限流计数。"""
+        return self._request_dict(
+            "POST",
+            "/api/v1/identity/auth/rate-limit/consume",
+            json={
+                "bucket": bucket,
+                "identifier_hash": identifier_hash,
+                "limit": limit,
+                "window_seconds": window_seconds,
+            },
+        )
+
     def list_users(self, *, page: int, page_size: int) -> dict[str, Any]:
         """分页读取可管理用户。"""
         return self._request_dict(
@@ -159,7 +179,9 @@ class DataClient:
         email: str | None,
         phone: str | None,
         role_codes: list[str],
+        actor_user_id: int,
         actor_role_codes: list[str],
+        actor_permission_codes: list[str],
         is_vip: bool,
         vip_level: int | None,
         vip_expires_at: datetime | None,
@@ -175,7 +197,9 @@ class DataClient:
                 "email": email,
                 "phone": phone,
                 "role_codes": role_codes,
+                "actor_user_id": actor_user_id,
                 "actor_role_codes": actor_role_codes,
+                "actor_permission_codes": actor_permission_codes,
                 "is_vip": is_vip,
                 "vip_level": vip_level,
                 "vip_expires_at": (vip_expires_at.isoformat() if vip_expires_at else None),
@@ -223,7 +247,9 @@ class DataClient:
         *,
         user_id: int,
         role_codes: list[str],
+        actor_user_id: int,
         actor_role_codes: list[str],
+        actor_permission_codes: list[str],
     ) -> dict[str, Any]:
         """覆盖用户角色。"""
         return self._request_dict(
@@ -231,7 +257,9 @@ class DataClient:
             f"/api/v1/identity/users/{user_id}/roles",
             json={
                 "role_codes": role_codes,
+                "actor_user_id": actor_user_id,
                 "actor_role_codes": actor_role_codes,
+                "actor_permission_codes": actor_permission_codes,
             },
         )
 
@@ -240,12 +268,18 @@ class DataClient:
         *,
         user_id: int,
         password_hash: str,
+        actor_user_id: int,
+        actor_role_codes: list[str],
     ) -> dict[str, Any]:
         """保存管理员重置后的密码哈希。"""
         return self._request_dict(
             "PUT",
             f"/api/v1/identity/users/{user_id}/password",
-            json={"password_hash": password_hash},
+            json={
+                "password_hash": password_hash,
+                "actor_user_id": actor_user_id,
+                "actor_role_codes": actor_role_codes,
+            },
         )
 
     def update_user_vip(
@@ -255,6 +289,8 @@ class DataClient:
         is_vip: bool,
         vip_level: int | None,
         vip_expires_at: datetime | None,
+        actor_user_id: int,
+        actor_role_codes: list[str],
     ) -> dict[str, Any]:
         """更新 VIP 设置。"""
         return self._request_dict(
@@ -264,6 +300,8 @@ class DataClient:
                 "is_vip": is_vip,
                 "vip_level": vip_level,
                 "vip_expires_at": (vip_expires_at.isoformat() if vip_expires_at else None),
+                "actor_user_id": actor_user_id,
+                "actor_role_codes": actor_role_codes,
             },
         )
 
@@ -272,12 +310,18 @@ class DataClient:
         *,
         user_id: int,
         status: int,
+        actor_user_id: int,
+        actor_role_codes: list[str],
     ) -> dict[str, Any]:
         """启用或停用用户。"""
         return self._request_dict(
             "PUT",
             f"/api/v1/identity/users/{user_id}/status",
-            json={"status": status},
+            json={
+                "status": status,
+                "actor_user_id": actor_user_id,
+                "actor_role_codes": actor_role_codes,
+            },
         )
 
     def delete_user(
@@ -309,12 +353,20 @@ class DataClient:
         *,
         user_id: int,
         menu_ids: list[int],
+        actor_user_id: int,
+        actor_role_codes: list[str],
+        actor_permission_codes: list[str],
     ) -> dict[str, Any]:
         """覆盖用户独立菜单。"""
         return self._request_dict(
             "PUT",
             f"/api/v1/identity/users/{user_id}/menus",
-            json={"ids": menu_ids},
+            json={
+                "ids": menu_ids,
+                "actor_user_id": actor_user_id,
+                "actor_role_codes": actor_role_codes,
+                "actor_permission_codes": actor_permission_codes,
+            },
         )
 
     def get_user_permissions(
@@ -332,12 +384,20 @@ class DataClient:
         *,
         user_id: int,
         permission_ids: list[int],
+        actor_user_id: int,
+        actor_role_codes: list[str],
+        actor_permission_codes: list[str],
     ) -> dict[str, Any]:
         """覆盖用户独立权限。"""
         return self._request_dict(
             "PUT",
             f"/api/v1/identity/users/{user_id}/permissions",
-            json={"ids": permission_ids},
+            json={
+                "ids": permission_ids,
+                "actor_user_id": actor_user_id,
+                "actor_role_codes": actor_role_codes,
+                "actor_permission_codes": actor_permission_codes,
+            },
         )
 
     def list_roles(self) -> list[dict[str, Any]]:
@@ -351,6 +411,8 @@ class DataClient:
         name: str,
         description: str,
         menu_ids: list[int],
+        actor_role_codes: list[str],
+        actor_permission_codes: list[str],
     ) -> dict[str, Any]:
         """创建角色。"""
         return self._request_dict(
@@ -361,6 +423,8 @@ class DataClient:
                 "name": name,
                 "description": description,
                 "menu_ids": menu_ids,
+                "actor_role_codes": actor_role_codes,
+                "actor_permission_codes": actor_permission_codes,
             },
         )
 
@@ -371,6 +435,8 @@ class DataClient:
         name: str | None,
         description: str | None,
         menu_ids: list[int] | None,
+        actor_role_codes: list[str],
+        actor_permission_codes: list[str],
     ) -> dict[str, Any]:
         """更新角色。"""
         return self._request_dict(
@@ -380,14 +446,22 @@ class DataClient:
                 "name": name,
                 "description": description,
                 "menu_ids": menu_ids,
+                "actor_role_codes": actor_role_codes,
+                "actor_permission_codes": actor_permission_codes,
             },
         )
 
-    def delete_role(self, role_id: int) -> dict[str, Any]:
+    def delete_role(
+        self,
+        role_id: int,
+        *,
+        actor_role_codes: list[str],
+    ) -> dict[str, Any]:
         """软删除角色。"""
         return self._request_dict(
             "DELETE",
             f"/api/v1/identity/roles/{role_id}",
+            json={"actor_role_codes": actor_role_codes},
         )
 
     def get_role_menus(self, role_id: int) -> list[dict[str, Any]]:
@@ -402,12 +476,18 @@ class DataClient:
         *,
         role_id: int,
         menu_ids: list[int],
+        actor_role_codes: list[str],
+        actor_permission_codes: list[str],
     ) -> dict[str, Any]:
         """覆盖角色菜单。"""
         return self._request_dict(
             "PUT",
             f"/api/v1/identity/roles/{role_id}/menus",
-            json={"ids": menu_ids},
+            json={
+                "ids": menu_ids,
+                "actor_role_codes": actor_role_codes,
+                "actor_permission_codes": actor_permission_codes,
+            },
         )
 
     def list_menus(self) -> list[dict[str, Any]]:

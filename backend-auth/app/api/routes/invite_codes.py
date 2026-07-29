@@ -12,7 +12,6 @@ from __future__ import annotations
 from api_common import ApiResponse, success_response
 from auth_utils import PermissionCode
 from fastapi import APIRouter, Depends, Query
-from loguru import logger
 
 from app.api.deps import require_permission
 from app.schemas.auth import UserInfo
@@ -34,11 +33,6 @@ def create_invite_code(
         expires_in_hours=payload.expires_in_hours,
         created_by=current_user.id,
         custom_code=payload.custom_code,
-    )
-    logger.info(
-        "security_event=create_invite_code actor_user_id={} code={}",
-        current_user.id,
-        result.get("code"),
     )
     return success_response(result)
 

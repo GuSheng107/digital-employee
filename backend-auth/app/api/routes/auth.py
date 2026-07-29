@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from api_common import ApiResponse, TokenInvalidError, success_response
 from fastapi import APIRouter, Depends, Request
-from loguru import logger
 
 from app.api.deps import _extract_bearer, get_auth_service, get_current_user
 from app.schemas.auth import (
@@ -33,6 +32,7 @@ router = APIRouter()
 @router.post("/register", response_model=ApiResponse)
 def register(
     payload: RegisterRequest,
+    request: Request,
     service: AuthService = Depends(get_auth_service),
 ) -> dict:
     """用户注册，校验邀请码，签发双 token。"""
@@ -42,11 +42,7 @@ def register(
         email=str(payload.email),
         phone=payload.phone,
         invite_code=payload.invite_code,
-    )
-    logger.info(
-        "security_event=register username={} user_id={}",
-        payload.username,
-        token_pair.user_id,
+        client_ip=request.client.host if request.client else None,
     )
     return success_response(token_pair.model_dump())
 
@@ -63,12 +59,6 @@ def login(
         username=payload.username,
         password=payload.password,
         client_ip=client_ip,
-    )
-    logger.info(
-        "security_event=login username={} user_id={} client_ip={}",
-        payload.username,
-        token_pair.user_id,
-        client_ip,
     )
     return success_response(token_pair.model_dump())
 
@@ -102,7 +92,6 @@ def logout(
         raise TokenInvalidError(message="missing access_token")
     refresh_token = payload.refresh_token if payload else None
     service.logout(access_token=access_token, refresh_token=refresh_token)
-    logger.info("security_event=logout")
     return success_response(message="logged out")
 
 

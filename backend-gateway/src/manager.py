@@ -10,8 +10,6 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
-
-from loguru import logger
 from pydantic import ValidationError
 
 from src.core.base import BaseBot
@@ -53,9 +51,6 @@ class BotManager:
     def load_from_file(self) -> None:
         """从本地静态文件加载 Bot 配置并初始化启动。"""
         if not self.config_path.exists():
-            logger.warning(
-                "本地静态配置文件 {} 不存在，跳过本地配置加载。", self.config_path
-            )
             return
 
         try:
@@ -64,20 +59,16 @@ class BotManager:
 
             # 使用 Pydantic 校验配置文件
             config_file = BotConfigFile.model_validate(data)
-            logger.info(
-                "成功从本地读取并校验静态配置，共包含 {} 个 Bot。",
-                len(config_file.bots),
-            )
 
             for bot_cfg in config_file.bots:
                 self.add_or_update_bot(bot_cfg)
 
-        except (json.JSONDecodeError, ValidationError) as exc:
-            logger.error("静态配置文件 {} 解析失败: {}", self.config_path, exc)
-        except OSError as exc:
-            logger.error("读取静态配置文件 {} 失败: {}", self.config_path, exc)
-        except Exception as exc:
-            logger.error("加载静态配置文件时发生未预期异常: {}", exc)
+        except (json.JSONDecodeError, ValidationError):
+            pass
+        except OSError:
+            pass
+        except Exception:
+            pass
 
     def inject_main_loop_to_all(self, loop: asyncio.AbstractEventLoop) -> None:
         """将 FastAPI 主事件循环注入给所有已加载的 Bot 实例。
@@ -93,7 +84,6 @@ class BotManager:
                 if hasattr(bot, "inject_main_loop"):
                     bot.inject_main_loop(loop)
         self._main_loop = loop
-        logger.info("已向全部 Bot 实例注入主事件循环。")
 
     def add_or_update_bot(self, bot_cfg: BotConfig) -> None:
         """添加或更新 Bot 实例，支持平滑热重启。
@@ -114,16 +104,10 @@ class BotManager:
                 and old_bot.is_running
                 and old_config == new_config_dict
             ):
-                logger.info("[BotID: {}] 凭证与状态未发生变更，跳过重启。", bot_id)
                 return
-
-            logger.info("[BotID: {}] 正在热加载 Bot 配置...", bot_id)
 
             # 如果存在旧 Bot 实例，先执行平滑停止
             if old_bot is not None:
-                logger.info(
-                    "[BotID: {}] 检测到旧实例运行或配置变更，执行停止...", bot_id
-                )
                 old_bot.stop()
                 self.bots.pop(bot_id, None)
 
@@ -133,9 +117,6 @@ class BotManager:
             elif bot_cfg.platform == "wechat":
                 new_bot = WeChatBot(bot_id=bot_id, config=new_config_dict)
             else:
-                logger.error(
-                    "[BotID: {}] 不支持的平台类型: {}", bot_id, bot_cfg.platform
-                )
                 return
 
             self.bots[bot_id] = new_bot
@@ -147,7 +128,6 @@ class BotManager:
 
             # 启动新 Bot 实例的子线程
             new_bot.start()
-            logger.info("[BotID: {}] 热更新并启动成功。", bot_id)
 
     def remove_bot(self, bot_id: str) -> bool:
         """停止并注销指定的 Bot 实例。
@@ -161,13 +141,11 @@ class BotManager:
         with self._lock:
             bot = self.bots.get(bot_id)
             if bot is None:
-                logger.warning("[BotID: {}] 无法注销实例，指定的 Bot 不存在。", bot_id)
                 return False
 
             bot.stop()
             self.bots.pop(bot_id, None)
             self.active_configs.pop(bot_id, None)
-            logger.info("[BotID: {}] Bot 已成功移除。", bot_id)
             return True
 
     def get_bot(self, bot_id: str) -> BaseBot | None:
@@ -215,11 +193,9 @@ class BotManager:
             daemon=True,
         )
         self._watchdog_thread.start()
-        logger.info("Watchdog 守护线程已启动。")
 
     def shutdown(self) -> None:
         """停止管理器。关闭所有 Bot 实例，并关停 Watchdog。"""
-        logger.info("正在关闭 BotManager...")
         self._watchdog_running = False
 
         # 浅拷贝 keys 避免迭代时修改 dict 报错
@@ -230,8 +206,6 @@ class BotManager:
         if self._watchdog_thread is not None:
             self._watchdog_thread.join(timeout=5.0)
             self._watchdog_thread = None
-
-        logger.info("BotManager 已安全关闭。")
 
     def _watchdog_loop(self) -> None:
         """Watchdog 内部主循环，每 10 秒扫描一次不活跃线程。"""
@@ -244,16 +218,8 @@ class BotManager:
                 for bot_id, bot in self.bots.items():
                     # 通过公开属性判断是否处于僵尸状态，避免直接读取私有字段
                     if bot.is_zombie:
-                        logger.warning(
-                            "[BotID: {}] 检测到 Bot 线程异常终止（僵尸状态），正在尝试重新拉起...",
-                            bot_id,
-                        )
                         try:
                             # start() 会重置 _thread，无需外部清理私有字段
                             bot.start()
-                        except Exception as exc:
-                            logger.error(
-                                "[BotID: {}] Watchdog 重启 Bot 失败: {}",
-                                bot_id,
-                                exc,
-                            )
+                        except Exception:
+                            pass

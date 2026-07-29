@@ -149,6 +149,14 @@ class TokenInvalidError(ApiException):
     http_status = 401
 
 
+class SessionReplacedError(ApiException):
+    """当前会话已被同账号的新登录替换。"""
+
+    code = ErrorCode.SESSION_REPLACED
+    message = "session replaced"
+    http_status = 401
+
+
 class PermissionDeniedError(ApiException):
     """无权限访问该资源。"""
 

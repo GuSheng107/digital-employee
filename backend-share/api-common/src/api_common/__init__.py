@@ -38,6 +38,7 @@ from api_common.exceptions import (
     QuotaExceededError,
     RateLimitExceededError,
     ResourceNotFoundError,
+    SessionReplacedError,
     ServiceUnavailableError,
     TokenExpiredError,
     TokenInvalidError,
@@ -74,6 +75,7 @@ __all__ = [
     # 401/403
     "TokenExpiredError",
     "TokenInvalidError",
+    "SessionReplacedError",
     "PermissionDeniedError",
     # 429/402
     "RateLimitExceededError",

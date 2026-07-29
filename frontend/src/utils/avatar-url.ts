@@ -3,6 +3,10 @@ import { DATA_PLATFORM_API_BASE_URL } from '@/config/api-config';
 const AVATAR_API_PATH_PREFIX = '/api/v1/storage/avatars/';
 const AVATAR_OBJECT_PATH_MARKER = '/avatars/';
 
+function isTrustedAvatarResourcePath(resourcePath: string): boolean {
+  return resourcePath.startsWith(AVATAR_API_PATH_PREFIX);
+}
+
 /** 拼接数据中台代理地址与服务端资源路径。 */
 function buildDataPlatformUrl(resourcePath: string): string {
   const baseUrl = DATA_PLATFORM_API_BASE_URL.replace(/\/+$/, '');
@@ -32,7 +36,9 @@ export function resolveAvatarUrl(avatarUrl: string | null | undefined): string |
       return buildDataPlatformUrl(`${AVATAR_API_PATH_PREFIX}${avatarPath}`);
     }
   } catch {
-    // 非绝对 URL 保持原样，兼容由 CDN 或网关返回的相对资源地址。
+    return isTrustedAvatarResourcePath(avatarUrl)
+      ? buildDataPlatformUrl(avatarUrl)
+      : null;
   }
-  return avatarUrl;
+  return null;
 }

@@ -19,13 +19,16 @@ from app.core.database import get_core_db_session
 from app.schemas.identity import (
     AccessTokenIdentityRequest,
     CompleteLoginRequest,
-    DeleteIdentityUserRequest,
+    ConsumeIdentityRateLimitRequest,
     CreateIdentityInviteCodeRequest,
     CreateIdentityMenuRequest,
     CreateIdentityRoleRequest,
     CreateIdentityUserRequest,
-    IdsRequest,
+    DeleteIdentityRoleRequest,
+    DeleteIdentityUserRequest,
     LogoutIdentitySessionRequest,
+    ManagedIdsRequest,
+    ManageIdentityRoleMenusRequest,
     RefreshIdentitySessionRequest,
     RegisterIdentityRequest,
     ResetIdentityPasswordRequest,
@@ -188,7 +191,9 @@ def assign_user_roles(
         UserService(session).assign_roles(
             user_id=user_id,
             role_codes=payload.role_codes,
+            actor_user_id=payload.actor_user_id,
             actor_role_codes=payload.actor_role_codes,
+            actor_permission_codes=payload.actor_permission_codes,
         )
     )
 
@@ -204,6 +209,8 @@ def reset_user_password(
         UserService(session).reset_user_password(
             user_id=user_id,
             password_hash=payload.password_hash,
+            actor_user_id=payload.actor_user_id,
+            actor_role_codes=payload.actor_role_codes,
         )
     )
 
@@ -218,7 +225,11 @@ def update_user_vip(
     return success_response(
         UserService(session).update_vip(
             user_id=user_id,
-            **payload.model_dump(),
+            is_vip=payload.is_vip,
+            vip_level=payload.vip_level,
+            vip_expires_at=payload.vip_expires_at,
+            actor_user_id=payload.actor_user_id,
+            actor_role_codes=payload.actor_role_codes,
         )
     )
 
@@ -234,6 +245,8 @@ def update_user_status(
         UserService(session).update_status(
             user_id=user_id,
             status=payload.status,
+            actor_user_id=payload.actor_user_id,
+            actor_role_codes=payload.actor_role_codes,
         )
     )
 
@@ -266,7 +279,7 @@ def get_user_menus(
 @router.put("/users/{user_id}/menus", response_model=ApiResponse)
 def assign_user_menus(
     user_id: int,
-    payload: IdsRequest,
+    payload: ManagedIdsRequest,
     session: Session = Depends(get_core_db_session),
 ) -> dict:
     """覆盖用户独立菜单。"""
@@ -274,6 +287,9 @@ def assign_user_menus(
         UserService(session).assign_user_menus(
             user_id=user_id,
             menu_ids=payload.ids,
+            actor_user_id=payload.actor_user_id,
+            actor_role_codes=payload.actor_role_codes,
+            actor_permission_codes=payload.actor_permission_codes,
         )
     )
 
@@ -290,7 +306,7 @@ def get_user_permissions(
 @router.put("/users/{user_id}/permissions", response_model=ApiResponse)
 def assign_user_permissions(
     user_id: int,
-    payload: IdsRequest,
+    payload: ManagedIdsRequest,
     session: Session = Depends(get_core_db_session),
 ) -> dict:
     """覆盖用户独立权限。"""
@@ -298,6 +314,9 @@ def assign_user_permissions(
         UserService(session).assign_user_permissions(
             user_id=user_id,
             permission_ids=payload.ids,
+            actor_user_id=payload.actor_user_id,
+            actor_role_codes=payload.actor_role_codes,
+            actor_permission_codes=payload.actor_permission_codes,
         )
     )
 
@@ -337,10 +356,27 @@ def update_role(
 @router.delete("/roles/{role_id}", response_model=ApiResponse)
 def delete_role(
     role_id: int,
+    payload: DeleteIdentityRoleRequest,
     session: Session = Depends(get_core_db_session),
 ) -> dict:
     """软删除角色。"""
-    return success_response(RoleService(session).delete_role(role_id=role_id))
+    return success_response(
+        RoleService(session).delete_role(
+            role_id=role_id,
+            actor_role_codes=payload.actor_role_codes,
+        )
+    )
+
+
+@router.post("/auth/rate-limit/consume", response_model=ApiResponse)
+def consume_auth_rate_limit(
+    payload: ConsumeIdentityRateLimitRequest,
+    session: Session = Depends(get_core_db_session),
+) -> dict:
+    """消费登录或注册的 Redis 限流计数。"""
+    return success_response(
+        IdentityAuthService(session).consume_rate_limit(**payload.model_dump())
+    )
 
 
 @router.get("/roles/{role_id}/menus", response_model=ApiResponse)
@@ -355,7 +391,7 @@ def get_role_menus(
 @router.put("/roles/{role_id}/menus", response_model=ApiResponse)
 def assign_role_menus(
     role_id: int,
-    payload: IdsRequest,
+    payload: ManageIdentityRoleMenusRequest,
     session: Session = Depends(get_core_db_session),
 ) -> dict:
     """覆盖角色菜单。"""
@@ -363,6 +399,8 @@ def assign_role_menus(
         RoleService(session).assign_menus(
             role_id=role_id,
             menu_ids=payload.ids,
+            actor_role_codes=payload.actor_role_codes,
+            actor_permission_codes=payload.actor_permission_codes,
         )
     )
 

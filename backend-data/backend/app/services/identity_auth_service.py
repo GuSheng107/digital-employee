@@ -10,6 +10,8 @@ from datetime import UTC, datetime
 
 from api_common import (
     DuplicateResourceError,
+    RateLimitExceededError,
+    SessionReplacedError,
     ServiceUnavailableError,
     TokenInvalidError,
     UserDisabledError,
@@ -22,7 +24,6 @@ from auth_utils import (
     VipLevel,
     get_vip_display,
 )
-from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -87,12 +88,8 @@ class IdentityAuthService:
             self._session.rollback()
             try:
                 invite_codes.restore(invite_code)
-            except RuntimeError as compensation_error:
-                logger.exception(
-                    "注册事务失败且邀请码补偿失败 code={} error={}",
-                    invite_code,
-                    compensation_error,
-                )
+            except RuntimeError:
+                pass
             raise
         token_meta = self._sessions.issue_token_pair(
             user_id=user.id,
@@ -164,6 +161,28 @@ class IdentityAuthService:
             refresh_token=refresh_token,
         )
 
+    def consume_rate_limit(
+        self,
+        *,
+        bucket: str,
+        identifier_hash: str,
+        limit: int,
+        window_seconds: int,
+    ) -> dict[str, int]:
+        """在 backend-data 的 Redis 中消费认证限流计数。"""
+        rate_limit_key = f"auth:rate-limit:{bucket}:{identifier_hash}"
+        count = self._sessions.increment_rate_limit(
+            key=rate_limit_key,
+            window_seconds=window_seconds,
+        )
+        if count > limit:
+            raise RateLimitExceededError(message="请求过于频繁，请稍后再试")
+        return {
+            "count": count,
+            "limit": limit,
+            "window_seconds": window_seconds,
+        }
+
     def get_current_user_context(
         self,
         access_token: str,
@@ -173,6 +192,10 @@ class IdentityAuthService:
         """根据 access token 返回用户、角色、权限与可见菜单。"""
         user_id = self._sessions.read_access_token(access_token)
         if user_id is None:
+            if self._sessions.was_access_session_replaced(access_token):
+                raise SessionReplacedError(
+                    message="账号已在其他设备登录，当前会话已失效"
+                )
             raise TokenInvalidError(message="access_token 无效或已过期")
         user = self._get_active_user(user_id)
         role_codes = [role.code for role in user.roles]

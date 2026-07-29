@@ -88,7 +88,7 @@ class StorageService:
         """通用文件上传，按 {prefix}/{timestamp}_{filename} 存储到 Minio 默认 bucket。
 
         Args:
-            prefix: 对象名前缀，如 "avatars/1"（avatars/{user_id}）。
+            prefix: 普通业务对象前缀，如 "attachments/agent-1"。
             filename: 原始文件名。
             data: 文件二进制内容。
             content_type: MIME 类型。
@@ -119,18 +119,9 @@ class StorageService:
             length=len(data),
             content_type=content_type,
         )
-        avatar_prefix = f"{AVATAR_OBJECT_PREFIX}/"
-        if object_name.startswith(avatar_prefix):
-            avatar_path = quote(object_name.removeprefix(avatar_prefix), safe="/")
-            file_url = (
-                f"{settings.api_prefix}{STORAGE_ROUTE_PREFIX}"
-                f"{AVATAR_ROUTE_PREFIX}/{avatar_path}"
-            )
-        else:
-            file_url = storage_url
         return {
             "object_name": object_name,
-            "file_url": file_url,
+            "file_url": storage_url,
         }
 
     def upload_avatar(

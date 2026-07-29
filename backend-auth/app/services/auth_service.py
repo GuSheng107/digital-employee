@@ -6,9 +6,12 @@ backend-auth 负责密码哈希校验与 token 生成；所有 PostgreSQL/Redis 
 
 from __future__ import annotations
 
+import hashlib
+
 from api_common import InvalidCredentialsError, UserDisabledError
 from data_client import DataClient, get_data_client
 
+from app.core.config import settings
 from app.core.security import generate_token, hash_password, verify_password
 from app.schemas.auth import MenuNode, TokenPair, UserInfo
 
@@ -27,8 +30,15 @@ class AuthService:
         email: str,
         phone: str,
         invite_code: str,
+        client_ip: str | None = None,
     ) -> TokenPair:
         """注册用户并签发双 token。"""
+        self._consume_rate_limit(
+            bucket="register",
+            identifier=f"{client_ip or 'unknown'}:{username.casefold()}",
+            limit=settings.register_rate_limit,
+            window_seconds=settings.register_rate_window_seconds,
+        )
         access_token = generate_token()
         refresh_token = generate_token()
         metadata = self._data.register_identity(
@@ -53,6 +63,12 @@ class AuthService:
         client_ip: str | None = None,
     ) -> TokenPair:
         """校验凭据并落实同账号单会话策略。"""
+        self._consume_rate_limit(
+            bucket="login",
+            identifier=f"{client_ip or 'unknown'}:{username.casefold()}",
+            limit=settings.login_rate_limit,
+            window_seconds=settings.login_rate_window_seconds,
+        )
         credentials = self._data.get_credentials(username)
         if (
             credentials is None
@@ -157,4 +173,21 @@ class AuthService:
             refresh_expires_in=int(metadata["refresh_expires_in"]),
             user_id=int(metadata["user_id"]),
             must_change_password=bool(metadata.get("must_change_password", False)),
+        )
+
+    def _consume_rate_limit(
+        self,
+        *,
+        bucket: str,
+        identifier: str,
+        limit: int,
+        window_seconds: int,
+    ) -> None:
+        """委托 backend-data 消费认证限流计数。"""
+        identifier_hash = hashlib.sha256(identifier.encode("utf-8")).hexdigest()
+        self._data.consume_identity_rate_limit(
+            bucket=bucket,
+            identifier_hash=identifier_hash,
+            limit=limit,
+            window_seconds=window_seconds,
         )

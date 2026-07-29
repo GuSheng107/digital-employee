@@ -17,7 +17,6 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
     P2CardActionTrigger,
     P2CardActionTriggerResponse,
 )
-from loguru import logger
 
 from src.core.hub import hub
 from src.core.schemas import (
@@ -56,14 +55,6 @@ class FeishuAdapter(BaseAdapter):
         message_id = event.message.message_id
         msg_type = event.message.message_type
 
-        logger.info(
-            "[BotID: {}] 收到飞书原始入站推送 JSON -> message_id='{}', msg_type='{}', content='{}'",
-            self.bot.bot_id,
-            message_id,
-            msg_type,
-            event.message.content,
-        )
-
         # 确定会话 ID（单聊为发送者 open_id，群聊为群聊 ID）
         session_id = sender_id.open_id if chat_type == "p2p" else event.message.chat_id
 
@@ -85,12 +76,7 @@ class FeishuAdapter(BaseAdapter):
             try:
                 content_json = json.loads(event.message.content)
                 user_text = content_json.get("text", "")
-            except Exception as exc:
-                logger.warning(
-                    "[BotID: {}] 解析飞书文本内容 JSON 异常: {}",
-                    self.bot.bot_id,
-                    exc,
-                )
+            except Exception:
                 user_text = event.message.content
 
             standard_msg.content.append(
@@ -103,19 +89,10 @@ class FeishuAdapter(BaseAdapter):
             try:
                 content_json = json.loads(event.message.content)
                 file_key = content_json.get("image_key", "")
-            except Exception as exc:
-                logger.warning(
-                    "[BotID: {}] 解析图片 image_key 异常: {}",
-                    self.bot.bot_id,
-                    exc,
-                )
+            except Exception:
                 return
 
             if not file_key:
-                logger.warning(
-                    "[BotID: {}] 消息体内无有效图片 image_key",
-                    self.bot.bot_id,
-                )
                 return
 
             # 下载飞书私有图片并通过 backend-data 转存到统一对象存储
@@ -129,10 +106,6 @@ class FeishuAdapter(BaseAdapter):
                     MessageContent(msg_type="image", file_url=storage_url)
                 )
             else:
-                logger.error(
-                    "[BotID: {}] 图片转存至对象存储失败，终止该消息入站",
-                    self.bot.bot_id,
-                )
                 return
 
         # 3. 音频消息类型转换
@@ -141,12 +114,7 @@ class FeishuAdapter(BaseAdapter):
             try:
                 content_json = json.loads(event.message.content)
                 file_key = content_json.get("file_key", "")
-            except Exception as exc:
-                logger.warning(
-                    "[BotID: {}] 解析音频 file_key 异常: {}",
-                    self.bot.bot_id,
-                    exc,
-                )
+            except Exception:
                 return
 
             if file_key:
@@ -167,12 +135,7 @@ class FeishuAdapter(BaseAdapter):
             try:
                 content_json = json.loads(event.message.content)
                 file_key = content_json.get("file_key", "")
-            except Exception as exc:
-                logger.warning(
-                    "[BotID: {}] 解析媒体 file_key 异常: {}",
-                    self.bot.bot_id,
-                    exc,
-                )
+            except Exception:
                 return
 
             if file_key:
@@ -195,12 +158,7 @@ class FeishuAdapter(BaseAdapter):
                 content_json = json.loads(event.message.content)
                 file_key = content_json.get("file_key", "")
                 file_name = content_json.get("file_name", "file")
-            except Exception as exc:
-                logger.warning(
-                    "[BotID: {}] 解析文件 file_key 异常: {}",
-                    self.bot.bot_id,
-                    exc,
-                )
+            except Exception:
                 return
 
             if file_key:
@@ -224,12 +182,7 @@ class FeishuAdapter(BaseAdapter):
         elif msg_type == "post":
             try:
                 raw_post_data = json.loads(event.message.content)
-            except Exception as exc:
-                logger.warning(
-                    "[BotID: {}] 解析富文本内容 JSON 异常: {}",
-                    self.bot.bot_id,
-                    exc,
-                )
+            except Exception:
                 return
 
             # 兼容处理：飞书推送的富文本事件中，content JSON 往往包裹在外层 "post" 键下，需解包以获取语言主节点
@@ -286,18 +239,7 @@ class FeishuAdapter(BaseAdapter):
                                 )
 
         else:
-            logger.debug(
-                "[BotID: {}] 忽略非处理入站消息类型: {}",
-                self.bot.bot_id,
-                msg_type,
-            )
             return
-
-        logger.info(
-            "[BotID: {}] 投递入站消息，归一化 StandardMessage JSON: {}",
-            self.bot.bot_id,
-            standard_msg.model_dump_json(indent=2),
-        )
         # 通过跨线程安全搭桥投递入站消息给异步路由中枢
         self._submit_to_hub(standard_msg)
 
@@ -311,10 +253,6 @@ class FeishuAdapter(BaseAdapter):
             msg: 归一化标准消息对象。
         """
         if self.main_loop is None or self.main_loop.is_closed():
-            logger.error(
-                "[BotID: {}] 主事件循环未注入或已关闭，无法投递消息至中枢。",
-                self.bot.bot_id,
-            )
             return
 
         future = asyncio.run_coroutine_threadsafe(
@@ -326,16 +264,9 @@ class FeishuAdapter(BaseAdapter):
             # 阻塞等待异步中枢处理结果，若 MQ 投递抛出异常则此处捕获
             future.result(timeout=5.0)
         except concurrent.futures.TimeoutError:
-            logger.error(
-                "[BotID: {}] 跨线程提交入站任务至异步中枢超时（>5s）。",
-                self.bot.bot_id,
-            )
-        except Exception as exc:
-            logger.error(
-                "[BotID: {}] 跨线程投递异步中枢时发生异常: {}",
-                self.bot.bot_id,
-                exc,
-            )
+            pass
+        except Exception:
+            pass
 
     def send_message(self, msg: StandardMessage) -> None:
         """将标准出站消息统一转换打包为飞书富文本（post）格式发送。
@@ -344,21 +275,7 @@ class FeishuAdapter(BaseAdapter):
             msg: 出站的标准归一化消息体。
         """
         if not msg.content:
-            logger.warning(
-                "[BotID: {}] 待发送的标准消息内容为空，放弃发送。", self.bot.bot_id
-            )
             return
-
-        logger.info(
-            "[BotID: {}] 收到待发送出站消息，StandardMessage JSON: {}",
-            self.bot.bot_id,
-            msg.model_dump_json(indent=2),
-        )
-        logger.info(
-            "[BotID: {}] 开始将标准消息 (区块数量={}) 统一打包为 post 富文本出站...",
-            self.bot.bot_id,
-            len(msg.content),
-        )
 
         # 检查是否包含卡片消息（MessageType.CARD 或 MessageType.INTERACTIVE）
         for item in msg.content:
@@ -375,11 +292,6 @@ class FeishuAdapter(BaseAdapter):
                     )
 
                 if card_str:
-                    logger.info(
-                        "[BotID: {}] 飞书适配器成功将公共卡片反归一化翻译为 Schema 2.0 JSON: {}",
-                        self.bot.bot_id,
-                        card_str,
-                    )
                     if msg.chat_type == "p2p":
                         self._send_card_p2p(msg.session_id, card_str)
                     elif msg.chat_type == "group":
@@ -406,10 +318,6 @@ class FeishuAdapter(BaseAdapter):
                         [{"tag": "img", "image_key": feishu_image_key}]
                     )
                 else:
-                    logger.error(
-                        "[BotID: {}] 图片从对象存储转传飞书失败，跳过该图片区块。",
-                        self.bot.bot_id,
-                    )
                     post_content["zh_cn"]["content"].append(
                         [{"tag": "text", "text": "[图片转存失败]"}]
                     )
@@ -445,12 +353,6 @@ class FeishuAdapter(BaseAdapter):
         # 飞书 V1 发送/回复消息接口中，msg_type="post" 的 content 字符串最外层绝对不能包含 "post" 键
         # 必须直接以多语言节点（如 zh_cn）为根，格式为：{"zh_cn": {"title": "", "content": ...}}
         raw_post_content = lark.JSON.marshal(post_content)
-
-        logger.info(
-            "[BotID: {}] 最终分发给飞书 API 的富文本 JSON: {}",
-            self.bot.bot_id,
-            raw_post_content,
-        )
         if msg.chat_type == "p2p":
             self._send_post_p2p(msg.session_id, raw_post_content)
         elif msg.chat_type == "group":
@@ -485,15 +387,6 @@ class FeishuAdapter(BaseAdapter):
             form_value = getattr(action, "form_value", {}) if action else {}
             option_val = getattr(action, "option", "") if action else ""
             input_val = getattr(action, "input_value", "") if action else ""
-
-            logger.info(
-                "[BotID: {}] 收到飞书卡片交互事件 -> open_id='{}', action_value='{}', form_value='{}', option='{}'",
-                self.bot.bot_id,
-                open_id,
-                action_value,
-                form_value,
-                option_val,
-            )
 
             user_choices: list[str] = []
             if isinstance(action_value, dict) and action_value:
@@ -532,12 +425,6 @@ class FeishuAdapter(BaseAdapter):
                 sender_id=open_id,
                 content=[MessageContent(msg_type=MessageType.TEXT, text=norm_text)],
             )
-
-            logger.info(
-                "[BotID: {}] 卡片交互成功归一化为文本消息: {}",
-                self.bot.bot_id,
-                norm_text,
-            )
             self._submit_to_hub(standard_msg)
 
             return P2CardActionTriggerResponse(
@@ -552,10 +439,7 @@ class FeishuAdapter(BaseAdapter):
                     }
                 }
             )
-        except Exception as exc:
-            logger.error(
-                "[BotID: {}] 处理卡片交互事件发生异常: {}", self.bot.bot_id, exc
-            )
+        except Exception:
             return P2CardActionTriggerResponse(
                 {"toast": {"type": "error", "content": "提交处理异常"}}
             )
@@ -586,13 +470,6 @@ class FeishuAdapter(BaseAdapter):
             )
             resp = self.bot.api_client.im.v1.message_resource.get(req)
             if not resp.success():
-                logger.error(
-                    "[BotID: {}] 下载飞书 {} 资源流失败: code={}, msg={}",
-                    self.bot.bot_id,
-                    res_type,
-                    resp.code,
-                    resp.msg,
-                )
                 return None
 
             file_bytes = resp.file.getvalue()
@@ -627,12 +504,7 @@ class FeishuAdapter(BaseAdapter):
                 content_type=content_type,
             )
             return storage_url
-        except Exception as exc:
-            logger.error(
-                "[BotID: {}] 飞书文件转存对象存储过程发生异常: {}",
-                self.bot.bot_id,
-                exc,
-            )
+        except Exception:
             return None
 
     def _transfer_storage_to_feishu(
@@ -655,11 +527,6 @@ class FeishuAdapter(BaseAdapter):
             # 1. 通过 share/data-client 委托 backend-data 读取对象
             file_stream = storage_client.download_file(file_url=file_url)
             if file_stream is None:
-                logger.error(
-                    "[BotID: {}] 从对象存储下载资源文件失败: {}",
-                    self.bot.bot_id,
-                    file_url,
-                )
                 return None
 
             # 2. 如果是图片类型，调用飞书图片上传接口
@@ -676,12 +543,6 @@ class FeishuAdapter(BaseAdapter):
                 )
                 upload_resp = self.bot.api_client.im.v1.image.create(upload_req)
                 if not upload_resp.success():
-                    logger.error(
-                        "[BotID: {}] 置换飞书图片 key 失败: code={}, msg={}",
-                        self.bot.bot_id,
-                        upload_resp.code,
-                        upload_resp.msg,
-                    )
                     return None
                 return upload_resp.data.image_key
 
@@ -711,22 +572,10 @@ class FeishuAdapter(BaseAdapter):
                 )
                 upload_resp = self.bot.api_client.im.v1.file.create(upload_req)
                 if not upload_resp.success():
-                    logger.error(
-                        "[BotID: {}] 置换飞书文件 key 失败: code={}, msg={}",
-                        self.bot.bot_id,
-                        upload_resp.code,
-                        upload_resp.msg,
-                    )
                     return None
                 return upload_resp.data.file_key
 
-        except Exception as exc:
-            logger.error(
-                "[BotID: {}] 对象存储转传飞书过程发生异常 ({}): {}",
-                self.bot.bot_id,
-                res_type,
-                exc,
-            )
+        except Exception:
             return None
 
     # ==========================================
@@ -750,14 +599,9 @@ class FeishuAdapter(BaseAdapter):
             )
             resp = self.bot.api_client.im.v1.message.create(req)
             if not resp.success():
-                logger.error(
-                    "[BotID: {}] 单聊富文本发送失败: code={}, msg={}",
-                    self.bot.bot_id,
-                    resp.code,
-                    resp.msg,
-                )
-        except Exception as exc:
-            logger.error("[BotID: {}] 单聊富文本发送异常: {}", self.bot.bot_id, exc)
+                pass
+        except Exception:
+            pass
 
     def _reply_post_group(self, message_id: str, post_content: str) -> None:
         """群聊回复富文本消息。"""
@@ -775,14 +619,9 @@ class FeishuAdapter(BaseAdapter):
             )
             resp = self.bot.api_client.im.v1.message.reply(req)
             if not resp.success():
-                logger.error(
-                    "[BotID: {}] 群聊富文本回复失败: code={}, msg={}",
-                    self.bot.bot_id,
-                    resp.code,
-                    resp.msg,
-                )
-        except Exception as exc:
-            logger.error("[BotID: {}] 群聊富文本回复异常: {}", self.bot.bot_id, exc)
+                pass
+        except Exception:
+            pass
 
     def _send_card_p2p(self, open_id: str, card_content: str) -> None:
         """单聊发送交互卡片消息。"""
@@ -801,14 +640,9 @@ class FeishuAdapter(BaseAdapter):
             )
             resp = self.bot.api_client.im.v1.message.create(req)
             if not resp.success():
-                logger.error(
-                    "[BotID: {}] 单聊交互卡片发送失败: code={}, msg={}",
-                    self.bot.bot_id,
-                    resp.code,
-                    resp.msg,
-                )
-        except Exception as exc:
-            logger.error("[BotID: {}] 单聊交互卡片发送异常: {}", self.bot.bot_id, exc)
+                pass
+        except Exception:
+            pass
 
     def _reply_card_group(self, message_id: str, card_content: str) -> None:
         """群聊回复交互卡片消息。"""
@@ -826,26 +660,16 @@ class FeishuAdapter(BaseAdapter):
             )
             resp = self.bot.api_client.im.v1.message.reply(req)
             if not resp.success():
-                logger.error(
-                    "[BotID: {}] 群聊交互卡片回复失败: code={}, msg={}",
-                    self.bot.bot_id,
-                    resp.code,
-                    resp.msg,
-                )
-        except Exception as exc:
-            logger.error("[BotID: {}] 群聊交互卡片回复异常: {}", self.bot.bot_id, exc)
+                pass
+        except Exception:
+            pass
 
     def _translate_common_card_to_feishu(self, card_data: Any) -> str:
         """【反归一化翻译切面】将解耦的公共卡片数据模型 (QuestionCardData) 动态翻译组装为飞书 Schema 2.0 JSON。"""
         if isinstance(card_data, dict):
             try:
                 card_obj = QuestionCardData(**card_data)
-            except Exception as exc:
-                logger.warning(
-                    "[BotID: {}] 尝试将字典转换为 QuestionCardData 异常: {}",
-                    self.bot.bot_id,
-                    exc,
-                )
+            except Exception:
                 return json.dumps(card_data, ensure_ascii=False)
         elif isinstance(card_data, QuestionCardData):
             card_obj = card_data

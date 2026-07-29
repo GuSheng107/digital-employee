@@ -61,6 +61,15 @@ class LogoutIdentitySessionRequest(BaseModel):
     refresh_token: str | None = None
 
 
+class ConsumeIdentityRateLimitRequest(BaseModel):
+    """消费认证接口的固定窗口限流计数。"""
+
+    bucket: str = Field(..., pattern=r"^[a-z0-9_-]+$", max_length=32)
+    identifier_hash: str = Field(..., pattern=r"^[a-f0-9]{64}$")
+    limit: int = Field(..., ge=1, le=10000)
+    window_seconds: int = Field(..., ge=1, le=86400)
+
+
 class CreateIdentityUserRequest(BaseModel):
     """管理员创建用户的数据写入请求。"""
 
@@ -70,7 +79,9 @@ class CreateIdentityUserRequest(BaseModel):
     email: str | None = Field(default=None, max_length=128)
     phone: str | None = Field(default=None, max_length=32)
     role_codes: list[str] = Field(default_factory=list)
+    actor_user_id: int = Field(..., ge=1)
     actor_role_codes: list[str] = Field(default_factory=list)
+    actor_permission_codes: list[str] = Field(default_factory=list)
     is_vip: bool = False
     vip_level: int | None = None
     vip_expires_at: datetime | None = None
@@ -89,6 +100,8 @@ class ResetIdentityPasswordRequest(BaseModel):
     """管理员重置密码哈希。"""
 
     password_hash: str = Field(..., min_length=1, max_length=255)
+    actor_user_id: int = Field(..., ge=1)
+    actor_role_codes: list[str] = Field(default_factory=list)
 
 
 class UpdateIdentityVipRequest(BaseModel):
@@ -97,12 +110,16 @@ class UpdateIdentityVipRequest(BaseModel):
     is_vip: bool
     vip_level: int | None = None
     vip_expires_at: datetime | None = None
+    actor_user_id: int = Field(..., ge=1)
+    actor_role_codes: list[str] = Field(default_factory=list)
 
 
 class UpdateIdentityStatusRequest(BaseModel):
     """更新用户状态。"""
 
     status: int = Field(..., ge=0, le=1)
+    actor_user_id: int = Field(..., ge=1)
+    actor_role_codes: list[str] = Field(default_factory=list)
 
 
 class DeleteIdentityUserRequest(BaseModel):
@@ -116,13 +133,23 @@ class RoleCodesRequest(BaseModel):
     """角色代码集合。"""
 
     role_codes: list[str] = Field(default_factory=list)
+    actor_user_id: int = Field(..., ge=1)
     actor_role_codes: list[str] = Field(default_factory=list)
+    actor_permission_codes: list[str] = Field(default_factory=list)
 
 
 class IdsRequest(BaseModel):
     """通用 ID 集合。"""
 
     ids: list[int] = Field(default_factory=list)
+
+
+class ManagedIdsRequest(IdsRequest):
+    """携带可信操作者上下文的 ID 集合。"""
+
+    actor_user_id: int = Field(..., ge=1)
+    actor_role_codes: list[str] = Field(default_factory=list)
+    actor_permission_codes: list[str] = Field(default_factory=list)
 
 
 class CreateIdentityRoleRequest(BaseModel):
@@ -132,6 +159,8 @@ class CreateIdentityRoleRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
     description: str = Field(default="", max_length=255)
     menu_ids: list[int] = Field(default_factory=list)
+    actor_role_codes: list[str] = Field(default_factory=list)
+    actor_permission_codes: list[str] = Field(default_factory=list)
 
 
 class UpdateIdentityRoleRequest(BaseModel):
@@ -140,6 +169,21 @@ class UpdateIdentityRoleRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=64)
     description: str | None = Field(default=None, max_length=255)
     menu_ids: list[int] | None = None
+    actor_role_codes: list[str] = Field(default_factory=list)
+    actor_permission_codes: list[str] = Field(default_factory=list)
+
+
+class DeleteIdentityRoleRequest(BaseModel):
+    """删除角色时携带可信操作者上下文。"""
+
+    actor_role_codes: list[str] = Field(default_factory=list)
+
+
+class ManageIdentityRoleMenusRequest(IdsRequest):
+    """维护角色菜单时携带可信操作者上下文。"""
+
+    actor_role_codes: list[str] = Field(default_factory=list)
+    actor_permission_codes: list[str] = Field(default_factory=list)
 
 
 class CreateIdentityMenuRequest(BaseModel):

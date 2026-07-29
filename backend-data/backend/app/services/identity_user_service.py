@@ -23,7 +23,7 @@ from auth_utils import (
     get_vip_display,
 )
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.menu import Menu
 from app.models.permission import Permission
@@ -60,6 +60,7 @@ class UserService:
         offset = (page - 1) * page_size
         users = self._session.scalars(
             select(User)
+            .options(selectinload(User.roles))
             .where(*base_filter)
             .order_by(User.created_at.desc())
             .offset(offset)
@@ -114,7 +115,9 @@ class UserService:
         email: str | None = None,
         phone: str | None = None,
         role_codes: list[str] | None = None,
+        actor_user_id: int,
         actor_role_codes: list[str],
+        actor_permission_codes: list[str],
         is_vip: bool = False,
         vip_level: int | None = None,
         vip_expires_at: datetime | None = None,
@@ -158,7 +161,17 @@ class UserService:
         self._session.flush()
 
         if requested_role_codes:
-            user.roles.extend(self._load_roles(requested_role_codes))
+            roles = self._load_roles(requested_role_codes)
+            self._ensure_permissions_within_actor_scope(
+                permission_codes={
+                    permission.code
+                    for role in roles
+                    for permission in role.permissions
+                },
+                actor_role_codes=actor_role_codes,
+                actor_permission_codes=actor_permission_codes,
+            )
+            user.roles.extend(roles)
 
         self._session.commit()
 
@@ -214,19 +227,14 @@ class UserService:
         user_id: int,
         role_codes: list[str],
         actor_role_codes: list[str],
+        actor_user_id: int,
+        actor_permission_codes: list[str],
     ) -> dict:
         """分配用户角色（覆盖式）。
 
-        权限组语义：角色作为模板，分配时把角色的权限点与菜单复制到用户的
-        独立集合（user_permissions / user_menus）。之后用户可独立增删自己
-        的权限/菜单，角色变更不再影响已分配用户。
-
-        合并策略：
-        - 先收集当前用户已有的权限/菜单 id 集合
-        - 把新角色集合的权限/菜单 union 进去
-        - 若用户原本有角色但新分配中移除了某角色，则该角色独有的权限/菜单
-          仍保留在用户独立集合中（避免误删用户后续手动添加的权限）
-        - 简化处理：分配角色时只新增不删除（用户手动增删走单独接口）
+        角色作为权限模板。角色覆盖后，用户权限与菜单同步覆盖为新角色集合
+        的模板内容，避免移除角色后遗留已降级权限；后续仍可通过独立接口
+        在操作者权限范围内调整。
         """
         if PROTECTED_ROLE_CODES.intersection(role_codes):
             raise PermissionDeniedError(
@@ -241,9 +249,23 @@ class UserService:
         if user is None or user.deleted_at is not None:
             raise ResourceNotFoundError(message="用户不存在")
         self._ensure_not_protected_account(user)
+        self._ensure_actor_can_manage_user(
+            user=user,
+            actor_user_id=actor_user_id,
+            actor_role_codes=actor_role_codes,
+        )
 
         # 查询目标角色
         roles = self._load_roles(set(role_codes)) if role_codes else []
+        self._ensure_permissions_within_actor_scope(
+            permission_codes={
+                permission.code
+                for role in roles
+                for permission in role.permissions
+            },
+            actor_role_codes=actor_role_codes,
+            actor_permission_codes=actor_permission_codes,
+        )
 
         # 覆盖式更新角色
         user.roles = list(roles)
@@ -314,7 +336,15 @@ class UserService:
             for m in menus
         ]
 
-    def assign_user_menus(self, *, user_id: int, menu_ids: list[int]) -> dict:
+    def assign_user_menus(
+        self,
+        *,
+        user_id: int,
+        menu_ids: list[int],
+        actor_user_id: int,
+        actor_role_codes: list[str],
+        actor_permission_codes: list[str],
+    ) -> dict:
         """分配用户独立菜单（覆盖式）。
 
         与角色菜单解耦：用户菜单为角色模板复制后的副本，可个性化增删。
@@ -323,6 +353,11 @@ class UserService:
         if user is None or user.deleted_at is not None:
             raise ResourceNotFoundError(message="用户不存在")
         self._ensure_not_protected_account(user)
+        self._ensure_actor_can_manage_user(
+            user=user,
+            actor_user_id=actor_user_id,
+            actor_role_codes=actor_role_codes,
+        )
 
         menus: list[Menu] = []
         if menu_ids:
@@ -338,6 +373,11 @@ class UserService:
                 raise ValidationError(message=f"菜单不存在：{missing_text}")
 
         permission_codes = {menu.permission for menu in menus if menu.permission}
+        self._ensure_permissions_within_actor_scope(
+            permission_codes=permission_codes,
+            actor_role_codes=actor_role_codes,
+            actor_permission_codes=actor_permission_codes,
+        )
         permissions = (
             list(
                 self._session.scalars(
@@ -388,13 +428,24 @@ class UserService:
         ]
 
     def assign_user_permissions(
-        self, *, user_id: int, permission_ids: list[int]
+        self,
+        *,
+        user_id: int,
+        permission_ids: list[int],
+        actor_user_id: int,
+        actor_role_codes: list[str],
+        actor_permission_codes: list[str],
     ) -> dict:
         """分配用户独立权限（覆盖式）。"""
         user = self._session.get(User, user_id)
         if user is None or user.deleted_at is not None:
             raise ResourceNotFoundError(message="用户不存在")
         self._ensure_not_protected_account(user)
+        self._ensure_actor_can_manage_user(
+            user=user,
+            actor_user_id=actor_user_id,
+            actor_role_codes=actor_role_codes,
+        )
 
         perms: list[Permission] = []
         if permission_ids:
@@ -410,6 +461,11 @@ class UserService:
                     str(permission_id) for permission_id in missing_permission_ids
                 )
                 raise ValidationError(message=f"权限不存在：{missing_text}")
+        self._ensure_permissions_within_actor_scope(
+            permission_codes={permission.code for permission in perms},
+            actor_role_codes=actor_role_codes,
+            actor_permission_codes=actor_permission_codes,
+        )
 
         user.permissions = perms
         self._session.commit()
@@ -492,10 +548,22 @@ class UserService:
             else IdentitySessionService().is_password_change_required(user_id),
         }
 
-    def reset_user_password(self, *, user_id: int, password_hash: str) -> dict:
+    def reset_user_password(
+        self,
+        *,
+        user_id: int,
+        password_hash: str,
+        actor_user_id: int,
+        actor_role_codes: list[str],
+    ) -> dict:
         """管理员重置指定用户的密码（覆盖式，不校验旧密码）。"""
         user = self._get_user(user_id)
         self._ensure_not_protected_account(user)
+        self._ensure_actor_can_manage_user(
+            user=user,
+            actor_user_id=actor_user_id,
+            actor_role_codes=actor_role_codes,
+        )
         user.password_hash = password_hash
         self._session.commit()
         session_service = IdentitySessionService()
@@ -514,10 +582,17 @@ class UserService:
         is_vip: bool,
         vip_level: int | None,
         vip_expires_at: datetime | None,
+        actor_user_id: int,
+        actor_role_codes: list[str],
     ) -> dict:
         """更新普通用户的 VIP 设置。"""
         user = self._get_user(user_id)
         self._ensure_not_protected_account(user)
+        self._ensure_actor_can_manage_user(
+            user=user,
+            actor_user_id=actor_user_id,
+            actor_role_codes=actor_role_codes,
+        )
         role_codes = {role.code for role in user.roles}
         if ROLE_CODE_MANAGER in role_codes:
             raise ValidationError(message="管理员身份不能配置业务 VIP")
@@ -539,12 +614,24 @@ class UserService:
             else None,
         }
 
-    def update_status(self, *, user_id: int, status: int) -> dict:
+    def update_status(
+        self,
+        *,
+        user_id: int,
+        status: int,
+        actor_user_id: int,
+        actor_role_codes: list[str],
+    ) -> dict:
         """启用或停用用户；停用时撤销全部会话。"""
         if status not in {0, 1}:
             raise ValidationError(message="用户状态仅支持启用或停用")
         user = self._get_user(user_id)
         self._ensure_not_protected_account(user)
+        self._ensure_actor_can_manage_user(
+            user=user,
+            actor_user_id=actor_user_id,
+            actor_role_codes=actor_role_codes,
+        )
         user.status = status
         self._session.commit()
         if status == 0:
@@ -624,6 +711,39 @@ class UserService:
         role_codes = {role.code for role in user.roles}
         if PROTECTED_ROLE_CODES.intersection(role_codes):
             raise PermissionDeniedError(message="超级管理员账号不允许通过用户管理维护")
+
+    @staticmethod
+    def _ensure_actor_can_manage_user(
+        *,
+        user: User,
+        actor_user_id: int,
+        actor_role_codes: list[str],
+    ) -> None:
+        """禁止自维护，并限制普通管理员维护同级管理员。"""
+        if actor_user_id == user.id:
+            raise PermissionDeniedError(message="不能通过管理接口修改当前登录账号")
+        target_role_codes = {role.code for role in user.roles}
+        if (
+            ROLE_CODE_MANAGER in target_role_codes
+            and ROLE_CODE_SUPER_ADMIN not in actor_role_codes
+        ):
+            raise PermissionDeniedError(message="仅超级管理员可以维护管理员账号")
+
+    @staticmethod
+    def _ensure_permissions_within_actor_scope(
+        *,
+        permission_codes: set[str],
+        actor_role_codes: list[str],
+        actor_permission_codes: list[str],
+    ) -> None:
+        """禁止普通管理员授予超出自身范围的权限。"""
+        if ROLE_CODE_SUPER_ADMIN in actor_role_codes:
+            return
+        unauthorized_codes = sorted(permission_codes - set(actor_permission_codes))
+        if unauthorized_codes:
+            raise PermissionDeniedError(
+                message=f"不能授予超出自身范围的权限：{', '.join(unauthorized_codes)}"
+            )
 
     def _normalize_vip_settings(
         self,

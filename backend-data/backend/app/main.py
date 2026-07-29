@@ -13,12 +13,11 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from loguru import logger
 from psycopg2 import errorcodes
 from sqlalchemy.exc import ProgrammingError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api.deps import get_auth_client
+from app.api.deps import close_auth_client
 from app.api.router import api_router
 from app.core.config import settings
 from app.schemas.health import ServiceInfo
@@ -31,7 +30,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         await get_message_broker_service().close()
-        get_auth_client().close()
+        close_auth_client()
 
 
 app = FastAPI(
@@ -55,15 +54,6 @@ app.add_middleware(
 @app.exception_handler(ApiException)
 async def api_exception_handler(request: Request, exc: ApiException) -> JSONResponse:
     """把业务异常转换为带错误码的统一响应信封。"""
-    if exc.http_status >= 500:
-        logger.warning(
-            "[ApiException] {} {} code={} status={} detail={}",
-            request.method,
-            request.url.path,
-            exc.code,
-            exc.http_status,
-            exc.detail,
-        )
     return JSONResponse(
         status_code=exc.http_status,
         content=exc.to_response(),
@@ -81,13 +71,6 @@ async def http_exception_handler(
     沿用 detail 文案，便于调用方定位问题。
     """
     if exc.status_code >= 500:
-        logger.warning(
-            "[HTTPException] {} {} status={} detail={}",
-            request.method,
-            request.url.path,
-            exc.status_code,
-            exc.detail,
-        )
         message = "internal server error"
     else:
         message = str(exc.detail) if exc.detail else "error"
@@ -144,22 +127,10 @@ async def database_programming_error_handler(
         error = DependencyUnavailableError(
             message="数据库业务表尚未初始化，请先执行结构变更 SQL",
         )
-        logger.warning(
-            "[DATABASE_SCHEMA] {} {} code={}",
-            request.method,
-            request.url.path,
-            database_code,
-        )
         return JSONResponse(
             status_code=error.http_status,
             content=error.to_response(),
         )
-    logger.exception(
-        "[DATABASE_PROGRAMMING_ERROR] {} {}: {}",
-        request.method,
-        request.url.path,
-        exc,
-    )
     return JSONResponse(
         status_code=500,
         content=InternalError().to_response(),
@@ -168,12 +139,6 @@ async def database_programming_error_handler(
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    logger.exception(
-        "[UNHANDLED] {} {}: {}",
-        request.method,
-        request.url.path,
-        exc,
-    )
     return JSONResponse(
         status_code=500,
         content=InternalError().to_response(),

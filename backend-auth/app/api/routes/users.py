@@ -12,7 +12,6 @@ from auth_utils import (
     get_vip_display,
 )
 from fastapi import APIRouter, Depends, File, Query, UploadFile
-from loguru import logger
 
 from app.api.deps import get_current_user, require_permission
 from app.schemas.auth import UserInfo
@@ -71,7 +70,9 @@ def create_user(
         email=str(payload.email) if payload.email else None,
         phone=payload.phone,
         role_codes=payload.role_codes,
+        actor_user_id=current_user.id,
         actor_role_codes=current_user.roles,
+        actor_permission_codes=current_user.permissions,
         is_vip=payload.is_vip,
         vip_level=payload.vip_level,
         vip_expires_at=payload.vip_expires_at,
@@ -95,12 +96,6 @@ def update_profile(
         password=payload.password,
         current_password=payload.current_password,
     )
-    if payload.password:
-        logger.info(
-            "security_event=password_change user_id={} username={}",
-            current_user.id,
-            current_user.username,
-        )
     return success_response(result)
 
 
@@ -172,13 +167,9 @@ def assign_roles(
     result = service.assign_roles(
         user_id=user_id,
         role_codes=payload.role_codes,
+        actor_user_id=current_user.id,
         actor_role_codes=current_user.roles,
-    )
-    logger.info(
-        "security_event=assign_roles actor_user_id={} target_user_id={} roles={}",
-        current_user.id,
-        user_id,
-        payload.role_codes,
+        actor_permission_codes=current_user.permissions,
     )
     return success_response(result)
 
@@ -186,27 +177,35 @@ def assign_roles(
 @router.put(
     "/{user_id}/password",
     response_model=ApiResponse,
-    dependencies=[Depends(require_permission(PermissionCode.USER_MANAGE))],
 )
 def reset_user_password(
     user_id: int,
     payload: ResetPasswordRequest,
+    current_user: UserInfo = Depends(
+        require_permission(PermissionCode.USER_MANAGE)
+    ),
 ) -> dict:
     """重置指定用户密码（管理员，覆盖式，不校验旧密码）。"""
     service = UserService()
-    result = service.reset_user_password(user_id=user_id, new_password=payload.new_password)
-    logger.info("security_event=admin_password_reset target_user_id={}", user_id)
+    result = service.reset_user_password(
+        user_id=user_id,
+        new_password=payload.new_password,
+        actor_user_id=current_user.id,
+        actor_role_codes=current_user.roles,
+    )
     return success_response(result)
 
 
 @router.put(
     "/{user_id}/vip",
     response_model=ApiResponse,
-    dependencies=[Depends(require_permission(PermissionCode.USER_MANAGE))],
 )
 def update_user_vip(
     user_id: int,
     payload: UpdateVipRequest,
+    current_user: UserInfo = Depends(
+        require_permission(PermissionCode.USER_MANAGE)
+    ),
 ) -> dict:
     """设置用户业务 VIP。"""
     return success_response(
@@ -215,6 +214,8 @@ def update_user_vip(
             is_vip=payload.is_vip,
             vip_level=payload.vip_level,
             vip_expires_at=payload.vip_expires_at,
+            actor_user_id=current_user.id,
+            actor_role_codes=current_user.roles,
         )
     )
 
@@ -222,17 +223,21 @@ def update_user_vip(
 @router.put(
     "/{user_id}/status",
     response_model=ApiResponse,
-    dependencies=[Depends(require_permission(PermissionCode.USER_MANAGE))],
 )
 def update_user_status(
     user_id: int,
     payload: UpdateUserStatusRequest,
+    current_user: UserInfo = Depends(
+        require_permission(PermissionCode.USER_MANAGE)
+    ),
 ) -> dict:
     """启用或停用用户。"""
     return success_response(
         UserService().update_status(
             user_id=user_id,
             status=payload.status,
+            actor_user_id=current_user.id,
+            actor_role_codes=current_user.roles,
         )
     )
 
@@ -273,18 +278,26 @@ def get_user_menus(
 @router.put(
     "/{user_id}/menus",
     response_model=ApiResponse,
-    dependencies=[Depends(require_permission(PermissionCode.USER_PERMISSION))],
 )
 def assign_user_menus(
     user_id: int,
     payload: AssignUserMenusRequest,
+    current_user: UserInfo = Depends(
+        require_permission(PermissionCode.USER_PERMISSION)
+    ),
 ) -> dict:
     """分配用户独立菜单（覆盖式，管理员）。
 
     与角色菜单解耦：用户菜单为角色模板复制后的副本，可个性化增删。
     """
     service = UserService()
-    result = service.assign_user_menus(user_id=user_id, menu_ids=payload.menu_ids)
+    result = service.assign_user_menus(
+        user_id=user_id,
+        menu_ids=payload.menu_ids,
+        actor_user_id=current_user.id,
+        actor_role_codes=current_user.roles,
+        actor_permission_codes=current_user.permissions,
+    )
     return success_response(result)
 
 
@@ -304,13 +317,21 @@ def get_user_permissions(
 @router.put(
     "/{user_id}/permissions",
     response_model=ApiResponse,
-    dependencies=[Depends(require_permission(PermissionCode.USER_PERMISSION))],
 )
 def assign_user_permissions(
     user_id: int,
     payload: AssignUserPermissionsRequest,
+    current_user: UserInfo = Depends(
+        require_permission(PermissionCode.USER_PERMISSION)
+    ),
 ) -> dict:
     """分配用户独立权限（覆盖式，管理员）。"""
     service = UserService()
-    result = service.assign_user_permissions(user_id=user_id, permission_ids=payload.permission_ids)
+    result = service.assign_user_permissions(
+        user_id=user_id,
+        permission_ids=payload.permission_ids,
+        actor_user_id=current_user.id,
+        actor_role_codes=current_user.roles,
+        actor_permission_codes=current_user.permissions,
+    )
     return success_response(result)

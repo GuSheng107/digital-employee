@@ -16,7 +16,6 @@ from collections import OrderedDict
 from typing import Any
 
 from Crypto.Cipher import AES
-from loguru import logger
 
 from src.core.hub import hub
 from src.core.schemas import (
@@ -97,7 +96,6 @@ class WeChatAdapter(BaseAdapter):
         Args:
             data: 企业微信推送的原始 JSON 字典。
         """
-        cmd = data.get("cmd", "")
         headers = data.get("headers", {})
         body = data.get("body", {})
 
@@ -119,15 +117,6 @@ class WeChatAdapter(BaseAdapter):
         )
         chat_type_raw = body.get("chattype") or body.get("chat_type") or "single"
         msg_type_raw = body.get("msgtype") or body.get("msg_type") or "text"
-
-        logger.info(
-            "[BotID: {}] 收到企业微信 SDK 推送消息 -> cmd='{}', msgid='{}', req_id='{}', msg_type='{}'",
-            self.bot.bot_id,
-            cmd,
-            msg_id,
-            req_id,
-            msg_type_raw,
-        )
 
         # 缓存 msg_id 与原始数据帧，供后续被动回复 reply/reply_media 时直接使用
         if msg_id:
@@ -185,15 +174,6 @@ class WeChatAdapter(BaseAdapter):
         )
 
         if is_card_event and event_key:
-            logger.info(
-                "[BotID: {}] 识别到企微卡片按钮点击回调事件 -> msg_type='{}', event_type='{}', task_id='{}', event_key='{}', sender_id='{}'",
-                self.bot.bot_id,
-                msg_type_raw,
-                event_type,
-                cb_task_id,
-                event_key,
-                sender_id,
-            )
             result_text = (
                 f"[卡片提交结果] (TaskID: {cb_task_id}) 单选结果: {event_key}"
                 if cb_task_id
@@ -211,9 +191,6 @@ class WeChatAdapter(BaseAdapter):
 
         # 忽略无具体交互 key 的普通系统事件，避免产生误回复
         if msg_type_raw == "event":
-            logger.debug(
-                "[BotID: {}] 忽略无具体交互 key 的企微系统事件", self.bot.bot_id
-            )
             return
 
         # 2. 递归遍历和排重收集包体内所有多模态区块（包括 mixed 图文混排以及各种深层嵌套）
@@ -290,24 +267,12 @@ class WeChatAdapter(BaseAdapter):
                             )
                         )
         else:
-            # 兜底转换
-            logger.warning(
-                "[BotID: {}] 包内未收集到有效媒体部件，进行普通消息类型转化: {}",
-                self.bot.bot_id,
-                msg_type_raw,
-            )
             standard_msg.content.append(
                 MessageContent(
                     msg_type=MessageType.TEXT,
                     text=f"[暂不支持的消息类型: {msg_type_raw}]",
                 )
             )
-
-        logger.info(
-            "[BotID: {}] 投递入站消息，归一化 StandardMessage JSON: {}",
-            self.bot.bot_id,
-            standard_msg.model_dump_json(indent=2),
-        )
         # 通过跨线程安全搭桥投递入站消息给异步路由中枢
         self._submit_to_hub(standard_msg)
 
@@ -384,10 +349,6 @@ class WeChatAdapter(BaseAdapter):
             msg: 归一化标准消息对象。
         """
         if self.main_loop is None or self.main_loop.is_closed():
-            logger.error(
-                "[BotID: {}] 主事件循环未注入或已关闭，无法投递消息至中枢。",
-                self.bot.bot_id,
-            )
             return
 
         future = asyncio.run_coroutine_threadsafe(
@@ -398,16 +359,9 @@ class WeChatAdapter(BaseAdapter):
         try:
             future.result(timeout=5.0)
         except concurrent.futures.TimeoutError:
-            logger.error(
-                "[BotID: {}] 跨线程提交入站任务至异步中枢超时（>5s）。",
-                self.bot.bot_id,
-            )
-        except Exception as exc:
-            logger.error(
-                "[BotID: {}] 跨线程投递异步中枢时发生异常: {}",
-                self.bot.bot_id,
-                exc,
-            )
+            pass
+        except Exception:
+            pass
 
     def _download_and_decrypt_media(
         self,
@@ -485,13 +439,7 @@ class WeChatAdapter(BaseAdapter):
             )
             return storage_url
 
-        except Exception as exc:
-            logger.error(
-                "[BotID: {}] 下载解密或转存微信资源失败 (type='{}'): {}",
-                self.bot.bot_id,
-                res_type,
-                exc,
-            )
+        except Exception:
             return None
 
     def _upload_media_to_wechat(
@@ -514,11 +462,6 @@ class WeChatAdapter(BaseAdapter):
             # 1. 通过 share/data-client 委托 backend-data 读取对象
             file_stream = storage_client.download_file(file_url=file_url)
             if file_stream is None:
-                logger.error(
-                    "[BotID: {}] 从对象存储读取资源文件失败: {}",
-                    self.bot.bot_id,
-                    file_url,
-                )
                 return None
 
             media_bytes = file_stream.read()
@@ -541,10 +484,6 @@ class WeChatAdapter(BaseAdapter):
                 or not self.bot._loop.is_running()
                 or self.bot.client is None
             ):
-                logger.error(
-                    "[BotID: {}] WeChatBot SDK Client 未连接，无法执行素材上传。",
-                    self.bot.bot_id,
-                )
                 return None
 
             # voice 映射
@@ -562,12 +501,7 @@ class WeChatAdapter(BaseAdapter):
             media_id = upload_result.get("media_id")
             return media_id
 
-        except Exception as exc:
-            logger.error(
-                "[BotID: {}] 上传媒体资源至微信长连接失败: {}",
-                self.bot.bot_id,
-                exc,
-            )
+        except Exception:
             return None
 
     def send_message(self, msg: StandardMessage) -> None:
@@ -577,26 +511,13 @@ class WeChatAdapter(BaseAdapter):
             msg: 出站的标准归一化消息体。
         """
         if not msg.content:
-            logger.warning(
-                "[BotID: {}] 待发送的标准消息内容为空，放弃发送。", self.bot.bot_id
-            )
             return
-
-        logger.info(
-            "[BotID: {}] 收到待发送出站消息，StandardMessage JSON: {}",
-            self.bot.bot_id,
-            msg.model_dump_json(indent=2),
-        )
 
         if (
             self.bot._loop is None
             or not self.bot._loop.is_running()
             or self.bot.client is None
         ):
-            logger.error(
-                "[BotID: {}] WeChatBot SDK Client 未就绪，无法发送消息。",
-                self.bot.bot_id,
-            )
             return
 
         # 检查是否能找到入站时缓存的原始数据帧 (若有且非 event 事件回调，说明是被动回复)
@@ -667,10 +588,6 @@ class WeChatAdapter(BaseAdapter):
                     item.file_url, res_type, file_name=file_name
                 )
                 if not media_id:
-                    logger.error(
-                        "[BotID: {}] 微信媒体上传失败，跳过该多媒体出站消息模块。",
-                        self.bot.bot_id,
-                    )
                     continue
 
                 if current_frame:
@@ -718,17 +635,7 @@ class WeChatAdapter(BaseAdapter):
                             wechat_card_body = None
 
                 if not wechat_card_body:
-                    logger.warning(
-                        "[BotID: {}] 无法反归一化解析微信卡片数据，跳过发送。",
-                        self.bot.bot_id,
-                    )
                     continue
-
-                logger.info(
-                    "[BotID: {}] 微信适配器成功将公共卡片反归一化翻译为 button_interaction 模板卡片: {}",
-                    self.bot.bot_id,
-                    wechat_card_body,
-                )
 
                 future = asyncio.run_coroutine_threadsafe(
                     self.bot.client.send_message(
@@ -747,12 +654,7 @@ class WeChatAdapter(BaseAdapter):
         if isinstance(card_data, dict):
             try:
                 card_obj = QuestionCardData(**card_data)
-            except Exception as exc:
-                logger.warning(
-                    "[BotID: {}] 尝试将字典转换为 QuestionCardData 异常: {}",
-                    self.bot.bot_id,
-                    exc,
-                )
+            except Exception:
                 return card_data
         elif isinstance(card_data, QuestionCardData):
             card_obj = card_data

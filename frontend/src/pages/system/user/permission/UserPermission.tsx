@@ -40,6 +40,7 @@ import {
 } from '@/api/role-api';
 import { fetchMenus, type MenuItem } from '@/api/menu-api';
 import { ROLE_CODE } from '@/constants/access-control';
+import { useUserStore } from '@/store/user-store';
 import { getRequestErrorMessage } from '@/utils/request';
 import styles from './index.module.css';
 
@@ -76,9 +77,16 @@ function convertMenusToTreeData(menus: MenuItem[]): TreeDataNode[] {
   return roots;
 }
 
-/** 超级管理员是平台保护角色，不进入通用角色维护列表。 */
-function getManageableRoles(roles: RoleItem[]): RoleItem[] {
-  return roles.filter((role) => role.code !== ROLE_CODE.SUPER_ADMIN);
+/** 返回当前操作者可维护的角色；超级管理员角色始终由系统保护。 */
+function getManageableRoles(
+  roles: RoleItem[],
+  canManageManager: boolean,
+): RoleItem[] {
+  return roles.filter(
+    (role) =>
+      role.code !== ROLE_CODE.SUPER_ADMIN
+      && (role.code !== ROLE_CODE.MANAGER || canManageManager),
+  );
 }
 
 interface RoleFormValues {
@@ -88,6 +96,9 @@ interface RoleFormValues {
 }
 
 export default function UserPermission(): React.ReactElement {
+  const currentUserRoles = useUserStore((state) => state.userInfo?.roles ?? []);
+  const canManageManager = currentUserRoles.includes(ROLE_CODE.SUPER_ADMIN);
+
   // ── 左栏：用户角色分配 ──
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [usersLoading, setUsersLoading] = useState<boolean>(true);
@@ -146,7 +157,7 @@ export default function UserPermission(): React.ReactElement {
     setRolesLoading(true);
     try {
       const response = await fetchRoles();
-      const manageableRoles = getManageableRoles(response);
+      const manageableRoles = getManageableRoles(response, canManageManager);
       setRoles(manageableRoles);
       setSelectedRoleId((currentRoleId) => {
         if (
@@ -192,7 +203,7 @@ export default function UserPermission(): React.ReactElement {
         setUsersTotal(userResponse.total);
         setUsersPage(userResponse.page);
         setUsersPageSize(userResponse.page_size);
-        setRoles(getManageableRoles(roleResponse));
+        setRoles(getManageableRoles(roleResponse, canManageManager));
         setAllMenus(menuResponse);
       })
       .catch((error: unknown) => {
@@ -209,7 +220,7 @@ export default function UserPermission(): React.ReactElement {
     return () => {
       active = false;
     };
-  }, []);
+  }, [canManageManager]);
 
   function handleSelectUser(user: UserListItem): void {
     setSelectedUser(user);

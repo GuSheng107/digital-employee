@@ -11,7 +11,11 @@ from api_common import (
     ResourceNotFoundError,
     ValidationError,
 )
-from auth_utils import PROTECTED_ROLE_CODES
+from auth_utils import (
+    PROTECTED_ROLE_CODES,
+    ROLE_CODE_MANAGER,
+    ROLE_CODE_SUPER_ADMIN,
+)
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -69,6 +73,8 @@ class RoleService:
         *,
         code: str,
         name: str,
+        actor_role_codes: list[str],
+        actor_permission_codes: list[str],
         description: str = "",
         menu_ids: list[int] | None = None,
     ) -> dict:
@@ -102,6 +108,11 @@ class RoleService:
 
         if menu_ids:
             menus = self._load_menus(menu_ids)
+            self._ensure_permissions_within_actor_scope(
+                menus=menus,
+                actor_role_codes=actor_role_codes,
+                actor_permission_codes=actor_permission_codes,
+            )
             role.menus = menus
             self._sync_role_permissions_from_menus(role, menus)
 
@@ -123,6 +134,8 @@ class RoleService:
         self,
         *,
         role_id: int,
+        actor_role_codes: list[str],
+        actor_permission_codes: list[str],
         name: str | None = None,
         description: str | None = None,
         menu_ids: list[int] | None = None,
@@ -136,6 +149,10 @@ class RoleService:
             PermissionDeniedError: 尝试修改内置角色名称。
         """
         role = self._get_manageable_role(role_id)
+        self._ensure_actor_can_manage_role(
+            role=role,
+            actor_role_codes=actor_role_codes,
+        )
 
         if name is not None:
             if role.is_builtin:
@@ -145,6 +162,11 @@ class RoleService:
             role.description = description
         if menu_ids is not None:
             menus = self._load_menus(menu_ids) if menu_ids else []
+            self._ensure_permissions_within_actor_scope(
+                menus=menus,
+                actor_role_codes=actor_role_codes,
+                actor_permission_codes=actor_permission_codes,
+            )
             role.menus = menus
             self._sync_role_permissions_from_menus(role, menus)
 
@@ -162,7 +184,12 @@ class RoleService:
             ),
         }
 
-    def delete_role(self, *, role_id: int) -> dict:
+    def delete_role(
+        self,
+        *,
+        role_id: int,
+        actor_role_codes: list[str],
+    ) -> dict:
         """删除角色（软删除）。
 
         内置角色不可删除。如果角色仍关联用户，则阻止删除。
@@ -172,6 +199,10 @@ class RoleService:
             PermissionDeniedError: 内置角色不可删除或角色仍关联用户。
         """
         role = self._get_manageable_role(role_id)
+        self._ensure_actor_can_manage_role(
+            role=role,
+            actor_role_codes=actor_role_codes,
+        )
 
         if role.is_builtin:
             raise PermissionDeniedError(message="内置角色不可删除")
@@ -211,14 +242,30 @@ class RoleService:
             for m in menus
         ]
 
-    def assign_menus(self, *, role_id: int, menu_ids: list[int]) -> dict:
+    def assign_menus(
+        self,
+        *,
+        role_id: int,
+        menu_ids: list[int],
+        actor_role_codes: list[str],
+        actor_permission_codes: list[str],
+    ) -> dict:
         """分配角色菜单（覆盖式）。"""
         role = self._get_manageable_role(role_id)
+        self._ensure_actor_can_manage_role(
+            role=role,
+            actor_role_codes=actor_role_codes,
+        )
 
         # 查询目标菜单
         menus: list[Menu] = []
         if menu_ids:
             menus = self._load_menus(menu_ids)
+        self._ensure_permissions_within_actor_scope(
+            menus=menus,
+            actor_role_codes=actor_role_codes,
+            actor_permission_codes=actor_permission_codes,
+        )
 
         # 覆盖式更新
         role.menus = menus
@@ -289,3 +336,37 @@ class RoleService:
         if role.code in PROTECTED_ROLE_CODES:
             raise PermissionDeniedError(message="超级管理员角色不允许维护")
         return role
+
+    @staticmethod
+    def _ensure_actor_can_manage_role(
+        *,
+        role: Role,
+        actor_role_codes: list[str],
+    ) -> None:
+        """限制 manager 内置角色只能由超级管理员维护。"""
+        if (
+            role.code == ROLE_CODE_MANAGER
+            and ROLE_CODE_SUPER_ADMIN not in actor_role_codes
+        ):
+            raise PermissionDeniedError(message="仅超级管理员可以维护管理员角色")
+
+    @staticmethod
+    def _ensure_permissions_within_actor_scope(
+        *,
+        menus: list[Menu],
+        actor_role_codes: list[str],
+        actor_permission_codes: list[str],
+    ) -> None:
+        """禁止普通管理员通过角色模板授予超出自身范围的权限。"""
+        if ROLE_CODE_SUPER_ADMIN in actor_role_codes:
+            return
+        permission_codes = {
+            menu.permission
+            for menu in menus
+            if menu.permission is not None
+        }
+        unauthorized_codes = sorted(permission_codes - set(actor_permission_codes))
+        if unauthorized_codes:
+            raise PermissionDeniedError(
+                message=f"不能授予超出自身范围的权限：{', '.join(unauthorized_codes)}"
+            )

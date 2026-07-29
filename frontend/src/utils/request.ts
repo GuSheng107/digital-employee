@@ -83,7 +83,11 @@ export abstract class BaseRequest {
   }
 
   /** 401/403 认证失败 hook，默认空实现。子类可覆写以清用户态 */
-  protected onAuthError(_status: number, _config?: unknown): void {
+  protected onAuthError(
+    _status: number,
+    _config?: unknown,
+    _code?: string,
+  ): void {
     // default: no-op
   }
 
@@ -153,6 +157,7 @@ export abstract class BaseRequest {
         | undefined;
       if (response) {
         const { status, data, config } = response;
+        const code = this.getErrorCode(data);
         // 优先使用后端返回的业务文案（统一信封中的 message），兜底用状态码默认文案。
         // 这样 401 登录失败时能显示"用户名或密码错误"而非"登录状态已过期"。
         const backendMessage = this.getErrorMessage(data);
@@ -161,7 +166,7 @@ export abstract class BaseRequest {
           case 401:
             // 登录接口 401（INVALID_CREDENTIALS）与 token 过期 401（TOKEN_INVALID）
             // 都走这里：onAuthError 内部判断当前路径，登录页不跳转。
-            this.onAuthError(status, config);
+            this.onAuthError(status, config, code);
             message = backendMessage || '登录状态已过期，请重新登录';
             break;
           case 403:
@@ -193,7 +198,6 @@ export abstract class BaseRequest {
           default:
             message = backendMessage || '网络请求异常';
         }
-        const code = this.getErrorCode(data);
         return { message, status, code, data, config };
       }
     }

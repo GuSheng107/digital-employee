@@ -51,6 +51,13 @@ def get_auth_client() -> AuthClient:
     )
 
 
+def close_auth_client() -> None:
+    """关闭并清除缓存的共享认证客户端。"""
+    client = get_auth_client()
+    client.close()
+    get_auth_client.cache_clear()
+
+
 def _extract_bearer(authorization: str | None) -> str:
     """解析 Bearer token。"""
     if not authorization:

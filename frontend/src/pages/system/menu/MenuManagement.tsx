@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Key, ReactNode } from 'react';
 import {
   Button,
@@ -197,47 +197,41 @@ export default function MenuManagement(): React.ReactElement {
     return [{ value: 0, title: '顶级菜单', children: tree }];
   }, [menus]);
 
-  async function loadMenus(): Promise<void> {
+  const loadMenus = useCallback(async (
+    isActive: () => boolean = () => true,
+  ): Promise<void> => {
     setLoading(true);
     try {
       const [list, permissionList] = await Promise.all([
         fetchMenus(),
         fetchPermissions(),
       ]);
-      setMenus(list);
-      setExpandedRowKeys(getExpandableDirectoryIds(list));
-      setPermissions(permissionList);
+      if (isActive()) {
+        setMenus(list);
+        setExpandedRowKeys(getExpandableDirectoryIds(list));
+        setPermissions(permissionList);
+      }
     } catch (error) {
-      message.error(getErrorMessage(error));
+      if (isActive()) {
+        message.error(getErrorMessage(error));
+      }
     } finally {
-      setLoading(false);
+      if (isActive()) {
+        setLoading(false);
+      }
     }
-  }
+  }, []);
 
-  // 初始数据加载：菜单与权限码目录并行读取
+  // 初始加载和后续刷新复用同一请求路径，卸载后不再写入状态。
   useEffect(() => {
     let active = true;
-    void Promise.all([fetchMenus(), fetchPermissions()])
-      .then(([menuList, permissionList]) => {
-        if (!active) return;
-        setMenus(menuList);
-        setExpandedRowKeys(getExpandableDirectoryIds(menuList));
-        setPermissions(permissionList);
-      })
-      .catch((error: unknown) => {
-        if (active) {
-          message.error(getErrorMessage(error));
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setLoading(false);
-        }
-      });
+    // loadMenus 的状态写入发生在异步请求阶段，不会同步触发级联渲染。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadMenus(() => active);
     return () => {
       active = false;
     };
-  }, []);
+  }, [loadMenus]);
 
   /** 计算指定父菜单下的下一个排序值（同级最大 sort + 10，便于中间插入） */
   function calcNextSort(parentId: number): number {

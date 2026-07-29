@@ -214,7 +214,10 @@ export default function Login(): React.ReactElement {
           </Form>
 
           <div className={styles.registerLink}>
-            还没有账号？<a onClick={() => navigate('/register')}>立即注册</a>
+            还没有账号？
+            <Button type="link" onClick={() => navigate('/register')}>
+              立即注册
+            </Button>
           </div>
 
           <div className={styles.formFooter}>

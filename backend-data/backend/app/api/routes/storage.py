@@ -11,6 +11,7 @@ from app.core.storage_constants import (
     AVATAR_ROUTE_PREFIX,
     IMMUTABLE_ASSET_CACHE_CONTROL,
 )
+from app.core.config import settings
 from auth_utils import AVATAR_MAX_SIZE_BYTES
 from app.services.storage_service import StorageService
 
@@ -74,7 +75,7 @@ def upload_file(
     """通用文件上传接口。
 
     接收 multipart 文件，存储到 Minio，返回可访问 URL。
-    prefix 用于指定存储路径前缀，如 "avatars/1"。
+    prefix 用于指定普通业务存储路径前缀，如 "attachments/agent-1"。
     """
     content = file.file.read(AVATAR_MAX_SIZE_BYTES + 1)
     if len(content) > AVATAR_MAX_SIZE_BYTES:
@@ -97,7 +98,9 @@ def upload_object(
     object_name: str = Form(...),
 ) -> dict:
     """按业务对象名上传内部文件；仅供 data-client 服务调用。"""
-    content = file.file.read()
+    content = file.file.read(settings.storage_object_max_size_bytes + 1)
+    if len(content) > settings.storage_object_max_size_bytes:
+        raise ValidationError(message="上传对象超过允许的大小上限")
     try:
         result = StorageService().upload_object(
             object_name=object_name,
@@ -125,7 +128,11 @@ def download_object(
     return Response(
         content=content,
         media_type=content_type,
-        headers={"X-Content-Type-Options": "nosniff"},
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            "Content-Disposition": "attachment",
+        },
     )
 
 
@@ -145,5 +152,9 @@ def download_object_by_url(
     return Response(
         content=content,
         media_type=content_type,
-        headers={"X-Content-Type-Options": "nosniff"},
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            "Content-Disposition": "attachment",
+        },
     )

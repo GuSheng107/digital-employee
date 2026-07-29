@@ -18,16 +18,15 @@ from api_common import (
     success_response,
 )
 from api_common.exceptions import ApiException
+from data_client import get_data_client
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from loguru import logger
 
 from app.api.router import api_router
 from app.core.config import settings
 from app.schemas.health import ServiceInfo
-from data_client import get_data_client
 
 
 @asynccontextmanager
@@ -64,17 +63,8 @@ async def api_exception_handler(request: Request, exc: ApiException) -> JSONResp
     将 ``ApiException`` 转换为统一响应信封：
     ``{"success": False, "message": str, "data": {"code": str, "detail": str}}``。
 
-    5xx 异常记录日志并对外脱敏；4xx 异常沿用业务文案。
+    5xx 异常对外脱敏；4xx 异常沿用业务文案。
     """
-    if exc.http_status >= 500:
-        logger.warning(
-            "[ApiException] {} {} code={} status={} detail={}",
-            request.method,
-            request.url.path,
-            exc.code,
-            exc.http_status,
-            exc.detail,
-        )
     return JSONResponse(
         status_code=exc.http_status,
         content=exc.to_response(),
@@ -90,13 +80,6 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     区分来源。
     """
     if exc.status_code >= 500:
-        logger.warning(
-            "[HTTPException] {} {} status={} detail={}",
-            request.method,
-            request.url.path,
-            exc.status_code,
-            exc.detail,
-        )
         message = "internal server error"
     else:
         message = str(exc.detail) if exc.detail else "error"
@@ -147,12 +130,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
     统一转换为 ``InternalError`` 响应，对外脱敏。
     """
-    logger.exception(
-        "[UNHANDLED] {} {}: {}",
-        request.method,
-        request.url.path,
-        exc,
-    )
     return JSONResponse(
         status_code=500,
         content=InternalError().to_response(),

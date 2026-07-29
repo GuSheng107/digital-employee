@@ -5,7 +5,6 @@
 """
 
 import asyncio
-import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
@@ -27,7 +26,7 @@ from src.core.schemas import (
     HealthResponse,
 )
 from src.manager import BotManager
-from src.utils.auth import get_auth_client, require_permission
+from src.utils.auth import close_auth_client, require_permission
 from src.utils.data_access import message_bus_client
 
 
@@ -38,24 +37,11 @@ def _load_service_configuration() -> None:
         nacos_client = NacosClient.from_env_optional()
         if nacos_client is not None:
             nacos_client.load_to_environ()
-    except Exception as exc:  # noqa: BLE001
-        logging.getLogger("nacos_client").warning(
-            "[Nacos] 初始化失败 (%s: %s)，降级到本地配置。",
-            type(exc).__name__,
-            exc,
-        )
+    except Exception:  # noqa: BLE001
+        return
 
 
 _load_service_configuration()
-
-# 配置日志输出到文件
-logger.add(
-    "log/backend-gateway.log",
-    rotation="10 MB",
-    retention="7 days",
-    encoding="utf-8",
-    enqueue=True,
-)
 
 # 初始化全局 BotManager 实例
 manager: BotManager = BotManager(config_path="config/bot.json")
@@ -86,16 +72,11 @@ async def _outbound_relay_loop() -> None:
             finalized = True
         except asyncio.CancelledError:
             raise
-        except Exception as exc:
+        except Exception:
             message_bus_client.is_available = False
             if receipt_id is not None and not finalized:
                 with suppress(Exception):
                     await message_bus_client.reject(receipt_id)
-            logger.error(
-                "[MESSAGE-RELAY] 出站消息轮询或处理失败：{}；{} 秒后重试。",
-                exc,
-                message_bus_client.retry_seconds,
-            )
             await asyncio.sleep(message_bus_client.retry_seconds)
 
 
@@ -135,7 +116,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await relay_task
         manager.shutdown()
         await message_bus_client.close()
-        get_auth_client().close()
+        close_auth_client()
 
 
 app: FastAPI = FastAPI(

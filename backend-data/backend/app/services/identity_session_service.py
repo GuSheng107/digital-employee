@@ -43,6 +43,12 @@ class IdentitySessionService:
         """读取 refresh token 对应用户。"""
         return self._read_token("refresh", refresh_token)
 
+    def was_access_session_replaced(self, access_token: str) -> bool:
+        """判断 access token 是否因同账号新登录而失效。"""
+        return self._redis.exists(
+            f"{self._token_prefix}:replaced-access:{access_token}"
+        )
+
     def rotate_token_pair(
         self,
         *,
@@ -87,6 +93,7 @@ class IdentitySessionService:
             access_key_prefix=f"{self._token_prefix}:access:",
             refresh_key_prefix=f"{self._token_prefix}:refresh:",
             pair_key_prefix=f"{self._token_prefix}:pair:",
+            replaced_access_key_prefix=f"{self._token_prefix}:replaced-access:",
             user_id=user_id,
             access_token=access_token,
             refresh_token=refresh_token,
@@ -152,6 +159,13 @@ class IdentitySessionService:
     def is_password_change_required(self, user_id: int) -> bool:
         """判断用户是否必须修改密码。"""
         return self._redis.get(self._password_change_key(user_id)) == "1"
+
+    def increment_rate_limit(self, *, key: str, window_seconds: int) -> int:
+        """消费固定窗口限流计数。"""
+        return self._redis.increment_with_ttl(
+            key,
+            ttl_seconds=window_seconds,
+        )
 
     def _read_token(self, kind: str, token: str) -> int | None:
         raw = self._redis.get(self._token_key(kind, token))

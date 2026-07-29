@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
     dependency_timeout_seconds: int = 3
     backend_auth_base_url: str = "http://127.0.0.1:8020"
-    # 用于保护非健康检查端点的 API Key；为空时跳过校验，生产环境务必配置。
+    # 用于保护内部端点的 API Key；为空时按 fail-closed 拒绝服务间访问。
     api_key: str = Field(default="", repr=False)
 
     core_db_host: str = "127.0.0.1"
@@ -126,6 +126,7 @@ class Settings(BaseSettings):
         default="digital-employee",
         validation_alias=AliasChoices("MINIO_DEFAULT_BUCKET", "MINIO_BUCKET_NAME"),
     )
+    storage_object_max_size_bytes: int = 20 * 1024 * 1024
 
     rabbitmq_url: str = Field(
         default="amqp://guest:guest@127.0.0.1:5672/",

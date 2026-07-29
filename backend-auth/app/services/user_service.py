@@ -35,7 +35,9 @@ class UserService:
         email: str | None = None,
         phone: str | None = None,
         role_codes: list[str] | None = None,
+        actor_user_id: int,
         actor_role_codes: list[str],
+        actor_permission_codes: list[str],
         is_vip: bool = False,
         vip_level: int | None = None,
         vip_expires_at: datetime | None = None,
@@ -53,7 +55,9 @@ class UserService:
             email=email,
             phone=phone,
             role_codes=requested_roles,
+            actor_user_id=actor_user_id,
             actor_role_codes=actor_role_codes,
+            actor_permission_codes=actor_permission_codes,
             is_vip=is_vip,
             vip_level=vip_level,
             vip_expires_at=vip_expires_at,
@@ -64,7 +68,9 @@ class UserService:
         *,
         user_id: int,
         role_codes: list[str],
+        actor_user_id: int,
         actor_role_codes: list[str],
+        actor_permission_codes: list[str],
     ) -> dict:
         """覆盖用户角色。"""
         self._ensure_manager_assignment_allowed(
@@ -74,7 +80,9 @@ class UserService:
         return self._data.assign_user_roles(
             user_id=user_id,
             role_codes=role_codes,
+            actor_user_id=actor_user_id,
             actor_role_codes=actor_role_codes,
+            actor_permission_codes=actor_permission_codes,
         )
 
     def get_user_menus(self, *, user_id: int) -> list[dict[str, Any]]:
@@ -86,11 +94,17 @@ class UserService:
         *,
         user_id: int,
         menu_ids: list[int],
+        actor_user_id: int,
+        actor_role_codes: list[str],
+        actor_permission_codes: list[str],
     ) -> dict:
         """覆盖用户独立菜单。"""
         return self._data.assign_user_menus(
             user_id=user_id,
             menu_ids=menu_ids,
+            actor_user_id=actor_user_id,
+            actor_role_codes=actor_role_codes,
+            actor_permission_codes=actor_permission_codes,
         )
 
     def get_user_permissions(
@@ -106,11 +120,17 @@ class UserService:
         *,
         user_id: int,
         permission_ids: list[int],
+        actor_user_id: int,
+        actor_role_codes: list[str],
+        actor_permission_codes: list[str],
     ) -> dict:
         """覆盖用户独立权限。"""
         return self._data.assign_user_permissions(
             user_id=user_id,
             permission_ids=permission_ids,
+            actor_user_id=actor_user_id,
+            actor_role_codes=actor_role_codes,
+            actor_permission_codes=actor_permission_codes,
         )
 
     def upload_avatar(
@@ -176,11 +196,15 @@ class UserService:
         *,
         user_id: int,
         new_password: str,
+        actor_user_id: int,
+        actor_role_codes: list[str],
     ) -> dict:
         """管理员无复杂度限制重置密码。"""
         return self._data.reset_user_password(
             user_id=user_id,
             password_hash=hash_password(new_password),
+            actor_user_id=actor_user_id,
+            actor_role_codes=actor_role_codes,
         )
 
     def update_vip(
@@ -190,6 +214,8 @@ class UserService:
         is_vip: bool,
         vip_level: int | None,
         vip_expires_at: datetime | None,
+        actor_user_id: int,
+        actor_role_codes: list[str],
     ) -> dict:
         """更新业务 VIP 设置。"""
         return self._data.update_user_vip(
@@ -197,13 +223,24 @@ class UserService:
             is_vip=is_vip,
             vip_level=vip_level,
             vip_expires_at=vip_expires_at,
+            actor_user_id=actor_user_id,
+            actor_role_codes=actor_role_codes,
         )
 
-    def update_status(self, *, user_id: int, status: int) -> dict:
+    def update_status(
+        self,
+        *,
+        user_id: int,
+        status: int,
+        actor_user_id: int,
+        actor_role_codes: list[str],
+    ) -> dict:
         """启用或停用用户。"""
         return self._data.update_user_status(
             user_id=user_id,
             status=status,
+            actor_user_id=actor_user_id,
+            actor_role_codes=actor_role_codes,
         )
 
     def delete_user(
