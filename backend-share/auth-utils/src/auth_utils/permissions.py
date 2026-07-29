@@ -15,3 +15,4 @@ class PermissionCode(StrEnum):
     DATA_PLATFORM_DASHBOARD = "admin:data_platform:dashboard"
     DATA_PLATFORM_DATA_ITEMS = "admin:data_platform:data_items"
     DATA_PLATFORM_CONFIG = "admin:data_platform:config"
+    BOT_MANAGE = "admin:bot:manage"

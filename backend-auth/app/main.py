@@ -115,14 +115,23 @@ async def validation_exception_handler(
     exc: RequestValidationError,
 ) -> JSONResponse:
     """请求体校验失败统一返回 422 与详细错误信息。"""
+    validation_errors = [
+        {
+            "location": [str(part) for part in error.get("loc", ())],
+            "message": str(error.get("msg", "请求参数校验失败")),
+            "type": str(error.get("type", "validation_error")),
+        }
+        for error in exc.errors()
+    ]
+    first_message = validation_errors[0]["message"] if validation_errors else "请求参数校验失败"
     return JSONResponse(
         status_code=422,
         content={
             "success": False,
-            "message": "request validation failed",
+            "message": f"请求参数校验失败：{first_message}",
             "data": {
                 "code": ErrorCode.VALIDATION_FAILED,
-                "detail": exc.errors(),
+                "detail": validation_errors,
             },
         },
     )

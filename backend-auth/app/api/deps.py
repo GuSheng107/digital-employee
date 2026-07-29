@@ -13,15 +13,13 @@
 from __future__ import annotations
 
 import secrets
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 
 from api_common import PermissionDeniedError, TokenInvalidError
+from auth_utils import ADMIN_ROLE_CODES, FULL_ACCESS_ROLE_CODES
 from fastapi import Depends, Header
-from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.database import get_db_session
-from app.core.role_constants import ADMIN_ROLE_CODES, FULL_ACCESS_ROLE_CODES
 from app.schemas.auth import UserInfo
 from app.services.auth_service import AuthService
 
@@ -47,15 +45,9 @@ def verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
         raise PermissionDeniedError(message="invalid api key")
 
 
-def get_auth_service(
-    session: Session = Depends(get_db_session),
-) -> Generator[AuthService, None, None]:
-    """构造 AuthService 并在请求结束后关闭会话。"""
-    service = AuthService(session)
-    try:
-        yield service
-    finally:
-        session.close()
+def get_auth_service() -> AuthService:
+    """构造只依赖共享 data-client 的 AuthService。"""
+    return AuthService()
 
 
 def _extract_bearer(authorization: str | None) -> str:
@@ -146,6 +138,8 @@ def require_permission(
     def _check(
         current_user: UserInfo = Depends(get_current_user),
     ) -> UserInfo:
+        if current_user.must_change_password:
+            raise PermissionDeniedError(message="请先修改管理员重置的临时密码")
         # 最高权限账号旁路；普通管理员仍按显式权限码校验。
         if FULL_ACCESS_ROLE_CODES.intersection(current_user.roles):
             return current_user

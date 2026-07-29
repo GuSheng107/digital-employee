@@ -5,25 +5,30 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "aio-pika==9.6.2",
+    "api-common==0.1.0",
+    "auth-utils==0.1.0",
+    "data-client==0.1.0",
     "fastapi==0.140.7",
     "lark-oapi==1.4.8",
     "loguru==0.7.3",
-    "minio==7.2.20",
     "pydantic==2.13.4",
     "python-dotenv==1.2.2",
     "uvicorn[standard]==0.51.0",
     "wecom-aibot-sdk==1.0.8",
     "nacos-client==0.1.0",
-    "api-common==0.1.0",
 ]
 
 [tool.uv.sources]
 nacos-client = { path = "../backend-share/nacos-client" }
 api-common = { path = "../backend-share/api-common" }
+auth-utils = { path = "../backend-share/auth-utils" }
+data-client = { path = "../backend-share/data-client" }
 
 [dependency-groups]
 dev = [
     "pytest==7.4.4",
     "ruff==0.6.9",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

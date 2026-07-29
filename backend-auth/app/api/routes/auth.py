@@ -38,6 +38,8 @@ def register(
     token_pair: TokenPair = service.register(
         username=payload.username,
         password=payload.password,
+        email=str(payload.email),
+        phone=payload.phone,
         invite_code=payload.invite_code,
     )
     return success_response(token_pair.model_dump())

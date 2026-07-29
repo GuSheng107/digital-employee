@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
-from app.models.base import Base
+from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.menu import Menu
@@ -36,13 +36,13 @@ class User(Base):
     avatar_url: Mapped[str | None] = mapped_column(String(512))
     status: Mapped[int] = mapped_column(SmallInteger, default=1, nullable=False)
     is_vip: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    vip_expires_at: Mapped[datetime | None] = mapped_column(
-        TIMESTAMP(timezone=True)
+    vip_expires_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    vip_level: Mapped[int] = mapped_column(
+        SmallInteger,
+        default=0,
+        nullable=False,
     )
-    vip_level: Mapped[int | None] = mapped_column(SmallInteger, default=0)
-    last_login_at: Mapped[datetime | None] = mapped_column(
-        TIMESTAMP(timezone=True)
-    )
+    last_login_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
     last_login_ip: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()

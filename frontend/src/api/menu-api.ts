@@ -31,10 +31,10 @@ export interface UpdateMenuPayload {
   parent_id?: number;
   menu_type?: number;
   title?: string;
-  path?: string;
-  component?: string;
-  icon?: string;
-  permission?: string;
+  path?: string | null;
+  component?: string | null;
+  icon?: string | null;
+  permission?: string | null;
   sort?: number;
   visible?: boolean;
 }

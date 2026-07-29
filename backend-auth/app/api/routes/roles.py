@@ -5,9 +5,8 @@ from __future__ import annotations
 from api_common import ApiResponse, success_response
 from auth_utils import PermissionCode
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, require_permission
+from app.api.deps import require_permission
 from app.schemas.role import AssignMenusRequest, CreateRoleRequest, UpdateRoleRequest
 from app.services.role_service import RoleService
 
@@ -26,9 +25,9 @@ router = APIRouter()
         )
     ],
 )
-def list_roles(session: Session = Depends(get_db_session)) -> dict:
+def list_roles() -> dict:
     """列出所有角色。"""
-    service = RoleService(session)
+    service = RoleService()
     return success_response(service.list_roles())
 
 
@@ -39,10 +38,9 @@ def list_roles(session: Session = Depends(get_db_session)) -> dict:
 )
 def create_role(
     payload: CreateRoleRequest,
-    session: Session = Depends(get_db_session),
 ) -> dict:
     """创建自定义角色。"""
-    service = RoleService(session)
+    service = RoleService()
     result = service.create_role(
         code=payload.code,
         name=payload.name,
@@ -60,10 +58,9 @@ def create_role(
 def update_role(
     role_id: int,
     payload: UpdateRoleRequest,
-    session: Session = Depends(get_db_session),
 ) -> dict:
     """更新角色信息（名称/描述/菜单）。"""
-    service = RoleService(session)
+    service = RoleService()
     result = service.update_role(
         role_id=role_id,
         name=payload.name,
@@ -80,10 +77,9 @@ def update_role(
 )
 def delete_role(
     role_id: int,
-    session: Session = Depends(get_db_session),
 ) -> dict:
     """删除角色（软删除，内置角色不可删）。"""
-    service = RoleService(session)
+    service = RoleService()
     result = service.delete_role(role_id=role_id)
     return success_response(result)
 
@@ -94,10 +90,10 @@ def delete_role(
     dependencies=[Depends(require_permission(PermissionCode.USER_PERMISSION))],
 )
 def get_role_menus(
-    role_id: int, session: Session = Depends(get_db_session)
+    role_id: int,
 ) -> dict:
     """获取角色关联的菜单列表。"""
-    service = RoleService(session)
+    service = RoleService()
     return success_response(service.get_role_menus(role_id=role_id))
 
 
@@ -109,9 +105,8 @@ def get_role_menus(
 def assign_menus(
     role_id: int,
     payload: AssignMenusRequest,
-    session: Session = Depends(get_db_session),
 ) -> dict:
     """分配角色菜单（覆盖式）。"""
-    service = RoleService(session)
+    service = RoleService()
     result = service.assign_menus(role_id=role_id, menu_ids=payload.menu_ids)
     return success_response(result)

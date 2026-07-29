@@ -83,7 +83,7 @@ export const router = createBrowserRouter([
           [PERMISSION_CODE.DATA_PLATFORM_CONFIG],
         ),
       },
-      // 系统设置-用户：四个三级菜单对应路由
+      // 系统设置-用户：个人信息、用户管理、权限与邀请码路由
       {
         path: 'system/user/profile',
         element: withSuspense(<UserProfile />),

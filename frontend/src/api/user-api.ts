@@ -11,9 +11,12 @@ export interface UserListItem {
   is_vip: boolean;
   vip_level: number | null;
   vip_level_display: string;
+  vip_expires_at: string | null;
   roles: string[];
   last_login_at: string | null;
+  last_login_ip: string | null;
   created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface UserListResponse {
@@ -30,6 +33,9 @@ export interface CreateUserPayload {
   email?: string;
   phone?: string;
   role_codes: string[];
+  is_vip: boolean;
+  vip_level?: number;
+  vip_expires_at?: string;
 }
 
 export interface UpdateProfilePayload {
@@ -55,6 +61,47 @@ export function assignUserRoles(userId: number, roleCodes: string[]): Promise<{ 
 /** 管理员重置指定用户密码（覆盖式，不校验旧密码） */
 export function resetUserPassword(userId: number, newPassword: string): Promise<{ user_id: number; username: string }> {
   return backendAuthRequest.put(`/users/${userId}/password`, { new_password: newPassword });
+}
+
+export interface VipLevelOption {
+  value: number;
+  label: string;
+}
+
+export interface UpdateVipPayload {
+  is_vip: boolean;
+  vip_level?: number;
+  vip_expires_at?: string;
+}
+
+export function fetchVipLevels(): Promise<VipLevelOption[]> {
+  return backendAuthRequest.get<VipLevelOption[]>('/users/vip-levels');
+}
+
+export function updateUserVip(
+  userId: number,
+  payload: UpdateVipPayload,
+): Promise<{
+  user_id: number;
+  is_vip: boolean;
+  vip_level: number;
+  vip_level_display: string;
+  vip_expires_at: string | null;
+}> {
+  return backendAuthRequest.put(`/users/${userId}/vip`, payload);
+}
+
+export function updateUserStatus(
+  userId: number,
+  status: number,
+): Promise<{ user_id: number; status: number }> {
+  return backendAuthRequest.put(`/users/${userId}/status`, { status });
+}
+
+export function deleteUser(
+  userId: number,
+): Promise<{ user_id: number; deleted: boolean }> {
+  return backendAuthRequest.delete(`/users/${userId}`);
 }
 
 /** 用户独立菜单项（与角色菜单解耦） */
@@ -99,7 +146,7 @@ export function assignUserPermissions(userId: number, permissionIds: number[]): 
   return backendAuthRequest.put(`/users/${userId}/permissions`, { permission_ids: permissionIds });
 }
 
-export function updateProfile(payload: UpdateProfilePayload): Promise<{ id: number; username: string; nickname: string | null; email: string | null; phone: string | null; avatar_url: string | null }> {
+export function updateProfile(payload: UpdateProfilePayload): Promise<{ id: number; username: string; nickname: string | null; email: string | null; phone: string | null; avatar_url: string | null; must_change_password: boolean }> {
   return backendAuthRequest.put('/users/me', payload);
 }
 
@@ -109,6 +156,6 @@ export function uploadAvatar(file: File | Blob): Promise<{ avatar_url: string }>
   // 关键：删除默认的 Content-Type: application/json，让浏览器自动设置
   // multipart/form-data; boundary=... 否则后端无法解析 multipart body
   return backendAuthRequest.post('/users/avatar', formData, {
-    headers: { 'Content-Type': undefined as unknown as string },
+    headers: { 'Content-Type': null },
   });
 }

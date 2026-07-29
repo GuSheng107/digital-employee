@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
-from app.models.base import Base
+from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.role import Role
@@ -32,15 +32,27 @@ class Menu(Base):
     __tablename__ = "menus"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    parent_id: Mapped[int] = mapped_column(BigInteger, default=0)
+    parent_id: Mapped[int] = mapped_column(
+        BigInteger,
+        default=0,
+        nullable=False,
+    )
     menu_type: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     title: Mapped[str] = mapped_column(String(64), nullable=False)
     path: Mapped[str | None] = mapped_column(String(255))
     component: Mapped[str | None] = mapped_column(String(255))
     icon: Mapped[str | None] = mapped_column(String(64))
     permission: Mapped[str | None] = mapped_column(String(128))
-    sort: Mapped[int] = mapped_column(Integer, default=0)
-    visible: Mapped[bool] = mapped_column(Boolean, default=True)
+    sort: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    visible: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )

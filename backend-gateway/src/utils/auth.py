@@ -1,34 +1,69 @@
 # -*- coding: utf-8 -*-
-"""Admin API 鉴权依赖。
+"""通过 backend-share/auth-utils 获取用户上下文并执行接口鉴权。"""
 
-为 ``/api/v1/admin/*`` 路由提供轻量 API Key 校验，避免 Bot 凭证被未授权读写。
-"""
+from __future__ import annotations
 
-import os
-import secrets
+from collections.abc import Callable
+from functools import lru_cache
 
-from fastapi import Header, HTTPException
+from api_common import (
+    PermissionDeniedError,
+    ServiceUnavailableError,
+    TokenInvalidError,
+)
+from auth_utils import (
+    AuthClient,
+    AuthenticatedUser,
+    AuthenticationError,
+    AuthorizationError,
+    AuthServiceUnavailableError,
+)
+from fastapi import Header
 
 
-async def verify_admin_api_key(
-    x_api_key: str | None = Header(default=None),
-) -> None:
-    """校验请求头 ``X-API-Key`` 是否与服务端配置一致。
+@lru_cache
+def get_auth_client() -> AuthClient:
+    """复用 share 包提供的 backend-auth 客户端。"""
+    return AuthClient()
 
-    当环境变量 ``GATEWAY_ADMIN_API_KEY`` 未配置时跳过校验，便于本地开发；
-    生产环境应通过环境变量显式配置，以保护 Admin 接口。
 
-    使用 ``secrets.compare_digest`` 进行常量时间比较，避免时序攻击。
+def _extract_bearer(authorization: str | None) -> str:
+    if not authorization:
+        raise TokenInvalidError(message="缺少登录凭证")
+    scheme, separator, token = authorization.partition(" ")
+    if not separator or scheme.lower() != "bearer" or not token.strip():
+        raise TokenInvalidError(message="登录凭证格式无效")
+    return token.strip()
 
-    Args:
-        x_api_key: 请求头 ``X-API-Key`` 的值，缺失或为空表示未携带。
 
-    Raises:
-        HTTPException: 当 ``GATEWAY_ADMIN_API_KEY`` 已配置但请求头缺失或不匹配时，
-            返回 401 未授权。
-    """
-    expected = os.getenv("GATEWAY_ADMIN_API_KEY", "").strip()
-    if not expected:
-        return
-    if not x_api_key or not secrets.compare_digest(x_api_key, expected):
-        raise HTTPException(status_code=401, detail="invalid api key")
+def require_permission(
+    *permission_codes: str,
+) -> Callable[..., AuthenticatedUser]:
+    """创建统一的跨服务权限依赖。"""
+
+    def _check(
+        authorization: str | None = Header(default=None),
+    ) -> AuthenticatedUser:
+        access_token = _extract_bearer(authorization)
+        try:
+            return get_auth_client().require_any_permission(
+                access_token,
+                tuple(permission_codes),
+            )
+        except AuthenticationError as exc:
+            raise TokenInvalidError(
+                message="登录状态无效或已过期",
+            ) from exc
+        except AuthorizationError as exc:
+            message = (
+                "请先修改管理员重置的临时密码"
+                if str(exc) == "password change required"
+                else "无权访问该接口"
+            )
+            raise PermissionDeniedError(message=message) from exc
+        except AuthServiceUnavailableError as exc:
+            raise ServiceUnavailableError(
+                message="认证服务暂不可用",
+            ) from exc
+
+    return _check

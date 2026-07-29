@@ -63,6 +63,8 @@ def _adapt_nacos_to_backend_data_env() -> None:
     nacos_adapter.copy_overwrite("MINIO_USERNAME", "MINIO_ACCESS_KEY")
     nacos_adapter.copy_overwrite("MINIO_PASSWORD", "MINIO_SECRET_KEY")
     # Redis 已匹配（REDIS_HOST/REDIS_PORT/REDIS_PASSWORD），无需转换
+    # RabbitMQ 仅由 backend-data 持有连接与拓扑配置。
+    nacos_adapter.compose_rabbitmq_url()
 
 
 class Settings(BaseSettings):
@@ -103,6 +105,18 @@ class Settings(BaseSettings):
     redis_username: str = ""
     redis_password: str = Field(default="", repr=False)
     redis_ssl: bool = False
+    token_redis_prefix: str = "auth"
+    access_token_ttl_seconds: int = 1800
+    refresh_token_ttl_seconds: int = 604800
+    password_change_redis_prefix: str = "auth:password-change-required"
+    invite_code_redis_prefix: str = "invite_code"
+    invite_code_default_ttl_seconds: int = 604800
+    message_relay_redis_prefix: str = "message-relay"
+    message_relay_ttl_seconds: int = 604800
+    message_lease_seconds: int = 60
+    message_max_delivery_attempts: int = 5
+    message_dead_letter_limit: int = 1000
+    message_poll_timeout_seconds: float = 20.0
 
     minio_endpoint: str = "127.0.0.1:9000"
     minio_access_key: str = Field(default="", repr=False)
@@ -113,11 +127,25 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MINIO_DEFAULT_BUCKET", "MINIO_BUCKET_NAME"),
     )
 
+    rabbitmq_url: str = Field(
+        default="amqp://guest:guest@127.0.0.1:5672/",
+        repr=False,
+    )
+    rabbitmq_exchange: str = "bot.topic.exchange"
+    rabbitmq_inbound_queue: str = "q_inbound_to_agent"
+    rabbitmq_outbound_queue: str = "q_outbound_to_gateway"
+    rabbitmq_inbound_publish_prefix: str = "msg.inbound"
+    rabbitmq_inbound_routing_key: str = "msg.inbound.#"
+    rabbitmq_outbound_routing_key: str = "msg.outbound.#"
+    rabbitmq_prefetch_count: int = 20
+
     cors_origins: str = "http://127.0.0.1:5173,http://localhost:5173"
 
     @property
     def cors_origins_list(self) -> list[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        return [
+            origin.strip() for origin in self.cors_origins.split(",") if origin.strip()
+        ]
 
     @property
     def docs_enabled(self) -> bool:

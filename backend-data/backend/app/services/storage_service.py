@@ -1,12 +1,13 @@
 import time
 from io import BytesIO
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlparse
 
 from app.core.config import settings
 from app.core.minio_client import get_minio_client
 from app.core.storage_constants import (
     AVATAR_OBJECT_PREFIX,
     AVATAR_ROUTE_PREFIX,
+    MAX_OBJECT_NAME_LENGTH,
     STORAGE_ROUTE_PREFIX,
 )
 
@@ -61,9 +62,14 @@ class StorageService:
         Returns:
             桶名、对象名及读取到的文本内容。
         """
-        content = get_minio_client().download_file(
-            object_name=self.test_object_name,
-        ).read().decode("utf-8")
+        content = (
+            get_minio_client()
+            .download_file(
+                object_name=self.test_object_name,
+            )
+            .read()
+            .decode("utf-8")
+        )
         return {
             "bucket": settings.minio_default_bucket,
             "object_name": self.test_object_name,
@@ -116,6 +122,57 @@ class StorageService:
             "file_url": file_url,
         }
 
+    def upload_object(
+        self,
+        *,
+        object_name: str,
+        data: bytes,
+        content_type: str = "application/octet-stream",
+    ) -> dict:
+        """按调用方给出的业务对象名上传文件。
+
+        该接口供网关等内部服务通过 data-client 使用。对象名由
+        backend-data 统一校验，其他服务不接触 MinIO 客户端或桶配置。
+        """
+        normalized_name = self._normalize_object_name(object_name)
+        file_url = get_minio_client().upload_file(
+            object_name=normalized_name,
+            data=BytesIO(data),
+            length=len(data),
+            content_type=content_type,
+        )
+        return {
+            "object_name": normalized_name,
+            "file_url": file_url,
+        }
+
+    def download_object(self, object_name: str) -> tuple[bytes, str]:
+        """读取默认业务桶中的内部对象。"""
+        normalized_name = self._normalize_object_name(object_name)
+        return get_minio_client().download_file_with_content_type(
+            object_name=normalized_name,
+        )
+
+    def download_object_by_url(self, file_url: str) -> tuple[bytes, str]:
+        """解析 backend-data 生成的存储 URL 并读取对象。
+
+        URL 的协议、端点和桶必须与当前配置一致，避免调用方借该接口
+        把任意外部 URL 或其他桶路径转换为内部读取请求。
+        """
+        parsed = urlparse(file_url)
+        expected_scheme = "https" if settings.minio_secure else "http"
+        bucket_prefix = f"/{settings.minio_default_bucket}/"
+        if (
+            parsed.scheme != expected_scheme
+            or parsed.netloc != settings.minio_endpoint
+            or not parsed.path.startswith(bucket_prefix)
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("invalid storage url")
+        object_name = unquote(parsed.path.removeprefix(bucket_prefix))
+        return self.download_object(object_name)
+
     def download_avatar(self, avatar_path: str) -> tuple[bytes, str]:
         """读取公开头像对象。
 
@@ -132,9 +189,21 @@ class StorageService:
         """
         normalized_path = avatar_path.strip("/")
         path_segments = normalized_path.split("/")
-        if not normalized_path or any(segment in {"", ".", ".."} for segment in path_segments):
+        if not normalized_path or any(
+            segment in {"", ".", ".."} for segment in path_segments
+        ):
             raise ValueError("invalid avatar path")
         object_name = f"{AVATAR_OBJECT_PREFIX}/{normalized_path}"
-        return get_minio_client().download_file_with_content_type(
-            object_name=object_name,
-        )
+        return self.download_object(object_name)
+
+    @staticmethod
+    def _normalize_object_name(object_name: str) -> str:
+        normalized_name = object_name.strip("/")
+        segments = normalized_name.split("/")
+        if (
+            not normalized_name
+            or len(normalized_name) > MAX_OBJECT_NAME_LENGTH
+            or any(segment in {"", ".", ".."} for segment in segments)
+        ):
+            raise ValueError("invalid object name")
+        return normalized_name

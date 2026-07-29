@@ -8,8 +8,9 @@ from typing import Any
 
 import httpx
 
+from auth_utils.domain import ROLE_CODE_SUPER_ADMIN
+
 AUTH_ME_PATH = "/api/v1/auth/me"
-ROLE_CODE_SUPER_ADMIN = "super_admin"
 DEFAULT_AUTH_BASE_URL = "http://127.0.0.1:8020"
 DEFAULT_TIMEOUT_SECONDS = 5.0
 
@@ -34,6 +35,7 @@ class AuthenticatedUser:
     username: str
     roles: tuple[str, ...]
     permissions: tuple[str, ...]
+    must_change_password: bool
 
 
 def _read_string_list(value: Any) -> tuple[str, ...]:
@@ -52,9 +54,7 @@ class AuthClient:
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
         configured_url = (
-            base_url
-            or os.environ.get("BACKEND_AUTH_BASE_URL")
-            or DEFAULT_AUTH_BASE_URL
+            base_url or os.environ.get("BACKEND_AUTH_BASE_URL") or DEFAULT_AUTH_BASE_URL
         )
         self._base_url = configured_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
@@ -98,6 +98,7 @@ class AuthClient:
             username=username,
             roles=_read_string_list(data.get("roles")),
             permissions=_read_string_list(data.get("permissions")),
+            must_change_password=data.get("must_change_password") is True,
         )
 
     def require_any_permission(
@@ -107,11 +108,10 @@ class AuthClient:
     ) -> AuthenticatedUser:
         """校验用户持有任一目标权限；超级管理员拥有全权限旁路。"""
         user = self.get_current_user(access_token)
+        if user.must_change_password:
+            raise AuthorizationError("password change required")
         if ROLE_CODE_SUPER_ADMIN in user.roles:
             return user
-        if not any(
-            permission in user.permissions
-            for permission in required_permissions
-        ):
+        if not any(permission in user.permissions for permission in required_permissions):
             raise AuthorizationError("permission denied")
         return user

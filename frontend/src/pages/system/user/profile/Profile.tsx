@@ -1,5 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Form, Input, Button, Avatar, Upload, Descriptions, Tag, message, Typography } from 'antd';
+import {
+  Alert,
+  Avatar,
+  Button,
+  Descriptions,
+  Form,
+  Input,
+  Tag,
+  Typography,
+  Upload,
+  message,
+} from 'antd';
 import type { UploadProps } from 'antd';
 import ImgCrop from 'antd-img-crop';
 import { UserOutlined, UploadOutlined } from '@ant-design/icons';
@@ -7,6 +18,14 @@ import { useUserStore } from '@/store/user-store';
 import { updateProfile, uploadAvatar } from '@/api/user-api';
 import { getRequestErrorMessage } from '@/utils/request';
 import { resolveAvatarUrl } from '@/utils/avatar-url';
+import { PHONE_DIAL_PREFIX } from '@/config/identity-config';
+import {
+  EMAIL_PATTERN,
+  PASSWORD_COMPLEXITY_MESSAGE,
+  PASSWORD_COMPLEXITY_PATTERN,
+  formatPhoneNumberForInput,
+  normalizePhoneNumber,
+} from '@/utils/identity-validation';
 import {
   getVipDisplayFallback,
   VIP_LEVEL,
@@ -31,6 +50,7 @@ interface ProfileFormValues {
 export default function Profile(): React.ReactElement {
   const userInfo = useUserStore((state) => state.userInfo);
   const avatar = useUserStore((state) => state.avatar);
+  const reloadMenus = useUserStore((state) => state.reloadMenus);
   const [form] = Form.useForm<ProfileFormValues>();
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [uploading, setUploading] = useState<boolean>(false);
@@ -40,7 +60,7 @@ export default function Profile(): React.ReactElement {
       form.setFieldsValue({
         nickname: userInfo.nickname ?? '',
         email: userInfo.email ?? '',
-        phone: userInfo.phone ?? '',
+        phone: formatPhoneNumberForInput(userInfo.phone),
       });
     }
   }, [userInfo, form]);
@@ -75,26 +95,24 @@ export default function Profile(): React.ReactElement {
   };
 
   const handleSubmit = async (values: ProfileFormValues): Promise<void> => {
+    const parsedPhone = values.phone
+      ? normalizePhoneNumber(values.phone)
+      : null;
+    if (values.phone && !parsedPhone) {
+      message.error(`请输入有效的 ${PHONE_DIAL_PREFIX} 手机号码`);
+      return;
+    }
+    const normalizedPhone = parsedPhone ?? undefined;
     setSubmitting(true);
     try {
-      const result = await updateProfile({
+      await updateProfile({
         nickname: values.nickname || undefined,
-        email: values.email || undefined,
-        phone: values.phone || undefined,
+        email: values.email?.trim().toLowerCase() || undefined,
+        phone: normalizedPhone,
         // 密码为空字符串时不传，避免后端把空串当新密码校验
         password: values.password ? values.password : undefined,
       });
-      if (userInfo) {
-        useUserStore.setState({
-          userInfo: {
-            ...userInfo,
-            nickname: result.nickname,
-            email: result.email,
-            phone: result.phone,
-            avatar_url: result.avatar_url,
-          },
-        });
-      }
+      await reloadMenus();
       message.success('个人信息更新成功');
       // 清空密码字段，避免下次提交重复带值
       form.setFieldsValue({ password: undefined, confirmPassword: undefined });
@@ -129,6 +147,7 @@ export default function Profile(): React.ReactElement {
             rotationSlider
             aspectSlider
             showReset
+            cropShape="round"
             modalTitle="裁剪头像"
             modalOk="确定"
             modalCancel="取消"
@@ -153,6 +172,14 @@ export default function Profile(): React.ReactElement {
           </div>
         </div>
         <div className={styles.infoSection}>
+          {userInfo.must_change_password ? (
+            <Alert
+              type="warning"
+              showIcon
+              message="请先修改临时密码"
+              description="当前密码由管理员重置。完成密码修改后，才能继续访问其他业务功能。"
+            />
+          ) : null}
           <Descriptions title="基本信息" bordered column={1} className={styles.descriptions}>
             <Descriptions.Item label="用户名">{userInfo.username}</Descriptions.Item>
             <Descriptions.Item label="用户ID">{userInfo.id}</Descriptions.Item>
@@ -176,18 +203,54 @@ export default function Profile(): React.ReactElement {
             <Form.Item label="昵称" name="nickname">
               <Input placeholder="请输入昵称" />
             </Form.Item>
-            <Form.Item label="邮箱" name="email">
+            <Form.Item
+              label="邮箱"
+              name="email"
+              rules={[
+                { pattern: EMAIL_PATTERN, message: '请输入有效的邮箱地址' },
+              ]}
+            >
               <Input placeholder="请输入邮箱" />
             </Form.Item>
-            <Form.Item label="手机号" name="phone">
-              <Input placeholder="请输入手机号" />
+            <Form.Item
+              label="手机号"
+              name="phone"
+              rules={[
+                {
+                  validator: (_, value: string | undefined) => {
+                    if (!value || normalizePhoneNumber(value)) {
+                      return Promise.resolve();
+                    }
+                    return Promise.reject(
+                      new Error(`请输入有效的 ${PHONE_DIAL_PREFIX} 手机号码`),
+                    );
+                  },
+                },
+              ]}
+            >
+              <Input
+                prefix={PHONE_DIAL_PREFIX}
+                placeholder="请输入手机号"
+                autoComplete="tel"
+              />
             </Form.Item>
             <Form.Item
               label="修改密码"
               name="password"
-              extra="留空表示不修改密码；填写后需 8-128 位"
+              extra={
+                userInfo.must_change_password
+                  ? '必须设置新密码后才能继续使用系统'
+                  : '留空表示不修改密码'
+              }
               rules={[
-                { min: 8, max: 128, message: '密码长度需在 8-128 之间' },
+                {
+                  required: userInfo.must_change_password,
+                  message: '请设置新的登录密码',
+                },
+                {
+                  pattern: PASSWORD_COMPLEXITY_PATTERN,
+                  message: PASSWORD_COMPLEXITY_MESSAGE,
+                },
               ]}
             >
               <Input.Password placeholder="留空不修改，填写则更新密码" autoComplete="new-password" />
@@ -201,7 +264,12 @@ export default function Profile(): React.ReactElement {
                   validator(_, value) {
                     const pwd = getFieldValue('password');
                     // 密码为空时不强制校验确认密码
-                    if (!pwd && !value) return Promise.resolve();
+                    if (!pwd && !value && !userInfo.must_change_password) {
+                      return Promise.resolve();
+                    }
+                    if (!value) {
+                      return Promise.reject(new Error('请再次输入新密码'));
+                    }
                     if (!value || pwd === value) return Promise.resolve();
                     return Promise.reject(new Error('两次输入的密码不一致'));
                   },

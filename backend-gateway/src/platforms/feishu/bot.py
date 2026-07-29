@@ -81,9 +81,12 @@ class FeishuBot(BaseBot):
             try:
                 # 强设 lark-oapi 事件循环以支持在独立子线程中并发
                 import lark_oapi.ws.client
+
                 lark_oapi.ws.client.loop = self._loop
 
-                logger.info("[BotID: {}] 正在建立飞书 WebSocket 通道连接...", self.bot_id)
+                logger.info(
+                    "[BotID: {}] 正在建立飞书 WebSocket 通道连接...", self.bot_id
+                )
                 self.ws_client = lark.ws.Client(
                     self.app_id,
                     self.app_secret,
@@ -133,7 +136,9 @@ class FeishuBot(BaseBot):
                 try:
                     future.result(timeout=3.0)
                 except Exception as exc:
-                    logger.debug("[BotID: {}] 释放网络连接时发生异常: {}", self.bot_id, exc)
+                    logger.debug(
+                        "[BotID: {}] 释放网络连接时发生异常: {}", self.bot_id, exc
+                    )
 
         if self._loop is not None and self._loop.is_running():
             self._loop.call_soon_threadsafe(self._loop.stop)
@@ -207,7 +212,9 @@ class FeishuBot(BaseBot):
             message_type = _MT(type_)
             logger.debug(
                 "[WS-Patch] 收到帧: type={}, msg_id={}, trace_id={}",
-                message_type.value, msg_id, trace_id,
+                message_type.value,
+                msg_id,
+                trace_id,
             )
 
             resp = Response(code=http.HTTPStatus.OK)
@@ -225,22 +232,20 @@ class FeishuBot(BaseBot):
                 header.key = HEADER_BIZ_RT
                 header.value = str(end - start)
                 if result is not None:
-                    resp.data = base64.b64encode(
-                        JSON.marshal(result).encode(UTF_8)
-                    )
+                    resp.data = base64.b64encode(JSON.marshal(result).encode(UTF_8))
             except Exception as e:
                 logger.error(
                     "[WS-Patch] 处理帧异常: type={}, msg_id={}, err={}",
-                    message_type.value, msg_id, e,
+                    message_type.value,
+                    msg_id,
+                    e,
                 )
                 resp = Response(code=http.HTTPStatus.INTERNAL_SERVER_ERROR)
 
             frame.payload = JSON.marshal(resp).encode(UTF_8)
             await ws_client._write_message(frame.SerializeToString())
 
-        def _get_by_key_safe(
-            headers: Any, key: str
-        ) -> str:
+        def _get_by_key_safe(headers: Any, key: str) -> str:
             """安全地从 protobuf headers 中查找键值。"""
             for header in headers:
                 if header.key == key:

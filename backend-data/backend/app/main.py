@@ -20,12 +20,16 @@ from app.api.router import api_router
 from app.core.config import settings
 from app.schemas.common import ApiResponse
 from app.schemas.health import ServiceInfo
+from app.services.message_broker_service import get_message_broker_service
 from app.utils.response import success_response
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    yield
+    try:
+        yield
+    finally:
+        await get_message_broker_service().close()
 
 
 app = FastAPI(
@@ -103,14 +107,25 @@ async def validation_exception_handler(
     request: Request,
     exc: RequestValidationError,
 ) -> JSONResponse:
+    validation_errors = [
+        {
+            "location": [str(part) for part in error.get("loc", ())],
+            "message": str(error.get("msg", "请求参数校验失败")),
+            "type": str(error.get("type", "validation_error")),
+        }
+        for error in exc.errors()
+    ]
+    first_message = (
+        validation_errors[0]["message"] if validation_errors else "请求参数校验失败"
+    )
     return JSONResponse(
         status_code=422,
         content={
             "success": False,
-            "message": "request validation failed",
+            "message": f"请求参数校验失败：{first_message}",
             "data": {
                 "code": ErrorCode.VALIDATION_FAILED,
-                "detail": exc.errors(),
+                "detail": validation_errors,
             },
         },
     )

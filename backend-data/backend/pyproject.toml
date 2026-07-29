@@ -5,6 +5,7 @@ description = "Digital Employee Data Platform Backend Service"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "aio-pika==9.6.2",
     "fastapi==0.140.7",
     "uvicorn[standard]==0.51.0",
     "SQLAlchemy==2.0.51",

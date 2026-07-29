@@ -31,8 +31,8 @@ CREATE TABLE users (
     avatar_url      VARCHAR(512),
     status          SMALLINT     NOT NULL DEFAULT 1,   -- 1=启用 0=禁用
     is_vip          BOOLEAN      NOT NULL DEFAULT FALSE,
-    vip_expires_at  TIMESTAMPTZ,                        -- NULL=永久
-    vip_level       SMALLINT     DEFAULT 0,             -- 0=普通 1/2/3=金/钻
+    vip_expires_at  TIMESTAMPTZ,                        -- 业务 VIP 必填
+    vip_level       SMALLINT     NOT NULL DEFAULT 0,    -- 0=普通, 1-9=VIP, 66=管理员, 99=超级管理员
     last_login_at   TIMESTAMPTZ,
     last_login_ip   VARCHAR(64),
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
@@ -41,20 +41,33 @@ CREATE TABLE users (
 );
 CREATE INDEX idx_users_status ON users(status) WHERE deleted_at IS NULL;
 CREATE INDEX idx_users_vip    ON users(is_vip, vip_expires_at) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX uq_users_email_normalized
+    ON users(LOWER(email))
+    WHERE email IS NOT NULL;
+ALTER TABLE users
+    ADD CONSTRAINT chk_users_status CHECK (status IN (0, 1)),
+    ADD CONSTRAINT chk_users_vip_level CHECK (
+        vip_level BETWEEN 0 AND 9 OR vip_level IN (66, 99)
+    ),
+    ADD CONSTRAINT chk_users_vip_consistency CHECK (
+        (NOT is_vip AND vip_level = 0 AND vip_expires_at IS NULL)
+        OR (is_vip AND vip_level BETWEEN 1 AND 9 AND vip_expires_at IS NOT NULL)
+        OR (is_vip AND vip_level IN (66, 99) AND vip_expires_at IS NULL)
+    );
 COMMENT ON TABLE  users IS '用户账号表';
-COMMENT ON COLUMN users.is_vip         IS 'VIP 标记';
-COMMENT ON COLUMN users.vip_expires_at IS 'VIP 过期时间, NULL=永久';
-COMMENT ON COLUMN users.vip_level      IS 'VIP 等级: 0=普通 1=金 2=钻 3=至尊';
+COMMENT ON COLUMN users.is_vip         IS '是否为 VIP；管理身份 66/99 固定为 TRUE';
+COMMENT ON COLUMN users.vip_expires_at IS '业务 VIP 过期时间；管理身份永久有效，为 NULL';
+COMMENT ON COLUMN users.vip_level      IS '等级枚举: 0=普通, 1-9=业务 VIP, 66=管理员, 99=超级管理员';
 
 -- =============================================================================
 -- 2. RBAC 权限
 -- =============================================================================
 CREATE TABLE roles (
     id           BIGSERIAL PRIMARY KEY,
-    code         VARCHAR(64)  NOT NULL UNIQUE,   -- admin/operator/viewer/vip
+    code         VARCHAR(64)  NOT NULL UNIQUE,   -- user/manager/super_admin/自定义
     name         VARCHAR(64)  NOT NULL,
-    description  VARCHAR(255) DEFAULT '',
-    is_builtin   BOOLEAN      DEFAULT FALSE,     -- 内置角色不可删
+    description  VARCHAR(255) NOT NULL DEFAULT '',
+    is_builtin   BOOLEAN      NOT NULL DEFAULT FALSE, -- 内置角色不可删
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     deleted_at   TIMESTAMPTZ
 );
@@ -62,9 +75,9 @@ COMMENT ON TABLE roles IS '角色表';
 
 CREATE TABLE permissions (
     id           BIGSERIAL PRIMARY KEY,
-    code         VARCHAR(128) NOT NULL UNIQUE,   -- agent:read / bot:write
+    code         VARCHAR(128) NOT NULL UNIQUE,   -- 如 admin:user:manage
     name         VARCHAR(64)  NOT NULL,
-    description  VARCHAR(255) DEFAULT '',
+    description  VARCHAR(255) NOT NULL DEFAULT '',
     module       VARCHAR(32),                    -- 所属模块(分组用)
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
@@ -89,15 +102,15 @@ COMMENT ON TABLE role_permissions IS '角色-权限关联';
 -- =============================================================================
 CREATE TABLE menus (
     id           BIGSERIAL PRIMARY KEY,
-    parent_id    BIGINT       DEFAULT 0,      -- 0=顶级
+    parent_id    BIGINT       NOT NULL DEFAULT 0, -- 0=顶级
     menu_type    SMALLINT     NOT NULL,        -- 1=目录 2=菜单 3=按钮
     title        VARCHAR(64)  NOT NULL,
     path         VARCHAR(255),
     component    VARCHAR(255),                 -- 前端组件路径
     icon         VARCHAR(64),
     permission   VARCHAR(128),                 -- 所需权限码(空=仅登录可见)
-    sort         INT          DEFAULT 0,
-    visible      BOOLEAN      DEFAULT TRUE,
+    sort         INT          NOT NULL DEFAULT 0,
+    visible      BOOLEAN      NOT NULL DEFAULT TRUE,
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     deleted_at   TIMESTAMPTZ

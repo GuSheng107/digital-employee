@@ -1,10 +1,5 @@
-import axios, {
-  type AxiosResponse,
-  type InternalAxiosRequestConfig,
-} from 'axios';
+import { AuthenticatedRequest } from './authenticated-request';
 import { BACKEND_AUTH_API_BASE_URL } from '@/config/api-config';
-import { BaseRequest } from './request';
-import { useUserStore } from '../store/user-store';
 
 /** backend-auth 响应信封：{ success, message, data } */
 export interface AuthApiResponse<T> {
@@ -25,32 +20,10 @@ function isAuthResponse(body: unknown): body is AuthApiResponse<unknown> {
   );
 }
 
-interface RefreshTokenPair {
-  access_token: string;
-  refresh_token: string;
-}
-
-function isRefreshTokenPair(value: unknown): value is RefreshTokenPair {
-  return (
-    value != null
-    && typeof value === 'object'
-    && 'access_token' in value
-    && typeof value.access_token === 'string'
-    && 'refresh_token' in value
-    && typeof value.refresh_token === 'string'
-  );
-}
-
-function getRequestUrl(config: unknown): string {
-  if (config != null && typeof config === 'object' && 'url' in config) {
-    return typeof config.url === 'string' ? config.url : '';
-  }
-  return '';
-}
-
 const SESSION_NEUTRAL_AUTH_PATHS = Object.freeze([
   '/auth/login',
   '/auth/register',
+  '/auth/refresh',
 ]);
 
 function isSessionNeutralAuthRequest(url: string): boolean {
@@ -68,10 +41,8 @@ function isSessionNeutralAuthRequest(url: string): boolean {
  * - refresh_token 存 localStorage，access_token 过期时自动刷新
  * - 刷新失败或用户被禁用时清除登录态
  */
-class BackendAuthRequest extends BaseRequest {
+class BackendAuthRequest extends AuthenticatedRequest {
   private static instance: BackendAuthRequest;
-  private refreshPromise: Promise<boolean> | null = null;
-  private readonly retriedConfigs = new WeakSet<object>();
 
   private constructor() {
     // 统一带 /api/v1 前缀，避免每个 api 文件重复写
@@ -112,102 +83,8 @@ class BackendAuthRequest extends BaseRequest {
     return undefined;
   }
 
-  protected onRequest(config: InternalAxiosRequestConfig): void {
-    const accessToken = localStorage.getItem('access_token');
-    if (accessToken && config.headers) {
-      config.headers['Authorization'] = `Bearer ${accessToken}`;
-    }
-  }
-
-  protected async recoverFromHttpError(
-    error: unknown,
-  ): Promise<AxiosResponse | undefined> {
-    if (
-      !axios.isAxiosError(error)
-      || error.response?.status !== 401
-      || !error.config
-    ) {
-      return undefined;
-    }
-
-    const requestUrl = error.config.url ?? '';
-    if (
-      isSessionNeutralAuthRequest(requestUrl)
-      || requestUrl.endsWith('/auth/refresh')
-      || this.retriedConfigs.has(error.config)
-    ) {
-      return undefined;
-    }
-
-    const refreshToken = localStorage.getItem('refresh_token');
-    if (!refreshToken) {
-      return undefined;
-    }
-
-    this.retriedConfigs.add(error.config);
-    const refreshed = await this.refreshSession(refreshToken);
-    if (!refreshed) {
-      return undefined;
-    }
-
-    const accessToken = localStorage.getItem('access_token');
-    if (!accessToken) {
-      return undefined;
-    }
-    error.config.headers.Authorization = `Bearer ${accessToken}`;
-    return this.instance.request(error.config);
-  }
-
-  protected onAuthError(_status: number, config?: unknown): void {
-    if (isSessionNeutralAuthRequest(getRequestUrl(config))) {
-      return;
-    }
-    useUserStore.getState().clearAuth();
-    // 跳转登录页，保留原路径用于登录后回跳
-    const currentPath = window.location.pathname + window.location.search;
-    if (currentPath !== '/login') {
-      window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`;
-    }
-  }
-
-  /** 合并并发 401，只发起一次 refresh 请求。 */
-  private async refreshSession(refreshToken: string): Promise<boolean> {
-    if (this.refreshPromise) {
-      return this.refreshPromise;
-    }
-
-    const refreshPromise = this.requestTokenRefresh(refreshToken);
-    this.refreshPromise = refreshPromise;
-    try {
-      return await refreshPromise;
-    } finally {
-      if (this.refreshPromise === refreshPromise) {
-        this.refreshPromise = null;
-      }
-    }
-  }
-
-  /** 使用独立 Axios 实例刷新 token，避免刷新请求进入当前拦截器造成递归。 */
-  private async requestTokenRefresh(refreshToken: string): Promise<boolean> {
-    try {
-      const response = await axios.post<AuthApiResponse<unknown>>(
-        `${BACKEND_AUTH_API_BASE_URL}/auth/refresh`,
-        { refresh_token: refreshToken },
-        { timeout: 10000 },
-      );
-      if (
-        !isAuthResponse(response.data)
-        || !response.data.success
-        || !isRefreshTokenPair(response.data.data)
-      ) {
-        return false;
-      }
-      localStorage.setItem('access_token', response.data.data.access_token);
-      localStorage.setItem('refresh_token', response.data.data.refresh_token);
-      return true;
-    } catch {
-      return false;
-    }
+  protected shouldSkipSessionRecovery(requestUrl: string): boolean {
+    return isSessionNeutralAuthRequest(requestUrl);
   }
 }
 

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+NON_NULLABLE_MENU_UPDATE_FIELDS = frozenset({"parent_id", "menu_type", "title", "sort", "visible"})
 
 
 class MenuItem(BaseModel):
@@ -46,3 +48,15 @@ class UpdateMenuRequest(BaseModel):
     permission: str | None = Field(default=None, max_length=128)
     sort: int | None = Field(default=None, ge=0)
     visible: bool | None = None
+
+    @model_validator(mode="after")
+    def reject_explicit_null_for_required_columns(self) -> UpdateMenuRequest:
+        """非空数据库字段可以省略，但不能显式清空。"""
+        invalid_fields = sorted(
+            field_name
+            for field_name in self.model_fields_set
+            if (field_name in NON_NULLABLE_MENU_UPDATE_FIELDS and getattr(self, field_name) is None)
+        )
+        if invalid_fields:
+            raise ValueError(f"菜单字段不能设为空：{', '.join(invalid_fields)}")
+        return self

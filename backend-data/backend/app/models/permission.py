@@ -1,7 +1,7 @@
 """权限点表与角色-权限关联 ORM 模型。
 
 对应 docs/schema.sql 中的 permissions 和 role_permissions 表。
-权限点粒度细到操作（agent:read / bot:write），通过 role_permissions
+权限点粒度细到操作（如 admin:user:manage），通过 role_permissions
 聚合到角色，再通过 user_roles 间接赋予用户。
 """
 
@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
-from app.models.base import Base
+from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.role import Role
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 class Permission(Base):
     """权限点表。
 
-    code 形如 ``module:action``（如 ``agent:read``），module 用于前端分组。
+    code 使用统一命名空间（如 ``admin:user:manage``），module 用于前端分组。
     """
 
     __tablename__ = "permissions"
@@ -32,7 +32,11 @@ class Permission(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     code: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
-    description: Mapped[str] = mapped_column(String(255), default="")
+    description: Mapped[str] = mapped_column(
+        String(255),
+        default="",
+        nullable=False,
+    )
     module: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()

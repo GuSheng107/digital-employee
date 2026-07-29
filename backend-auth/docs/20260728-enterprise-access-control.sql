@@ -51,7 +51,8 @@ VALUES
     ('admin:menu:manage', '菜单管理', '查看、创建、编辑和删除菜单', 'menu'),
     ('admin:data_platform:dashboard', '数据中台概览', '查看数据中台运行与依赖状态', 'data_platform'),
     ('admin:data_platform:data_items', '数据项管理', '查询和维护 Data Items', 'data_platform'),
-    ('admin:data_platform:config', '数据中台配置', '查看配置并执行依赖连通性测试', 'data_platform')
+    ('admin:data_platform:config', '数据中台配置', '查看配置并执行依赖连通性测试', 'data_platform'),
+    ('admin:bot:manage', '机器人管理', '查看、创建、更新和停用机器人接入配置', 'bot')
 ON CONFLICT (code) DO UPDATE
 SET
     name = EXCLUDED.name,
@@ -210,6 +211,7 @@ UPDATE users AS user_account
 SET
     is_vip = TRUE,
     vip_level = 66,
+    vip_expires_at = NULL,
     updated_at = CURRENT_TIMESTAMP
 WHERE EXISTS (
     SELECT 1
@@ -223,6 +225,7 @@ UPDATE users AS user_account
 SET
     is_vip = TRUE,
     vip_level = 99,
+    vip_expires_at = NULL,
     updated_at = CURRENT_TIMESTAMP
 WHERE EXISTS (
     SELECT 1

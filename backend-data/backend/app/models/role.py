@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
-from app.models.base import Base
+from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.menu import Menu
@@ -25,8 +25,8 @@ if TYPE_CHECKING:
 class Role(Base):
     """角色表。
 
-    code 为业务唯一标识（admin/operator/viewer/vip），is_builtin 标记
-    内置角色不可删除。
+    code 为业务唯一标识（user/manager/super_admin 或自定义代码），
+    is_builtin 标记内置角色不可删除。
     """
 
     __tablename__ = "roles"
@@ -34,8 +34,16 @@ class Role(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
-    description: Mapped[str] = mapped_column(String(255), default="")
-    is_builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    description: Mapped[str] = mapped_column(
+        String(255),
+        default="",
+        nullable=False,
+    )
+    is_builtin: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )

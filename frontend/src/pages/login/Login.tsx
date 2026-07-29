@@ -19,6 +19,13 @@ export default function Login(): React.ReactElement {
   const handleSubmit = async (values: LoginFormValues): Promise<void> => {
     try {
       await login(values.username, values.password);
+      const mustChangePassword =
+        useUserStore.getState().userInfo?.must_change_password === true;
+      if (mustChangePassword) {
+        message.warning('密码已由管理员重置，请先设置新的登录密码');
+        navigate('/system/user/profile', { replace: true });
+        return;
+      }
       message.success('登录成功');
       // 登录成功后跳转到 redirect 参数指定的页面，默认首页
       const redirect = searchParams.get('redirect') || '/';

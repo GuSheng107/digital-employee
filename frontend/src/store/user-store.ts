@@ -8,6 +8,7 @@ import {
   register as registerApi,
   refreshToken,
   type MenuNode,
+  type RegisterRequest,
   type UserInfo,
 } from '@/api/auth-api';
 import { getRequestErrorMessage, HttpError } from '@/utils/request';
@@ -29,7 +30,7 @@ interface AuthState {
   /** 用户名密码登录，成功后存储双 token 并拉取用户信息 */
   login: (username: string, password: string) => Promise<void>;
   /** 用户注册，成功后存储双 token 并拉取用户信息（自动登录） */
-  register: (username: string, password: string, inviteCode: string) => Promise<void>;
+  register: (payload: RegisterRequest) => Promise<void>;
   /** 登出，撤销 token 并清除登录态 */
   logout: () => Promise<void>;
   /** 从 access_token 恢复登录态（页面刷新时调用） */
@@ -92,10 +93,10 @@ export const useUserStore = create<AuthState>((set) => ({
     }
   },
 
-  register: async (username: string, password: string, inviteCode: string) => {
+  register: async (payload: RegisterRequest) => {
     set({ loading: true });
     try {
-      const tokenPair = await registerApi({ username, password, invite_code: inviteCode });
+      const tokenPair = await registerApi(payload);
       persistAccessToken(tokenPair.access_token);
       persistRefreshToken(tokenPair.refresh_token);
 

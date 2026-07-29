@@ -18,6 +18,9 @@ export default function RequireAuth({ children }: RequireAuthProps): React.React
   const location = useLocation();
   const isAuthenticated = useUserStore((state) => state.isAuthenticated);
   const restoring = useUserStore((state) => state.restoring);
+  const mustChangePassword = useUserStore(
+    (state) => state.userInfo?.must_change_password === true,
+  );
 
   // 正在恢复登录态时显示加载动画
   if (restoring && !isAuthenticated) {
@@ -39,6 +42,13 @@ export default function RequireAuth({ children }: RequireAuthProps): React.React
   if (!isAuthenticated) {
     const redirect = encodeURIComponent(location.pathname + location.search);
     return <Navigate to={`/login?redirect=${redirect}`} replace />;
+  }
+
+  if (
+    mustChangePassword
+    && location.pathname !== '/system/user/profile'
+  ) {
+    return <Navigate to="/system/user/profile" replace />;
   }
 
   return <>{children}</>;

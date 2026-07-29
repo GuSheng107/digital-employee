@@ -26,7 +26,9 @@ class _FakeMinio:
         return object_name.encode(), "image/png"
 
 
-def test_avatar_upload_returns_backend_data_public_path(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_avatar_upload_returns_backend_data_public_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """头像上传不能再把私有 MinIO 直链返回给浏览器。"""
     monkeypatch.setattr(storage_service, "get_minio_client", _FakeMinio)
     monkeypatch.setattr(storage_service.time, "time", lambda: 1.234)
@@ -59,3 +61,9 @@ def test_avatar_download_rejects_invalid_paths(avatar_path: str) -> None:
     """空路径和目录穿越片段必须被拒绝。"""
     with pytest.raises(ValueError, match="invalid avatar path"):
         StorageService().download_avatar(avatar_path)
+
+
+def test_internal_object_name_rejects_path_traversal() -> None:
+    """内部对象上传和下载同样不能接受目录穿越片段。"""
+    with pytest.raises(ValueError, match="invalid object name"):
+        StorageService().download_object("wechat/../secret")

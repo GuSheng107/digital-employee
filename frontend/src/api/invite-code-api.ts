@@ -12,6 +12,7 @@ export interface InviteCodeItem {
 export interface CreateInviteCodePayload {
   remaining: number;
   expires_in_hours: number;
+  custom_code?: string;
 }
 
 export interface CreateInviteCodeResult {

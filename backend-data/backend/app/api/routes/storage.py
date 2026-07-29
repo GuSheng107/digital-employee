@@ -1,5 +1,5 @@
 from api_common import ResourceNotFoundError, ValidationError
-from fastapi import APIRouter, File, Form, Response, UploadFile
+from fastapi import APIRouter, File, Form, Query, Response, UploadFile
 from minio.error import S3Error
 
 from app.core.storage_constants import (
@@ -78,3 +78,61 @@ def upload_file(
         content_type=file.content_type or "application/octet-stream",
     )
     return success_response(result)
+
+
+@router.post("/objects", response_model=ApiResponse)
+def upload_object(
+    file: UploadFile = File(...),
+    object_name: str = Form(...),
+) -> dict:
+    """按业务对象名上传内部文件；仅供 data-client 服务调用。"""
+    content = file.file.read()
+    try:
+        result = StorageService().upload_object(
+            object_name=object_name,
+            data=content,
+            content_type=file.content_type or "application/octet-stream",
+        )
+    except ValueError as exc:
+        raise ValidationError(message="对象名称无效") from exc
+    return success_response(result)
+
+
+@router.get("/objects/content")
+def download_object(
+    object_name: str = Query(..., min_length=1),
+) -> Response:
+    """下载内部对象，二进制内容不套 JSON 响应信封。"""
+    try:
+        content, content_type = StorageService().download_object(object_name)
+    except ValueError as exc:
+        raise ValidationError(message="对象名称无效") from exc
+    except S3Error as exc:
+        if exc.code in {"NoSuchKey", "NoSuchObject"}:
+            raise ResourceNotFoundError(message="文件不存在") from exc
+        raise
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.get("/objects/by-url")
+def download_object_by_url(
+    file_url: str = Query(..., min_length=1),
+) -> Response:
+    """按 backend-data 生成的存储 URL 下载内部对象。"""
+    try:
+        content, content_type = StorageService().download_object_by_url(file_url)
+    except ValueError as exc:
+        raise ValidationError(message="文件地址无效") from exc
+    except S3Error as exc:
+        if exc.code in {"NoSuchKey", "NoSuchObject"}:
+            raise ResourceNotFoundError(message="文件不存在") from exc
+        raise
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={"X-Content-Type-Options": "nosniff"},
+    )

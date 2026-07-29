@@ -1,35 +1,18 @@
-"""权限目录查询服务。"""
+"""权限目录编排，实际数据读取由 backend-data 完成。"""
 
 from __future__ import annotations
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from typing import Any
 
-from app.models.permission import Permission
+from data_client import DataClient, get_data_client
 
 
 class PermissionService:
-    """提供管理端可选择的规范权限码目录。"""
+    """权限码目录代理。"""
 
-    def __init__(self, session: Session) -> None:
-        self._session = session
+    def __init__(self, data_client: DataClient | None = None) -> None:
+        self._data = data_client or get_data_client()
 
-    def list_permissions(self) -> list[dict]:
-        """按模块、权限码排序返回全部权限定义。"""
-        permissions = self._session.scalars(
-            select(Permission).order_by(
-                Permission.module,
-                Permission.code,
-                Permission.id,
-            )
-        ).all()
-        return [
-            {
-                "id": permission.id,
-                "code": permission.code,
-                "name": permission.name,
-                "description": permission.description,
-                "module": permission.module,
-            }
-            for permission in permissions
-        ]
+    def list_permissions(self) -> list[dict[str, Any]]:
+        """列出权限码目录。"""
+        return self._data.list_permissions()

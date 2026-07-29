@@ -38,9 +38,8 @@ import {
   type RoleItem,
   type UpdateRolePayload,
 } from '@/api/role-api';
-import type { MenuNode } from '@/api/auth-api';
+import { fetchMenus, type MenuItem } from '@/api/menu-api';
 import { ROLE_CODE } from '@/constants/access-control';
-import { useUserStore } from '@/store/user-store';
 import { getRequestErrorMessage } from '@/utils/request';
 import styles from './index.module.css';
 
@@ -53,18 +52,28 @@ function getErrorMessage(error: unknown): string {
   return getRequestErrorMessage(error, '操作失败，请稍后重试');
 }
 
-/** 把后端菜单树（MenuNode[]）转换为 antd Tree 的 treeData 格式 */
-function convertMenusToTreeData(menus: MenuNode[]): TreeDataNode[] {
-  return menus.map((menu) => {
-    const node: TreeDataNode = {
+/** 把菜单管理接口的扁平目录转换为权限配置树。 */
+function convertMenusToTreeData(menus: MenuItem[]): TreeDataNode[] {
+  const nodes = new Map<number, TreeDataNode>();
+  menus.forEach((menu) => {
+    nodes.set(menu.id, {
       key: menu.id,
       title: menu.title,
-    };
-    if (menu.children && menu.children.length > 0) {
-      node.children = convertMenusToTreeData(menu.children);
-    }
-    return node;
+    });
   });
+
+  const roots: TreeDataNode[] = [];
+  menus.forEach((menu) => {
+    const node = nodes.get(menu.id);
+    if (!node) return;
+    const parent = nodes.get(menu.parent_id);
+    if (menu.parent_id === 0 || !parent) {
+      roots.push(node);
+      return;
+    }
+    parent.children = [...(parent.children ?? []), node];
+  });
+  return roots;
 }
 
 /** 超级管理员是平台保护角色，不进入通用角色维护列表。 */
@@ -97,6 +106,7 @@ export default function UserPermission(): React.ReactElement {
   // ── 右栏：角色管理 + 菜单分配 ──
   const [roles, setRoles] = useState<RoleItem[]>([]);
   const [rolesLoading, setRolesLoading] = useState<boolean>(true);
+  const [allMenus, setAllMenus] = useState<MenuItem[]>([]);
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
   const [checkedMenuIds, setCheckedMenuIds] = useState<number[]>([]);
   const [roleMenusSaving, setRoleMenusSaving] = useState<boolean>(false);
@@ -107,8 +117,10 @@ export default function UserPermission(): React.ReactElement {
   const [roleForm] = Form.useForm<RoleFormValues>();
   const [roleSubmitting, setRoleSubmitting] = useState<boolean>(false);
 
-  const menus = useUserStore((state) => state.menus);
-  const menuTreeData = useMemo<TreeDataNode[]>(() => convertMenusToTreeData(menus), [menus]);
+  const menuTreeData = useMemo<TreeDataNode[]>(
+    () => convertMenusToTreeData(allMenus),
+    [allMenus],
+  );
 
   const selectedRole = useMemo<RoleItem | null>(
     () => roles.find((r) => r.id === selectedRoleId) ?? null,
@@ -172,14 +184,16 @@ export default function UserPermission(): React.ReactElement {
     void Promise.all([
       fetchUsers(1, DEFAULT_PAGE_SIZE),
       fetchRoles(),
+      fetchMenus(),
     ])
-      .then(([userResponse, roleResponse]) => {
+      .then(([userResponse, roleResponse, menuResponse]) => {
         if (!active) return;
         setUsers(userResponse.items);
         setUsersTotal(userResponse.total);
         setUsersPage(userResponse.page);
         setUsersPageSize(userResponse.page_size);
         setRoles(getManageableRoles(roleResponse));
+        setAllMenus(menuResponse);
       })
       .catch((error: unknown) => {
         if (active) {
@@ -208,13 +222,13 @@ export default function UserPermission(): React.ReactElement {
     setUserRolesSaving(true);
     return assignUserRoles(selectedUser.id, userRoleCodes)
       .then(() => {
-        message.success('用户角色保存成功，角色菜单已复制到该用户');
+        message.success('用户角色保存成功，角色权限与菜单已同步到该用户');
         const updatedRoles = [...userRoleCodes];
         setUsers((prev) =>
           prev.map((u) => (u.id === selectedUser.id ? { ...u, roles: updatedRoles } : u)),
         );
         setSelectedUser((prev) => (prev ? { ...prev, roles: updatedRoles } : prev));
-        // 角色变更后，重新加载用户独立菜单（后端已 union 角色菜单）
+        // 角色变更后，重新加载用户直接菜单快照。
         return loadUserMenus(selectedUser.id);
       })
       .catch((error: unknown) => {
@@ -446,7 +460,7 @@ export default function UserPermission(): React.ReactElement {
               type="info"
               showIcon
               className={styles.hintAlert}
-              message="分配角色后，角色的权限和菜单会自动复制到该用户。之后可在下方独立调整，不影响其他用户。"
+              message="角色提供基础权限；下方用户直接菜单用于个性化补充，并会同步对应接口权限。"
             />
 
             {/* 用户独立菜单 */}

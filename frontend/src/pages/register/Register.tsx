@@ -1,7 +1,22 @@
 import { useNavigate } from 'react-router-dom';
 import { Form, Input, Button, message } from 'antd';
-import { UserOutlined, LockOutlined, GiftOutlined } from '@ant-design/icons';
+import {
+  GiftOutlined,
+  LockOutlined,
+  MailOutlined,
+  PhoneOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
 import { useUserStore, getRegisterErrorMessage } from '@/store/user-store';
+import { PHONE_DIAL_PREFIX } from '@/config/identity-config';
+import {
+  EMAIL_PATTERN,
+  INVITE_CODE_MESSAGE,
+  INVITE_CODE_PATTERN,
+  PASSWORD_COMPLEXITY_MESSAGE,
+  PASSWORD_COMPLEXITY_PATTERN,
+  normalizePhoneNumber,
+} from '@/utils/identity-validation';
 import logo from '@/assets/images/avatar/logo.svg';
 import styles from './index.module.css';
 
@@ -9,6 +24,8 @@ interface RegisterFormValues {
   username: string;
   password: string;
   confirmPassword: string;
+  email: string;
+  phone: string;
   invite_code: string;
 }
 
@@ -18,8 +35,19 @@ export default function Register(): React.ReactElement {
   const loading = useUserStore((state) => state.loading);
 
   const handleSubmit = async (values: RegisterFormValues): Promise<void> => {
+    const normalizedPhone = normalizePhoneNumber(values.phone);
+    if (!normalizedPhone) {
+      message.error(`请输入有效的 ${PHONE_DIAL_PREFIX} 手机号码`);
+      return;
+    }
     try {
-      await register(values.username, values.password, values.invite_code);
+      await register({
+        username: values.username.trim(),
+        password: values.password,
+        email: values.email.trim().toLowerCase(),
+        phone: normalizedPhone,
+        invite_code: values.invite_code.trim().toUpperCase(),
+      });
       message.success('注册成功');
       // 注册成功后自动登录，跳转首页
       navigate('/', { replace: true });
@@ -77,46 +105,46 @@ export default function Register(): React.ReactElement {
           >
             <Form.Item
               name="username"
+              label={<span className={styles.formLabel}>用户名</span>}
               rules={[
                 { required: true, message: '请输入用户名' },
                 { min: 4, max: 64, message: '用户名长度需为 4-64 个字符' },
               ]}
               className={styles.formField}
             >
-              <div>
-                <label className={styles.formLabel}>用户名</label>
-                <Input
-                  prefix={<UserOutlined style={{ color: '#94a3b8' }} />}
-                  placeholder="请输入用户名"
-                  className={styles.formInput}
-                  size="large"
-                  autoComplete="username"
-                />
-              </div>
+              <Input
+                prefix={<UserOutlined style={{ color: '#94a3b8' }} />}
+                placeholder="请输入用户名"
+                className={styles.formInput}
+                size="large"
+                autoComplete="username"
+              />
             </Form.Item>
 
             <Form.Item
               name="password"
+              label={<span className={styles.formLabel}>密码</span>}
               rules={[
                 { required: true, message: '请输入密码' },
-                { min: 8, max: 128, message: '密码长度需为 8-128 个字符' },
+                {
+                  pattern: PASSWORD_COMPLEXITY_PATTERN,
+                  message: PASSWORD_COMPLEXITY_MESSAGE,
+                },
               ]}
               className={styles.formField}
             >
-              <div>
-                <label className={styles.formLabel}>密码</label>
-                <Input.Password
-                  prefix={<LockOutlined style={{ color: '#94a3b8' }} />}
-                  placeholder="请输入密码"
-                  className={styles.formInput}
-                  size="large"
-                  autoComplete="new-password"
-                />
-              </div>
+              <Input.Password
+                prefix={<LockOutlined style={{ color: '#94a3b8' }} />}
+                placeholder="请输入密码"
+                className={styles.formInput}
+                size="large"
+                autoComplete="new-password"
+              />
             </Form.Item>
 
             <Form.Item
               name="confirmPassword"
+              label={<span className={styles.formLabel}>确认密码</span>}
               dependencies={['password']}
               rules={[
                 { required: true, message: '请再次输入密码' },
@@ -131,36 +159,85 @@ export default function Register(): React.ReactElement {
               ]}
               className={styles.formField}
             >
-              <div>
-                <label className={styles.formLabel}>确认密码</label>
-                <Input.Password
-                  prefix={<LockOutlined style={{ color: '#94a3b8' }} />}
-                  placeholder="请再次输入密码"
-                  className={styles.formInput}
-                  size="large"
-                  autoComplete="new-password"
-                />
-              </div>
+              <Input.Password
+                prefix={<LockOutlined style={{ color: '#94a3b8' }} />}
+                placeholder="请再次输入密码"
+                className={styles.formInput}
+                size="large"
+                autoComplete="new-password"
+              />
+            </Form.Item>
+
+            <Form.Item
+              name="email"
+              label={<span className={styles.formLabel}>邮箱</span>}
+              rules={[
+                { required: true, message: '请输入邮箱' },
+                { pattern: EMAIL_PATTERN, message: '请输入有效的邮箱地址' },
+              ]}
+              className={styles.formField}
+            >
+              <Input
+                prefix={<MailOutlined style={{ color: '#94a3b8' }} />}
+                placeholder="请输入邮箱"
+                className={styles.formInput}
+                size="large"
+                autoComplete="email"
+              />
+            </Form.Item>
+
+            <Form.Item
+              name="phone"
+              label={<span className={styles.formLabel}>手机号</span>}
+              rules={[
+                { required: true, message: '请输入手机号' },
+                {
+                  validator: (_, value: string | undefined) => {
+                    if (!value || normalizePhoneNumber(value)) {
+                      return Promise.resolve();
+                    }
+                    return Promise.reject(
+                      new Error(`请输入有效的 ${PHONE_DIAL_PREFIX} 手机号码`),
+                    );
+                  },
+                },
+              ]}
+              className={styles.formField}
+            >
+              <Input
+                prefix={
+                  <>
+                    <PhoneOutlined style={{ color: '#94a3b8' }} />
+                    <span>{PHONE_DIAL_PREFIX}</span>
+                  </>
+                }
+                placeholder="请输入手机号"
+                className={styles.formInput}
+                size="large"
+                autoComplete="tel"
+              />
             </Form.Item>
 
             <Form.Item
               name="invite_code"
+              label={<span className={styles.formLabel}>邀请码</span>}
               rules={[
                 { required: true, message: '请输入邀请码' },
-                { len: 8, message: '邀请码长度需为 8 个字符' },
+                {
+                  pattern: INVITE_CODE_PATTERN,
+                  message: INVITE_CODE_MESSAGE,
+                },
               ]}
               className={styles.formField}
             >
-              <div>
-                <label className={styles.formLabel}>邀请码</label>
-                <Input
-                  prefix={<GiftOutlined style={{ color: '#94a3b8' }} />}
-                  placeholder="请输入邀请码"
-                  className={styles.formInput}
-                  size="large"
-                  autoComplete="off"
-                />
-              </div>
+              <Input
+                prefix={<GiftOutlined style={{ color: '#94a3b8' }} />}
+                placeholder="请输入邀请码"
+                className={styles.formInput}
+                size="large"
+                autoComplete="off"
+                maxLength={32}
+              />
             </Form.Item>
 
             <Form.Item className={styles.formField}>

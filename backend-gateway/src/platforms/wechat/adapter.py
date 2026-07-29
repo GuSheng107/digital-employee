@@ -2,7 +2,7 @@
 """企业微信消息协议适配器。
 
 负责在企业微信长连接事件 Payload 与全局归一化 StandardMessage 协议之间进行双向翻译，
-并接管加密媒体资源解密、MinIO 上的存储生命周期管理以及基于 wecom_aibot_sdk 执行消息的回复。
+并接管加密媒体资源解密、对象存储生命周期管理以及基于 wecom_aibot_sdk 执行消息的回复。
 """
 
 import asyncio
@@ -14,7 +14,6 @@ import urllib.request
 import uuid
 from collections import OrderedDict
 from typing import Any
-from urllib.parse import urlparse
 
 from Crypto.Cipher import AES
 from loguru import logger
@@ -28,7 +27,7 @@ from src.core.schemas import (
     StandardMessage,
 )
 from src.platforms.base import BaseAdapter
-from src.utils.minio_client import minio_client
+from src.utils.data_access import storage_client
 
 
 class LRUCache(OrderedDict[str, dict[str, Any]]):
@@ -84,7 +83,11 @@ class WeChatAdapter(BaseAdapter):
         if isinstance(target_dict, dict):
             for k in keys:
                 v = target_dict.get(k)
-                if v is not None and str(v).strip() != "" and str(v).strip().lower() != "none":
+                if (
+                    v is not None
+                    and str(v).strip() != ""
+                    and str(v).strip().lower() != "none"
+                ):
                     return str(v).strip()
         return ""
 
@@ -101,8 +104,19 @@ class WeChatAdapter(BaseAdapter):
         req_id = headers.get("req_id", "")
 
         # 1. 采用多级 Fallback 字段抽取关键消息属性，以完美对齐复杂交互
-        msg_id = body.get("msgid") or body.get("msg_id") or body.get("message_id") or req_id or ""
-        chat_id = body.get("chatid") or body.get("chat_id") or body.get("conversation_id") or ""
+        msg_id = (
+            body.get("msgid")
+            or body.get("msg_id")
+            or body.get("message_id")
+            or req_id
+            or ""
+        )
+        chat_id = (
+            body.get("chatid")
+            or body.get("chat_id")
+            or body.get("conversation_id")
+            or ""
+        )
         chat_type_raw = body.get("chattype") or body.get("chat_type") or "single"
         msg_type_raw = body.get("msgtype") or body.get("msg_type") or "text"
 
@@ -120,7 +134,12 @@ class WeChatAdapter(BaseAdapter):
             self._req_id_map[msg_id] = data
 
         # 确定发送者 ID (from.userid 等多级容错)
-        sender_id = body.get("from", {}).get("userid") or body.get("from_userid") or body.get("sender_id") or ""
+        sender_id = (
+            body.get("from", {}).get("userid")
+            or body.get("from_userid")
+            or body.get("sender_id")
+            or ""
+        )
         session_id = chat_id if chat_type_raw == "group" or chat_id else sender_id
 
         # 实例化标准归一化消息体
@@ -137,7 +156,11 @@ class WeChatAdapter(BaseAdapter):
         event_obj = body.get("event") or body.get("Event") or {}
         card_evt_data = {}
         if isinstance(event_obj, dict):
-            card_evt_data = event_obj.get("template_card_event") or event_obj.get("templatecardevent") or event_obj
+            card_evt_data = (
+                event_obj.get("template_card_event")
+                or event_obj.get("templatecardevent")
+                or event_obj
+            )
 
         event_type = (
             self._get_str_field(card_evt_data, ["eventtype", "event_type", "event"])
@@ -157,9 +180,8 @@ class WeChatAdapter(BaseAdapter):
             or self._get_str_field(body, ["task_id", "taskId"])
         )
 
-        is_card_event = (
-            event_type in ("template_card_event", "card_button_click")
-            or (msg_type_raw == "event" and bool(event_key))
+        is_card_event = event_type in ("template_card_event", "card_button_click") or (
+            msg_type_raw == "event" and bool(event_key)
         )
 
         if is_card_event and event_key:
@@ -172,7 +194,11 @@ class WeChatAdapter(BaseAdapter):
                 event_key,
                 sender_id,
             )
-            result_text = f"[卡片提交结果] (TaskID: {cb_task_id}) 单选结果: {event_key}" if cb_task_id else f"[卡片提交结果] 单选结果: {event_key}"
+            result_text = (
+                f"[卡片提交结果] (TaskID: {cb_task_id}) 单选结果: {event_key}"
+                if cb_task_id
+                else f"[卡片提交结果] 单选结果: {event_key}"
+            )
 
             standard_msg.content.append(
                 MessageContent(
@@ -185,7 +211,9 @@ class WeChatAdapter(BaseAdapter):
 
         # 忽略无具体交互 key 的普通系统事件，避免产生误回复
         if msg_type_raw == "event":
-            logger.debug("[BotID: {}] 忽略无具体交互 key 的企微系统事件", self.bot.bot_id)
+            logger.debug(
+                "[BotID: {}] 忽略无具体交互 key 的企微系统事件", self.bot.bot_id
+            )
             return
 
         # 2. 递归遍历和排重收集包体内所有多模态区块（包括 mixed 图文混排以及各种深层嵌套）
@@ -203,55 +231,61 @@ class WeChatAdapter(BaseAdapter):
                     )
                 # 图片
                 elif part_type == "image":
-                    minio_url = self._download_and_decrypt_media(
+                    storage_url = self._download_and_decrypt_media(
                         url=part["url"],
                         aeskey=part["aeskey"],
                         res_type="image",
                         session_id=session_id,
                     )
-                    if minio_url:
+                    if storage_url:
                         standard_msg.content.append(
-                            MessageContent(msg_type=MessageType.IMAGE, file_url=minio_url)
+                            MessageContent(
+                                msg_type=MessageType.IMAGE, file_url=storage_url
+                            )
                         )
                 # 音频/语音
                 elif part_type in {"voice", "audio"}:
-                    minio_url = self._download_and_decrypt_media(
+                    storage_url = self._download_and_decrypt_media(
                         url=part["url"],
                         aeskey=part["aeskey"],
                         res_type="audio",
                         session_id=session_id,
                     )
-                    if minio_url:
+                    if storage_url:
                         standard_msg.content.append(
-                            MessageContent(msg_type=MessageType.AUDIO, file_url=minio_url)
+                            MessageContent(
+                                msg_type=MessageType.AUDIO, file_url=storage_url
+                            )
                         )
                 # 视频
                 elif part_type == "video":
-                    minio_url = self._download_and_decrypt_media(
+                    storage_url = self._download_and_decrypt_media(
                         url=part["url"],
                         aeskey=part["aeskey"],
                         res_type="video",
                         session_id=session_id,
                     )
-                    if minio_url:
+                    if storage_url:
                         standard_msg.content.append(
-                            MessageContent(msg_type=MessageType.VIDEO, file_url=minio_url)
+                            MessageContent(
+                                msg_type=MessageType.VIDEO, file_url=storage_url
+                            )
                         )
                 # 文件
                 elif part_type == "file":
                     file_name = part["filename"] or "file"
-                    minio_url = self._download_and_decrypt_media(
+                    storage_url = self._download_and_decrypt_media(
                         url=part["url"],
                         aeskey=part["aeskey"],
                         res_type="file",
                         session_id=session_id,
                         file_name=file_name,
                     )
-                    if minio_url:
+                    if storage_url:
                         standard_msg.content.append(
                             MessageContent(
                                 msg_type=MessageType.FILE,
-                                file_url=minio_url,
+                                file_url=storage_url,
                                 file_name=file_name,
                             )
                         )
@@ -263,7 +297,10 @@ class WeChatAdapter(BaseAdapter):
                 msg_type_raw,
             )
             standard_msg.content.append(
-                MessageContent(msg_type=MessageType.TEXT, text=f"[暂不支持的消息类型: {msg_type_raw}]")
+                MessageContent(
+                    msg_type=MessageType.TEXT,
+                    text=f"[暂不支持的消息类型: {msg_type_raw}]",
+                )
             )
 
         logger.info(
@@ -291,7 +328,13 @@ class WeChatAdapter(BaseAdapter):
             return
 
         # 确定类型：使用节点自带的类型，或者父节点的 key (如 "image"、"file") 作为 fallback
-        raw_type = node.get("type") or node.get("msgtype") or node.get("content_type") or node.get("item_type") or parent_key
+        raw_type = (
+            node.get("type")
+            or node.get("msgtype")
+            or node.get("content_type")
+            or node.get("item_type")
+            or parent_key
+        )
         normalized_type = str(raw_type or "").strip().lower()
 
         # 1. 段落文本内容提取
@@ -320,12 +363,14 @@ class WeChatAdapter(BaseAdapter):
                 key = (normalized_type, media_url)
                 if key not in seen:
                     seen.add(key)
-                    parts.append({
-                        "type": normalized_type,
-                        "url": media_url,
-                        "aeskey": aeskey,
-                        "filename": filename,
-                    })
+                    parts.append(
+                        {
+                            "type": normalized_type,
+                            "url": media_url,
+                            "aeskey": aeskey,
+                            "filename": filename,
+                        }
+                    )
                 return
 
         # 递归向下挖掘子字典
@@ -373,7 +418,7 @@ class WeChatAdapter(BaseAdapter):
         session_id: str,
         file_name: str | None = None,
     ) -> str | None:
-        """下载加密媒体资源文件，进行 AES 解密，并转存至本地 MinIO。
+        """下载并解密媒体资源，再通过 backend-data 转存到统一对象存储。
 
         Args:
             url: 媒体文件的加密下载地址。
@@ -383,7 +428,7 @@ class WeChatAdapter(BaseAdapter):
             file_name: 文件名（用于 file 类型）。
 
         Returns:
-            转存至 MinIO 的统一 URL，若失败则返回 None。
+            backend-data 返回的统一资源 URL，若失败则返回 None。
         """
         if not url or not aeskey:
             return None
@@ -431,14 +476,14 @@ class WeChatAdapter(BaseAdapter):
             unique_name = f"{uuid.uuid4()}{file_extension}"
             object_name = f"wechat/{self.bot.bot_id}/{session_id}/{unique_name}"
 
-            # 4. 上传至 MinIO
-            minio_url = minio_client.upload_file(
+            # 4. 通过 share/data-client 委托 backend-data 写入对象存储
+            storage_url = storage_client.upload_file(
                 object_name=object_name,
                 data=io.BytesIO(decrypted_bytes),
                 length=len(decrypted_bytes),
                 content_type=content_type,
             )
-            return minio_url
+            return storage_url
 
         except Exception as exc:
             logger.error(
@@ -449,33 +494,13 @@ class WeChatAdapter(BaseAdapter):
             )
             return None
 
-    def _get_object_name_from_url(self, file_url: str) -> str:
-        """从 MinIO URL 中反向解析对象在存储桶中的真实相对路径。
+    def _upload_media_to_wechat(
+        self, file_url: str, res_type: str, file_name: str | None = None
+    ) -> str | None:
+        """经 backend-data 下载资源，并调用 SDK WSClient 上传临时素材。
 
         Args:
-            file_url: 标准文件下载 URL。
-
-        Returns:
-            MinIO 存储桶内对象真实路径相对字符串。
-        """
-        parsed = urlparse(file_url)
-        path = parsed.path.lstrip("/")
-        # 去掉桶名称前缀以获取桶内实际路径
-        bucket_prefix = minio_client.bucket_name + "/"
-        if path.startswith(bucket_prefix):
-            return path[len(bucket_prefix) :]
-
-        # 容错降级：直接以 '/' 分割掉第一部分（第一部分是 bucket）
-        parts = path.split("/", 1)
-        if len(parts) > 1:
-            return parts[1]
-        return path
-
-    def _upload_media_to_wechat(self, file_url: str, res_type: str, file_name: str | None = None) -> str | None:
-        """从 MinIO 下载资源，并调用 SDK WSClient 上传临时素材，获取 media_id。
-
-        Args:
-            file_url: MinIO 内的媒体资源下载 URL。
+            file_url: backend-data 返回的媒体资源下载 URL。
             res_type: 资源类型，如 "image", "audio", "video", "file"。
             file_name: 可选文件名。
 
@@ -485,16 +510,14 @@ class WeChatAdapter(BaseAdapter):
         if not file_url:
             return None
 
-        object_name = self._get_object_name_from_url(file_url)
-
         try:
-            # 1. 从 MinIO 下载
-            file_stream = minio_client.download_file(object_name=object_name)
+            # 1. 通过 share/data-client 委托 backend-data 读取对象
+            file_stream = storage_client.download_file(file_url=file_url)
             if file_stream is None:
                 logger.error(
-                    "[BotID: {}] 从 MinIO 读取资源文件失败: {}",
+                    "[BotID: {}] 从对象存储读取资源文件失败: {}",
                     self.bot.bot_id,
-                    object_name,
+                    file_url,
                 )
                 return None
 
@@ -513,8 +536,15 @@ class WeChatAdapter(BaseAdapter):
                     actual_name = "file.bin"
 
             # 2. 跨线程投递到子线程中执行 SDK upload_media
-            if self.bot._loop is None or not self.bot._loop.is_running() or self.bot.client is None:
-                logger.error("[BotID: {}] WeChatBot SDK Client 未连接，无法执行素材上传。", self.bot.bot_id)
+            if (
+                self.bot._loop is None
+                or not self.bot._loop.is_running()
+                or self.bot.client is None
+            ):
+                logger.error(
+                    "[BotID: {}] WeChatBot SDK Client 未连接，无法执行素材上传。",
+                    self.bot.bot_id,
+                )
                 return None
 
             # voice 映射
@@ -522,11 +552,9 @@ class WeChatAdapter(BaseAdapter):
 
             future = asyncio.run_coroutine_threadsafe(
                 self.bot.client.upload_media(
-                    media_bytes,
-                    type=upload_type,
-                    filename=actual_name
+                    media_bytes, type=upload_type, filename=actual_name
                 ),
-                self.bot._loop
+                self.bot._loop,
             )
 
             # 同步阻塞等待分块上传完成，最长等 45s
@@ -549,7 +577,9 @@ class WeChatAdapter(BaseAdapter):
             msg: 出站的标准归一化消息体。
         """
         if not msg.content:
-            logger.warning("[BotID: {}] 待发送的标准消息内容为空，放弃发送。", self.bot.bot_id)
+            logger.warning(
+                "[BotID: {}] 待发送的标准消息内容为空，放弃发送。", self.bot.bot_id
+            )
             return
 
         logger.info(
@@ -558,8 +588,15 @@ class WeChatAdapter(BaseAdapter):
             msg.model_dump_json(indent=2),
         )
 
-        if self.bot._loop is None or not self.bot._loop.is_running() or self.bot.client is None:
-            logger.error("[BotID: {}] WeChatBot SDK Client 未就绪，无法发送消息。", self.bot.bot_id)
+        if (
+            self.bot._loop is None
+            or not self.bot._loop.is_running()
+            or self.bot.client is None
+        ):
+            logger.error(
+                "[BotID: {}] WeChatBot SDK Client 未就绪，无法发送消息。",
+                self.bot.bot_id,
+            )
             return
 
         # 检查是否能找到入站时缓存的原始数据帧 (若有且非 event 事件回调，说明是被动回复)
@@ -591,9 +628,9 @@ class WeChatAdapter(BaseAdapter):
                             current_frame,
                             stream_id=uuid.uuid4().hex,
                             content=item.text,
-                            finish=True
+                            finish=True,
                         ),
-                        self.bot._loop
+                        self.bot._loop,
                     )
                 else:
                     future = asyncio.run_coroutine_threadsafe(
@@ -602,28 +639,38 @@ class WeChatAdapter(BaseAdapter):
                             body={
                                 "msgtype": "markdown",
                                 "markdown": {"content": item.text},
-                            }
+                            },
                         ),
-                        self.bot._loop
+                        self.bot._loop,
                     )
                 future.result(timeout=15.0)
 
             # 2. 多媒体类消息 (图片, 音频, 视频, 普通文件)
-            elif item.msg_type in {MessageType.IMAGE, MessageType.AUDIO, MessageType.VIDEO, MessageType.FILE}:
+            elif item.msg_type in {
+                MessageType.IMAGE,
+                MessageType.AUDIO,
+                MessageType.VIDEO,
+                MessageType.FILE,
+            }:
                 # 微信类型映射
                 res_type_map = {
                     MessageType.IMAGE: "image",
                     MessageType.AUDIO: "audio",
                     MessageType.VIDEO: "video",
-                    MessageType.FILE: "file"
+                    MessageType.FILE: "file",
                 }
                 res_type = res_type_map[item.msg_type]
                 send_media_type = "voice" if res_type == "audio" else res_type
                 file_name = item.file_name or ""
 
-                media_id = self._upload_media_to_wechat(item.file_url, res_type, file_name=file_name)
+                media_id = self._upload_media_to_wechat(
+                    item.file_url, res_type, file_name=file_name
+                )
                 if not media_id:
-                    logger.error("[BotID: {}] 微信媒体上传失败，跳过该多媒体出站消息模块。", self.bot.bot_id)
+                    logger.error(
+                        "[BotID: {}] 微信媒体上传失败，跳过该多媒体出站消息模块。",
+                        self.bot.bot_id,
+                    )
                     continue
 
                 if current_frame:
@@ -633,9 +680,11 @@ class WeChatAdapter(BaseAdapter):
                             current_frame,
                             media_type=send_media_type,
                             media_id=media_id,
-                            video_title=file_name if send_media_type == "video" else None
+                            video_title=file_name
+                            if send_media_type == "video"
+                            else None,
                         ),
-                        self.bot._loop
+                        self.bot._loop,
                     )
                 else:
                     # 主动发送媒体卡片
@@ -644,9 +693,11 @@ class WeChatAdapter(BaseAdapter):
                             msg.session_id,
                             media_type=send_media_type,
                             media_id=media_id,
-                            video_title=file_name if send_media_type == "video" else None
+                            video_title=file_name
+                            if send_media_type == "video"
+                            else None,
                         ),
-                        self.bot._loop
+                        self.bot._loop,
                     )
                 future.result(timeout=15.0)
 
@@ -654,7 +705,9 @@ class WeChatAdapter(BaseAdapter):
             elif item.msg_type in {MessageType.CARD, MessageType.INTERACTIVE}:
                 wechat_card_body = None
                 if item.card_data:
-                    wechat_card_body = self._translate_common_card_to_wechat(item.card_data)
+                    wechat_card_body = self._translate_common_card_to_wechat(
+                        item.card_data
+                    )
                 elif item.card_json:
                     if isinstance(item.card_json, dict):
                         wechat_card_body = item.card_json
@@ -665,7 +718,10 @@ class WeChatAdapter(BaseAdapter):
                             wechat_card_body = None
 
                 if not wechat_card_body:
-                    logger.warning("[BotID: {}] 无法反归一化解析微信卡片数据，跳过发送。", self.bot.bot_id)
+                    logger.warning(
+                        "[BotID: {}] 无法反归一化解析微信卡片数据，跳过发送。",
+                        self.bot.bot_id,
+                    )
                     continue
 
                 logger.info(

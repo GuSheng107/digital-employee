@@ -3,6 +3,7 @@ import {
   Button,
   Card,
   Form,
+  Input,
   InputNumber,
   Modal,
   Space,
@@ -21,11 +22,16 @@ import {
   type InviteCodeItem,
 } from '@/api/invite-code-api';
 import { getRequestErrorMessage } from '@/utils/request';
+import {
+  INVITE_CODE_MESSAGE,
+  INVITE_CODE_PATTERN,
+} from '@/utils/identity-validation';
 import styles from './index.module.css';
 
 const { Title, Text } = Typography;
 
 interface CreateInviteCodeFormValues {
+  customCode?: string;
   remaining: number;
   expiresInHours: number;
 }
@@ -87,6 +93,7 @@ export default function InviteCode(): React.ReactElement {
     setCreateSubmitting(true);
     try {
       const payload: CreateInviteCodePayload = {
+        custom_code: values.customCode?.trim().toUpperCase() || undefined,
         remaining: values.remaining,
         expires_in_hours: values.expiresInHours,
       };
@@ -230,6 +237,23 @@ export default function InviteCode(): React.ReactElement {
           initialValues={{ remaining: 1, expiresInHours: 168 }}
           onFinish={handleCreateSubmit}
         >
+          <Form.Item
+            label="自定义邀请码（可选）"
+            name="customCode"
+            rules={[
+              {
+                pattern: INVITE_CODE_PATTERN,
+                message: INVITE_CODE_MESSAGE,
+              },
+            ]}
+            extra="留空时系统自动生成 8 位邀请码"
+          >
+            <Input
+              maxLength={32}
+              placeholder="例如 TEAM-2026"
+              autoComplete="off"
+            />
+          </Form.Item>
           <Form.Item
             label="可用次数"
             name="remaining"

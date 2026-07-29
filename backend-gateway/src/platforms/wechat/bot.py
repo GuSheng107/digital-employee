@@ -58,13 +58,21 @@ class WeChatBot(BaseBot):
     def _on_stop(self) -> None:
         """停止 WebSocket 连接维持，并关闭关联子线程的事件循环。"""
         self._is_running = False
-        if self._loop is not None and self._loop.is_running() and self.client is not None:
+        if (
+            self._loop is not None
+            and self._loop.is_running()
+            and self.client is not None
+        ):
             # 跨线程投递断开连接的任务
-            future = asyncio.run_coroutine_threadsafe(self.client.disconnect(), self._loop)
+            future = asyncio.run_coroutine_threadsafe(
+                self.client.disconnect(), self._loop
+            )
             try:
                 future.result(timeout=3.0)
             except Exception as exc:
-                logger.debug("[BotID: {}] 释放企业微信 SDK 连接异常: {}", self.bot_id, exc)
+                logger.debug(
+                    "[BotID: {}] 释放企业微信 SDK 连接异常: {}", self.bot_id, exc
+                )
 
             try:
                 if self._loop.is_running():
@@ -103,7 +111,9 @@ class WeChatBot(BaseBot):
                 await asyncio.sleep(1.0)
 
         except Exception as exc:
-            logger.error("[BotID: {}] 企业微信 SDK 连接初始化失败: {}", self.bot_id, exc)
+            logger.error(
+                "[BotID: {}] 企业微信 SDK 连接初始化失败: {}", self.bot_id, exc
+            )
 
     async def _on_authenticated(self, *args: Any, **kwargs: Any) -> None:
         """连接成功订阅验证回调。"""

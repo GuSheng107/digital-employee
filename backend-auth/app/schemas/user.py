@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from datetime import datetime
+
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from app.core.validation import (
+    PASSWORD_MAX_LENGTH,
+    PASSWORD_MIN_LENGTH,
+    normalize_email_address,
+    normalize_phone_number,
+    validate_admin_reset_password,
+    validate_password_complexity,
+)
 
 
 class UserListItem(BaseModel):
@@ -18,9 +29,12 @@ class UserListItem(BaseModel):
     is_vip: bool
     vip_level: int | None = 0
     vip_level_display: str = "普通用户"
+    vip_expires_at: str | None = None
     roles: list[str] = Field(default_factory=list)
     last_login_at: str | None = None
+    last_login_ip: str | None = None
     created_at: str | None = None
+    updated_at: str | None = None
 
 
 class UserListResponse(BaseModel):
@@ -36,11 +50,36 @@ class CreateUserRequest(BaseModel):
     """管理员创建用户请求。"""
 
     username: str = Field(..., min_length=4, max_length=64)
-    password: str = Field(..., min_length=8, max_length=128)
+    password: str = Field(
+        ...,
+        min_length=PASSWORD_MIN_LENGTH,
+        max_length=PASSWORD_MAX_LENGTH,
+    )
     nickname: str | None = Field(default=None, max_length=64)
-    email: str | None = Field(default=None, max_length=128)
+    email: EmailStr | None = None
     phone: str | None = Field(default=None, max_length=32)
     role_codes: list[str] = Field(default_factory=list)
+    is_vip: bool = False
+    vip_level: int | None = None
+    vip_expires_at: datetime | None = None
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        """校验管理员创建用户时的初始密码复杂度。"""
+        return validate_password_complexity(value)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: str | None) -> str | None:
+        """统一管理员创建用户时的邮箱存储形式。"""
+        return normalize_email_address(value)
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value: str | None) -> str | None:
+        """校验非空手机号并转为 E.164。"""
+        return normalize_phone_number(value) if value else value
 
 
 class AssignRolesRequest(BaseModel):
@@ -57,15 +96,57 @@ class UpdateProfileRequest(BaseModel):
     """
 
     nickname: str | None = Field(default=None, max_length=64)
-    email: str | None = Field(default=None, max_length=128)
+    email: EmailStr | None = None
     phone: str | None = Field(default=None, max_length=32)
-    password: str | None = Field(default=None, min_length=8, max_length=128)
+    password: str | None = Field(
+        default=None,
+        min_length=PASSWORD_MIN_LENGTH,
+        max_length=PASSWORD_MAX_LENGTH,
+    )
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str | None) -> str | None:
+        """校验用户主动修改密码时的复杂度。"""
+        return validate_password_complexity(value) if value else value
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: str | None) -> str | None:
+        """统一个人资料邮箱的存储形式。"""
+        return normalize_email_address(value)
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value: str | None) -> str | None:
+        """校验非空手机号并转为 E.164。"""
+        return normalize_phone_number(value) if value else value
 
 
 class ResetPasswordRequest(BaseModel):
     """管理员重置用户密码请求。"""
 
-    new_password: str = Field(..., min_length=8, max_length=128)
+    new_password: str = Field(..., min_length=1, max_length=PASSWORD_MAX_LENGTH)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        """管理员重置不应用普通用户密码复杂度规则。"""
+        return validate_admin_reset_password(value)
+
+
+class UpdateVipRequest(BaseModel):
+    """更新用户 VIP 设置。"""
+
+    is_vip: bool
+    vip_level: int | None = None
+    vip_expires_at: datetime | None = None
+
+
+class UpdateUserStatusRequest(BaseModel):
+    """更新用户启停状态。"""
+
+    status: int = Field(..., ge=0, le=1)
 
 
 class AssignUserMenusRequest(BaseModel):

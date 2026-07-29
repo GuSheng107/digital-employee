@@ -14,6 +14,7 @@ export interface TokenPair {
   refresh_expires_in: number;
   token_type: string;
   user_id: number;
+  must_change_password: boolean;
 }
 
 /** 菜单节点（后端返回的菜单树节点） */
@@ -43,11 +44,14 @@ export interface UserInfo {
   is_vip: boolean;
   vip_level: number;
   vip_level_display: string;
+  vip_expires_at: string | null;
   status: number;
   roles: string[];
   permissions: string[];
   /** 用户可见的菜单树（已按 sort 排序、按 parent_id 组织为树形） */
   menus: MenuNode[];
+  /** 管理员重置密码后必须先在个人信息页完成主动改密 */
+  must_change_password: boolean;
 }
 
 /** 登出请求参数 */
@@ -59,6 +63,8 @@ export interface LogoutPayload {
 export interface RegisterRequest {
   username: string;
   password: string;
+  email: string;
+  phone: string;
   invite_code: string;
 }
 

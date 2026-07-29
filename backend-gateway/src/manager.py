@@ -21,7 +21,6 @@ from src.platforms.feishu.bot import FeishuBot
 from src.platforms.wechat.bot import WeChatBot
 
 
-
 class BotManager:
     """Bot 实例生命周期与配置管理器。
 
@@ -115,9 +114,7 @@ class BotManager:
                 and old_bot.is_running
                 and old_config == new_config_dict
             ):
-                logger.info(
-                    "[BotID: {}] 凭证与状态未发生变更，跳过重启。", bot_id
-                )
+                logger.info("[BotID: {}] 凭证与状态未发生变更，跳过重启。", bot_id)
                 return
 
             logger.info("[BotID: {}] 正在热加载 Bot 配置...", bot_id)
@@ -164,9 +161,7 @@ class BotManager:
         with self._lock:
             bot = self.bots.get(bot_id)
             if bot is None:
-                logger.warning(
-                    "[BotID: {}] 无法注销实例，指定的 Bot 不存在。", bot_id
-                )
+                logger.warning("[BotID: {}] 无法注销实例，指定的 Bot 不存在。", bot_id)
                 return False
 
             bot.stop()

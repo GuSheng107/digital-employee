@@ -24,9 +24,7 @@ router = APIRouter()
 @router.post("", response_model=ApiResponse)
 def create_invite_code(
     payload: CreateInviteCodeRequest,
-    current_user: UserInfo = Depends(
-        require_permission(PermissionCode.INVITE_CODE_MANAGE)
-    ),
+    current_user: UserInfo = Depends(require_permission(PermissionCode.INVITE_CODE_MANAGE)),
 ) -> dict:
     """创建邀请码，需要 invite_code:manage 权限。"""
     service = InviteCodeService()
@@ -34,6 +32,7 @@ def create_invite_code(
         remaining=payload.remaining,
         expires_in_hours=payload.expires_in_hours,
         created_by=current_user.id,
+        custom_code=payload.custom_code,
     )
     return success_response(result)
 
@@ -41,9 +40,7 @@ def create_invite_code(
 @router.get(
     "",
     response_model=ApiResponse,
-    dependencies=[
-        Depends(require_permission(PermissionCode.INVITE_CODE_MANAGE))
-    ],
+    dependencies=[Depends(require_permission(PermissionCode.INVITE_CODE_MANAGE))],
 )
 def list_invite_codes() -> dict:
     """列出所有邀请码，需要 invite_code:manage 权限。"""

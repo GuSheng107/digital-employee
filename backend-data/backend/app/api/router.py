@@ -1,8 +1,16 @@
 from auth_utils import PermissionCode
 from fastapi import APIRouter, Depends
 
-from app.api.deps import require_service_or_permission
-from app.api.routes import cache, data_items, health, storage, system_config
+from app.api.deps import require_service_or_permission, verify_api_key
+from app.api.routes import (
+    cache,
+    data_items,
+    health,
+    identity,
+    infrastructure,
+    storage,
+    system_config,
+)
 from app.core.storage_constants import STORAGE_ROUTE_PREFIX
 
 
@@ -22,9 +30,7 @@ api_router.include_router(
     prefix="/system",
     tags=["system-config"],
     dependencies=[
-        Depends(
-            require_service_or_permission(PermissionCode.DATA_PLATFORM_CONFIG)
-        )
+        Depends(require_service_or_permission(PermissionCode.DATA_PLATFORM_CONFIG))
     ],
 )
 api_router.include_router(
@@ -32,11 +38,7 @@ api_router.include_router(
     prefix="/data-items",
     tags=["data-items"],
     dependencies=[
-        Depends(
-            require_service_or_permission(
-                PermissionCode.DATA_PLATFORM_DATA_ITEMS
-            )
-        )
+        Depends(require_service_or_permission(PermissionCode.DATA_PLATFORM_DATA_ITEMS))
     ],
 )
 api_router.include_router(
@@ -44,9 +46,7 @@ api_router.include_router(
     prefix=STORAGE_ROUTE_PREFIX,
     tags=["storage"],
     dependencies=[
-        Depends(
-            require_service_or_permission(PermissionCode.DATA_PLATFORM_CONFIG)
-        )
+        Depends(require_service_or_permission(PermissionCode.DATA_PLATFORM_CONFIG))
     ],
 )
 api_router.include_router(
@@ -54,8 +54,18 @@ api_router.include_router(
     prefix="/cache",
     tags=["cache"],
     dependencies=[
-        Depends(
-            require_service_or_permission(PermissionCode.DATA_PLATFORM_CONFIG)
-        )
+        Depends(require_service_or_permission(PermissionCode.DATA_PLATFORM_CONFIG))
     ],
+)
+api_router.include_router(
+    identity.router,
+    prefix="/identity",
+    tags=["identity-internal"],
+    dependencies=[Depends(verify_api_key)],
+)
+api_router.include_router(
+    infrastructure.router,
+    prefix="/infrastructure",
+    tags=["infrastructure-internal"],
+    dependencies=[Depends(verify_api_key)],
 )

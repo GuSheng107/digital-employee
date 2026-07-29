@@ -253,10 +253,26 @@ export abstract class BaseRequest {
  */
 export function getRequestErrorMessage(error: unknown, fallback = '请求失败'): string {
   if (error instanceof HttpError) {
-    if (error.code) {
-      return `[${error.code}] ${error.message}`;
+    const nestedCode = readNestedErrorCode(error.data);
+    const errorCode = error.code ?? nestedCode;
+    if (errorCode) {
+      return `[${errorCode}] ${error.message}`;
     }
     return error.message;
   }
   return error instanceof Error ? error.message : fallback;
+}
+
+/** 兼容直接错误详情与统一响应信封两种 data 结构。 */
+function readNestedErrorCode(value: unknown): string | undefined {
+  if (value == null || typeof value !== 'object') {
+    return undefined;
+  }
+  if ('code' in value && typeof value.code === 'string') {
+    return value.code;
+  }
+  if ('data' in value) {
+    return readNestedErrorCode(value.data);
+  }
+  return undefined;
 }

@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
-from app.models.base import Base
+from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.bot import Bot
