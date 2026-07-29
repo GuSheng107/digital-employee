@@ -54,10 +54,19 @@ class Settings(BaseSettings):
     backend_data_base_url: str = "http://127.0.0.1:8010"
     backend_data_api_key: str = Field(default="", repr=False)
     phone_default_region: str = "CN"
-    login_rate_limit: int = 10
-    login_rate_window_seconds: int = 60
-    register_rate_limit: int = 5
-    register_rate_window_seconds: int = 300
+    login_ip_rate_limit: int = 30
+    login_ip_rate_window_seconds: int = 60
+    login_pair_rate_limit: int = 5
+    login_pair_rate_window_seconds: int = 300
+    login_account_rate_limit: int = 10
+    login_account_rate_window_seconds: int = 900
+    register_ip_rate_limit: int = 5
+    register_ip_rate_window_seconds: int = 900
+    register_identity_rate_limit: int = 3
+    register_identity_rate_window_seconds: int = 3600
+    captcha_ip_rate_limit: int = 30
+    captcha_ip_rate_window_seconds: int = 60
+    trusted_proxy_networks: str = "127.0.0.1/32,::1/128"
 
     cors_origins: str = "http://127.0.0.1:5173,http://localhost:5173"
 
@@ -65,6 +74,15 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         """CORS 允许来源列表。"""
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def trusted_proxy_networks_list(self) -> list[str]:
+        """返回允许提供 X-Forwarded-For 的代理 IP 或 CIDR。"""
+        return [
+            network.strip()
+            for network in self.trusted_proxy_networks.split(",")
+            if network.strip()
+        ]
 
     @property
     def docs_enabled(self) -> bool:

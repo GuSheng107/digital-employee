@@ -25,8 +25,18 @@ from api_common import (
     ResourceNotFoundError,
     ValidationError,
 )
+from observability import (
+    SpanKind,
+    TraceEventType,
+    TracePayloadType,
+    TraceService,
+    TraceTrigger,
+    propagation_headers,
+    trace_operation,
+)
 
 from app.core.config import settings
+from app.core.observability import persist_trace_batch
 from app.core.redis_client import RedisClientWrapper, get_redis_client
 
 
@@ -137,16 +147,28 @@ class MessageBrokerService:
         routing_key = f"{settings.rabbitmq_inbound_publish_prefix}.{platform}.{bot_id}"
         message_id = str(uuid.uuid4())
         try:
-            await self._exchange.publish(
-                aio_pika.Message(
-                    body=payload.encode("utf-8"),
-                    content_type="application/json",
-                    delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-                    message_id=message_id,
-                    timestamp=datetime.now(UTC),
-                ),
-                routing_key=routing_key,
-            )
+            async with trace_operation(
+                service=TraceService.BACKEND_DATA,
+                kind=SpanKind.PRODUCER,
+                operation="发布 Agent 入站消息",
+                trigger=TraceTrigger.MESSAGE_QUEUE,
+                event_type=TraceEventType.MQ_PUBLISH,
+                payload_type=TracePayloadType.MQ_MESSAGE,
+                payload=payload,
+                sink=persist_trace_batch,
+                attributes={"routing_key": routing_key, "message_id": message_id},
+            ):
+                await self._exchange.publish(
+                    aio_pika.Message(
+                        body=payload.encode("utf-8"),
+                        content_type="application/json",
+                        delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                        message_id=message_id,
+                        timestamp=datetime.now(UTC),
+                        headers=propagation_headers(),
+                    ),
+                    routing_key=routing_key,
+                )
         except Exception as exc:
             raise DependencyUnavailableError(
                 message="消息投递失败",
@@ -200,6 +222,11 @@ class MessageBrokerService:
             "routing_key": incoming.routing_key,
             "upstream_message_id": incoming.message_id,
             "received_at": datetime.now(UTC).isoformat(),
+            "trace_id": self._message_header(incoming.headers, "X-Trace-Id"),
+            "parent_span_id": self._message_header(
+                incoming.headers,
+                "X-Parent-Span-Id",
+            ),
         }
         try:
             await asyncio.to_thread(
@@ -306,6 +333,19 @@ class MessageBrokerService:
             raise ValidationError(
                 message=(f"{field_name} 仅允许 1-64 位英文、数字、下划线和短横线")
             )
+
+    @staticmethod
+    def _message_header(
+        headers: dict[str, Any] | None,
+        name: str,
+    ) -> str | None:
+        """兼容 aio-pika 字符串或字节消息头。"""
+        if not headers:
+            return None
+        value = headers.get(name) or headers.get(name.lower())
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return value if isinstance(value, str) else None
 
 
 _message_broker_service: MessageBrokerService | None = None

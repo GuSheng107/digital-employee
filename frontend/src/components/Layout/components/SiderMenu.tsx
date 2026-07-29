@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Layout, Menu } from 'antd';
 import type { MenuProps } from 'antd';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -64,14 +64,17 @@ export default function SiderMenu(): React.ReactElement {
   const items = useMemo<MenuItem[]>(() => convertMenusToItems(menus), [menus]);
   const parentKeys = useMemo(() => collectParentKeys(menus), [menus]);
   const parentKeySet = useMemo(() => new Set(parentKeys), [parentKeys]);
-  const [openKeys, setOpenKeys] = useState<string[]>([]);
-
-  useEffect(() => {
-    setOpenKeys((currentKeys) => {
-      const retainedKeys = currentKeys.filter((key) => parentKeySet.has(key));
-      return retainedKeys.length > 0 ? retainedKeys : parentKeys;
-    });
-  }, [parentKeys, parentKeySet]);
+  const [requestedOpenKeys, setRequestedOpenKeys] = useState<string[] | null>(
+    null,
+  );
+  const openKeys = useMemo(
+    () => (
+      requestedOpenKeys === null
+        ? parentKeys
+        : requestedOpenKeys.filter((key) => parentKeySet.has(key))
+    ),
+    [parentKeySet, parentKeys, requestedOpenKeys],
+  );
 
   const selectedKeys = [location.pathname];
 
@@ -86,7 +89,7 @@ export default function SiderMenu(): React.ReactElement {
         mode="inline"
         selectedKeys={selectedKeys}
         openKeys={openKeys}
-        onOpenChange={(keys) => setOpenKeys(keys)}
+        onOpenChange={(keys) => setRequestedOpenKeys(keys)}
         onClick={({ key }) => {
           // 父菜单（含 children）仅负责展开/折叠，不触发路由跳转
           if (parentKeySet.has(key)) return;

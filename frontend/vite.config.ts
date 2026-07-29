@@ -11,6 +11,19 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd());
   const backendAuthTarget = env.VITE_BACKEND_AUTH_TARGET || 'http://127.0.0.1:8020';
   const dataPlatformTarget = env.VITE_DATA_PLATFORM_TARGET || 'http://127.0.0.1:8010';
+  const proxy = {
+    '/backend-auth-api': {
+      target: backendAuthTarget,
+      changeOrigin: true,
+      xfwd: true,
+      rewrite: (requestPath: string) => requestPath.replace(/^\/backend-auth-api/, ''),
+    },
+    '/data-platform-api': {
+      target: dataPlatformTarget,
+      changeOrigin: true,
+      rewrite: (requestPath: string) => requestPath.replace(/^\/data-platform-api/, ''),
+    },
+  };
 
   return {
     plugins: [react()],
@@ -20,20 +33,12 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       strictPort: true,
-      proxy: {
-        // backend-auth，开发环境通过代理转发避免跨域
-        '/backend-auth-api': {
-          target: backendAuthTarget,
-          changeOrigin: true,
-          rewrite: (p) => p.replace(/^\/backend-auth-api/, ''),
-        },
-        // 数据中台后端，开发环境通过代理转发避免跨域
-        '/data-platform-api': {
-          target: dataPlatformTarget,
-          changeOrigin: true,
-          rewrite: (p) => p.replace(/^\/data-platform-api/, ''),
-        },
-      },
+      proxy,
+    },
+    preview: {
+      port: 5173,
+      strictPort: true,
+      proxy,
     },
     build: {
       rollupOptions: {

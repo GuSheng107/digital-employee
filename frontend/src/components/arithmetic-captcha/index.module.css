@@ -1,0 +1,86 @@
+.control {
+  display: grid;
+  grid-template-columns: minmax(96px, 1fr) 168px 36px;
+  gap: 8px;
+  align-items: center;
+}
+
+.answer {
+  height: 52px;
+  border: 1px solid rgba(71, 85, 105, 0.5) !important;
+  border-radius: 10px !important;
+  color: #f1f5f9 !important;
+  background: rgba(30, 41, 59, 0.6) !important;
+  font-size: 16px;
+  text-align: center;
+}
+
+.answer::placeholder {
+  color: #64748b;
+}
+
+.answer:hover,
+.answer:focus {
+  border-color: #4f46e5 !important;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15) !important;
+}
+
+.imageFrame {
+  display: flex;
+  width: 168px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.image {
+  display: block;
+  width: 168px;
+  height: 52px;
+  user-select: none;
+}
+
+.skeleton {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.skeleton :global(.ant-skeleton-input) {
+  width: 100% !important;
+  height: 52px !important;
+  border-radius: 0;
+}
+
+.error {
+  padding: 0 8px;
+  color: #b42318;
+  font-size: 12px;
+  text-align: center;
+}
+
+.refresh {
+  width: 36px;
+  height: 36px;
+  color: #94a3b8 !important;
+}
+
+.refresh:hover {
+  color: #e2e8f0 !important;
+  background: rgba(148, 163, 184, 0.12) !important;
+}
+
+@media (max-width: 520px) {
+  .control {
+    grid-template-columns: 1fr 148px 32px;
+    gap: 6px;
+  }
+
+  .imageFrame,
+  .image {
+    width: 148px;
+  }
+}

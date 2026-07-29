@@ -637,6 +637,21 @@
   margin-bottom: 24px;
 }
 
+.rememberField {
+  margin-top: -8px;
+  margin-bottom: 18px;
+}
+
+.rememberCheckbox {
+  color: #cbd5e1;
+  font-size: 14px;
+}
+
+.rememberCheckbox :global(.ant-checkbox-inner) {
+  border-color: rgba(148, 163, 184, 0.52);
+  background: rgba(30, 41, 59, 0.72);
+}
+
 .formLabel {
   display: block;
   font-size: 15px;

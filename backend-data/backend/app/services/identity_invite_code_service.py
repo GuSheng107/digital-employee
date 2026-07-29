@@ -19,6 +19,7 @@ from api_common import (
 from auth_utils import INVITE_CODE_GENERATED_LENGTH
 
 from app.core.config import settings
+from app.core.pagination import PageSpec, paginate_sequence
 from app.core.redis_client import get_redis_client
 
 
@@ -117,14 +118,10 @@ class InviteCodeService:
 
     def list_page(self, *, page: int, page_size: int) -> dict:
         """分页返回邀请码列表。"""
-        items = self.list_all()
-        start = (page - 1) * page_size
-        return {
-            "items": items[start : start + page_size],
-            "total": len(items),
-            "page": page,
-            "page_size": page_size,
-        }
+        return paginate_sequence(
+            self.list_all(),
+            PageSpec(page=page, page_size=page_size),
+        ).response()
 
     def consume(self, code: str) -> None:
         """原子消费一次邀请码。"""

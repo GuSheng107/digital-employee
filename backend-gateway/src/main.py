@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """FastAPI 启动入口与 Admin API 路由定义。
 
 提供健康检查端点及用于动态更新/注入/删除 Bot 凭证的 Admin 控制台接口。
@@ -10,14 +9,30 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
 import uvicorn
-from api_common import ApiException
+from api_common import (
+    ApiException,
+    ApiResponse,
+    ErrorCode,
+    InternalError,
+    ResourceNotFoundError,
+    success_response,
+)
 from auth_utils import PermissionCode
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
 from nacos_client import NacosClient
+from observability import (
+    TraceContext,
+    TraceMiddleware,
+    TraceService,
+    bind_trace_context,
+    parse_uuid,
+    reset_trace_context,
+)
 
 from src.core.schemas import (
     BotConfig,
@@ -28,6 +43,7 @@ from src.core.schemas import (
 from src.manager import BotManager
 from src.utils.auth import close_auth_client, require_permission
 from src.utils.data_access import message_bus_client
+from src.utils.observability import export_trace_batch
 
 
 def _load_service_configuration() -> None:
@@ -37,7 +53,7 @@ def _load_service_configuration() -> None:
         nacos_client = NacosClient.from_env_optional()
         if nacos_client is not None:
             nacos_client.load_to_environ()
-    except Exception:  # noqa: BLE001
+    except Exception:
         return
 
 
@@ -63,16 +79,27 @@ async def _outbound_relay_loop() -> None:
             if not isinstance(raw_receipt, str) or not isinstance(payload, str):
                 raise ValueError("backend-data 返回了无效消息租约")
             receipt_id = raw_receipt
-
-            delivered = await hub.consume_outbound_payload(payload)
-            if delivered:
-                await message_bus_client.acknowledge(receipt_id)
-            else:
-                await message_bus_client.reject(receipt_id)
+            trace_id = parse_uuid(claimed.get("trace_id"))
+            parent_span_id = parse_uuid(claimed.get("parent_span_id"))
+            trace_token = None
+            if trace_id is not None and parent_span_id is not None:
+                trace_token = bind_trace_context(
+                    TraceContext(trace_id=trace_id, span_id=parent_span_id)
+                )
+            try:
+                delivered = await hub.consume_outbound_payload(payload)
+                if delivered:
+                    await message_bus_client.acknowledge(receipt_id)
+                else:
+                    await message_bus_client.reject(receipt_id)
+            finally:
+                if trace_token is not None:
+                    reset_trace_context(trace_token)
             finalized = True
         except asyncio.CancelledError:
             raise
         except Exception:
+            logger.exception("[MESSAGE-RELAY] 消息领取失败")
             message_bus_client.is_available = False
             if receipt_id is not None and not finalized:
                 with suppress(Exception):
@@ -124,6 +151,11 @@ app: FastAPI = FastAPI(
     description="智能机器人系统消息侧网关（基础设施经 backend-data 访问）",
     version="3.0.0",
     lifespan=lifespan,
+    docs_url=None if os.getenv("APP_ENV") == "production" else "/docs",
+    redoc_url=None if os.getenv("APP_ENV") == "production" else "/redoc",
+    openapi_url=(
+        None if os.getenv("APP_ENV") == "production" else "/openapi.json"
+    ),
 )
 
 
@@ -136,6 +168,79 @@ async def api_exception_handler(
     return JSONResponse(
         status_code=exc.http_status,
         content=exc.to_response(),
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(
+    _request: Request,
+    exc: HTTPException,
+) -> JSONResponse:
+    """FastAPI 内置 HTTPException 兜底处理。
+
+    部分第三方依赖仍会抛出 HTTPException，这里将其转换为统一信封，
+    code 字段用 ``HTTP_{status}`` 标识，便于前端区分来源。5xx 对外脱敏。
+    """
+    if exc.status_code >= 500:
+        message = "internal server error"
+    else:
+        message = str(exc.detail) if exc.detail else "error"
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "message": message,
+            "data": {
+                "code": f"HTTP_{exc.status_code}",
+                "detail": str(exc.detail) if exc.detail else "",
+            },
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    _request: Request,
+    exc: RequestValidationError,
+) -> JSONResponse:
+    """请求体校验失败统一返回 422 与详细错误信息。"""
+    validation_errors = [
+        {
+            "location": [str(part) for part in error.get("loc", ())],
+            "message": str(error.get("msg", "请求参数校验失败")),
+            "type": str(error.get("type", "validation_error")),
+        }
+        for error in exc.errors()
+    ]
+    first_message = (
+        validation_errors[0]["message"] if validation_errors else "请求参数校验失败"
+    )
+    return JSONResponse(
+        status_code=422,
+        content={
+            "success": False,
+            "message": f"请求参数校验失败：{first_message}",
+            "data": {
+                "code": ErrorCode.VALIDATION_FAILED,
+                "detail": validation_errors,
+            },
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(
+    _request: Request,
+    exc: Exception,
+) -> JSONResponse:
+    """兜底未捕获异常，避免向上抛出原始堆栈。
+
+    统一转换为 ``InternalError`` 响应，对外脱敏。
+    """
+    logger.exception("[UNHANDLED] 网关发生未捕获异常")
+    return JSONResponse(
+        status_code=500,
+        content=InternalError().to_response(),
     )
 
 
@@ -155,6 +260,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
+)
+app.add_middleware(
+    TraceMiddleware,
+    service=TraceService.BACKEND_GATEWAY,
+    sink=export_trace_batch,
 )
 
 
@@ -177,23 +287,24 @@ async def get_health() -> HealthResponse:
 
 @app.get(
     "/api/v1/admin/bots",
-    response_model=list[BotStatusResponse],
+    response_model=ApiResponse,
     dependencies=[Depends(require_permission(PermissionCode.BOT_MANAGE))],
 )
-async def get_bots() -> list[BotStatusResponse]:
+async def get_bots() -> dict:
     """获取所有 Bot 实例当前的运行详情。
 
     Returns:
         包含所有 Bot 标识、平台、子线程 ID、运行时间及最后异常信息的列表。
     """
-    return manager.get_all_status()
+    return success_response(manager.get_all_status())
 
 
 @app.post(
     "/api/v1/admin/bots",
+    response_model=ApiResponse,
     dependencies=[Depends(require_permission(PermissionCode.BOT_MANAGE))],
 )
-async def add_or_update_bot(req: BotConfigRequest) -> dict[str, str]:
+async def add_or_update_bot(req: BotConfigRequest) -> dict:
     """动态添加或更新 Bot 凭证。
 
     若 Bot 已存在且凭证或配置变更，将触发底层长连接热重启。
@@ -212,17 +323,17 @@ async def add_or_update_bot(req: BotConfigRequest) -> dict[str, str]:
         app_secret=req.app_secret,
     )
     manager.add_or_update_bot(bot_cfg)
-    return {
-        "status": "success",
-        "message": f"Bot {req.bot_id} has been added or updated",
-    }
+    return success_response(
+        {"status": "success", "message": f"Bot {req.bot_id} has been added or updated"}
+    )
 
 
 @app.delete(
     "/api/v1/admin/bots/{bot_id}",
+    response_model=ApiResponse,
     dependencies=[Depends(require_permission(PermissionCode.BOT_MANAGE))],
 )
-async def delete_bot(bot_id: str) -> dict[str, str]:
+async def delete_bot(bot_id: str) -> dict:
     """销毁并注销指定的 Bot 实例，断开其与平台的长连接。
 
     Args:
@@ -232,15 +343,14 @@ async def delete_bot(bot_id: str) -> dict[str, str]:
         销毁状态字典。
 
     Raises:
-        HTTPException: 若对应的 Bot 不存在，则返回 404 错误。
+        ResourceNotFoundError: 若对应的 Bot 不存在。
     """
     success: bool = manager.remove_bot(bot_id)
     if not success:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Bot with id '{bot_id}' not found",
-        )
-    return {"status": "success", "message": f"Bot {bot_id} has been removed"}
+        raise ResourceNotFoundError(message=f"Bot with id '{bot_id}' not found")
+    return success_response(
+        {"status": "success", "message": f"Bot {bot_id} has been removed"}
+    )
 
 
 if __name__ == "__main__":

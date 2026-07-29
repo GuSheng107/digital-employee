@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """纯异步消息路由中枢。
 
 支持 Test/Prod 双模路由调度：
@@ -7,7 +6,18 @@
 """
 
 import asyncio
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
+
+from loguru import logger
+from observability import (
+    SpanKind,
+    TraceEventType,
+    TracePayloadType,
+    TraceService,
+    TraceTrigger,
+    trace_operation,
+)
 from pydantic import ValidationError
 
 from src.core.schemas import (
@@ -17,6 +27,7 @@ from src.core.schemas import (
     StandardMessage,
 )
 from src.utils.data_access import message_bus_client
+from src.utils.observability import export_trace_batch
 
 
 class MessageHub:
@@ -43,40 +54,44 @@ class MessageHub:
         Args:
             msg: 归一化标准消息对象。
         """
-        if not self.get_bot_func:
-            return
+        async with trace_operation(
+            service=TraceService.BACKEND_GATEWAY,
+            kind=SpanKind.CONSUMER,
+            operation="接收 IM 消息",
+            trigger=TraceTrigger.PLATFORM_CALLBACK,
+            event_type=TraceEventType.BUSINESS_OPERATION,
+            payload_type=TracePayloadType.IM_MESSAGE,
+            payload=msg.model_dump(mode="json"),
+            sink=export_trace_batch,
+            attributes={"platform": msg.platform, "bot_id": msg.bot_id},
+        ):
+            if not self.get_bot_func:
+                return
 
-        bot_instance = self.get_bot_func(msg.bot_id)
-        if not bot_instance:
-            return
+            bot_instance = self.get_bot_func(msg.bot_id)
+            if not bot_instance:
+                return
 
-        # 默认环境安全降级为 test
-        mode = getattr(bot_instance, "mode", "test")
-
-        if mode == "test":
-            # 通过 asyncio.create_task 挂载至后台，杜绝同步线程池开销与阻塞
-            asyncio.create_task(self._mock_agent_process(msg))
-
-        elif mode == "prod":
-            payload = msg.model_dump_json()
-            try:
-                await message_bus_client.publish(
-                    platform=msg.platform,
-                    bot_id=msg.bot_id,
-                    payload=payload,
-                )
-            except Exception:
-                # 容灾回复：组装不可用回帧
-                reply_err = msg.model_copy(deep=True)
-                reply_err.content = [
-                    MessageContent(
-                        msg_type=MessageType.TEXT,
-                        text="系统繁忙，服务暂时不可用，请稍后再试。",
+            mode = getattr(bot_instance, "mode", "test")
+            if mode == "test":
+                asyncio.create_task(self._mock_agent_process(msg))
+            elif mode == "prod":
+                payload = msg.model_dump_json()
+                try:
+                    await message_bus_client.publish(
+                        platform=msg.platform,
+                        bot_id=msg.bot_id,
+                        payload=payload,
                     )
-                ]
-                await self.process_outbound(reply_err)
-        else:
-            pass
+                except Exception:
+                    reply_err = msg.model_copy(deep=True)
+                    reply_err.content = [
+                        MessageContent(
+                            msg_type=MessageType.TEXT,
+                            text="系统繁忙，服务暂时不可用，请稍后再试。",
+                        )
+                    ]
+                    await self.process_outbound(reply_err)
 
     async def consume_outbound_payload(self, payload_json: str) -> bool:
         """解析 backend-data 领取的消息并转交出站切面。
@@ -87,13 +102,24 @@ class MessageHub:
         Returns:
             是否完成解析和平台发送，用于决定 ACK 或 NACK。
         """
-        try:
-            std_msg = StandardMessage.model_validate_json(payload_json)
-            return await self.process_outbound(std_msg)
-        except ValidationError:
-            return False
-        except Exception:
-            return False
+        async with trace_operation(
+            service=TraceService.BACKEND_GATEWAY,
+            kind=SpanKind.CONSUMER,
+            operation="消费 MQ 出站消息",
+            trigger=TraceTrigger.MESSAGE_QUEUE,
+            event_type=TraceEventType.MQ_CONSUME,
+            payload_type=TracePayloadType.MQ_MESSAGE,
+            payload=payload_json,
+            sink=export_trace_batch,
+        ):
+            try:
+                std_msg = StandardMessage.model_validate_json(payload_json)
+                return await self.process_outbound(std_msg)
+            except ValidationError:
+                return False
+            except Exception:
+                logger.exception("[HUB] consume_outbound_payload 解析或投递失败")
+                return False
 
     async def process_outbound(self, msg: StandardMessage) -> bool:
         """【出站总出口】反归一化发送（承接测试与生产汇流）。
@@ -114,10 +140,21 @@ class MessageHub:
         if not hasattr(bot_instance, "adapter") or bot_instance.adapter is None:
             return False
         try:
-            # 飞书适配器的 send_message 目前仍是同步方法（涉及飞书 SDK 同步调用）
-            bot_instance.adapter.send_message(msg)
+            async with trace_operation(
+                service=TraceService.BACKEND_GATEWAY,
+                kind=SpanKind.CLIENT,
+                operation="发送 IM 消息",
+                trigger=TraceTrigger.PLATFORM_CALLBACK,
+                event_type=TraceEventType.EXTERNAL_API,
+                payload_type=TracePayloadType.EXTERNAL_REQUEST,
+                payload=msg.model_dump(mode="json"),
+                sink=export_trace_batch,
+                attributes={"platform": msg.platform, "bot_id": msg.bot_id},
+            ):
+                bot_instance.adapter.send_message(msg)
             return True
         except Exception:
+            logger.exception("[HUB] process_outbound 消息发送失败")
             return False
 
     async def _mock_agent_process(self, msg: StandardMessage) -> None:
@@ -130,8 +167,17 @@ class MessageHub:
             msg: 收到的标准输入消息。
         """
         try:
-            # 非阻塞切换，释放协程控制权
-            await asyncio.sleep(1.0)
+            async with trace_operation(
+                service=TraceService.BACKEND_GATEWAY,
+                kind=SpanKind.INTERNAL,
+                operation="测试 AI 处理",
+                trigger=TraceTrigger.PLATFORM_CALLBACK,
+                event_type=TraceEventType.AI_MODEL,
+                payload_type=TracePayloadType.MODEL_INPUT,
+                payload=msg.model_dump(mode="json"),
+                sink=export_trace_batch,
+            ):
+                await asyncio.sleep(1.0)
 
             # 在文本消息归一化（StandardMessage）后，对文本拆分识别 /card 卡片指令
             is_card_cmd = False
@@ -172,9 +218,19 @@ class MessageHub:
                 for item in reply_msg.content:
                     if item.msg_type == MessageType.TEXT and item.text:
                         item.text = f"【TEST 异步模拟大脑】已收到指令: {item.text}"
-            await self.process_outbound(reply_msg)
+            async with trace_operation(
+                service=TraceService.BACKEND_GATEWAY,
+                kind=SpanKind.INTERNAL,
+                operation="测试 AI 输出",
+                trigger=TraceTrigger.PLATFORM_CALLBACK,
+                event_type=TraceEventType.AI_MODEL,
+                payload_type=TracePayloadType.MODEL_OUTPUT,
+                payload=reply_msg.model_dump(mode="json"),
+                sink=export_trace_batch,
+            ):
+                await self.process_outbound(reply_msg)
         except Exception:
-            pass
+            logger.exception("[HUB] _mock_agent_process 测试处理失败")
 
 
 # 全局唯一的消息路由中枢单例

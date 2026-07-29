@@ -4,6 +4,15 @@ import backendAuthRequest from '@/utils/backend-auth-request';
 export interface LoginPayload {
   username: string;
   password: string;
+  captcha_id: string;
+  captcha_answer: string;
+}
+
+/** 一次性算术图片验证码。 */
+export interface CaptchaChallenge {
+  captcha_id: string;
+  image_data_url: string;
+  expires_in: number;
 }
 
 /** 双 token 响应数据 */
@@ -66,6 +75,13 @@ export interface RegisterRequest {
   email: string;
   phone: string;
   invite_code: string;
+  captcha_id: string;
+  captcha_answer: string;
+}
+
+/** 获取登录和注册共用的一次性算术图片验证码。 */
+export function getCaptcha(): Promise<CaptchaChallenge> {
+  return backendAuthRequest.get<CaptchaChallenge>('/auth/captcha');
 }
 
 /**

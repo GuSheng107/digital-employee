@@ -21,6 +21,7 @@ interface PermissionCodeMap {
   DATA_PLATFORM_DATA_ITEMS: string;
   DATA_PLATFORM_CONFIG: string;
   BOT_MANAGE: string;
+  OBSERVABILITY_LOG_VIEW: string;
 }
 
 export const ROLE_CODE: Readonly<RoleCodeMap> = Object.freeze({
@@ -44,6 +45,7 @@ export const PERMISSION_CODE: Readonly<PermissionCodeMap> = Object.freeze({
   DATA_PLATFORM_DATA_ITEMS: 'admin:data_platform:data_items',
   DATA_PLATFORM_CONFIG: 'admin:data_platform:config',
   BOT_MANAGE: 'admin:bot:manage',
+  OBSERVABILITY_LOG_VIEW: 'admin:observability:log:view',
 });
 
 /** 超级管理员拥有全权限旁路；普通管理员仍按权限码授权。 */

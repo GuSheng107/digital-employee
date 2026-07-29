@@ -42,11 +42,14 @@ import { fetchMenus, type MenuItem } from '@/api/menu-api';
 import { ROLE_CODE } from '@/constants/access-control';
 import { useUserStore } from '@/store/user-store';
 import { getRequestErrorMessage } from '@/utils/request';
+import SystemPage from '@/components/system-page/SystemPage';
+import {
+  createTablePagination,
+  DEFAULT_TABLE_PAGE_SIZE,
+} from '@/utils/table-pagination';
 import styles from './index.module.css';
 
 const { Text } = Typography;
-
-const DEFAULT_PAGE_SIZE = 20;
 
 /** 从请求错误中提取用户可读的提示文案 */
 function getErrorMessage(error: unknown): string {
@@ -104,7 +107,9 @@ export default function UserPermission(): React.ReactElement {
   const [usersLoading, setUsersLoading] = useState<boolean>(true);
   const [usersTotal, setUsersTotal] = useState<number>(0);
   const [usersPage, setUsersPage] = useState<number>(1);
-  const [usersPageSize, setUsersPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  const [usersPageSize, setUsersPageSize] = useState<number>(
+    DEFAULT_TABLE_PAGE_SIZE,
+  );
   const [selectedUser, setSelectedUser] = useState<UserListItem | null>(null);
   const [userRoleCodes, setUserRoleCodes] = useState<string[]>([]);
   const [userRolesSaving, setUserRolesSaving] = useState<boolean>(false);
@@ -193,7 +198,7 @@ export default function UserPermission(): React.ReactElement {
   useEffect(() => {
     let active = true;
     void Promise.all([
-      fetchUsers(1, DEFAULT_PAGE_SIZE),
+      fetchUsers(1, DEFAULT_TABLE_PAGE_SIZE),
       fetchRoles(),
       fetchMenus(),
     ])
@@ -395,7 +400,8 @@ export default function UserPermission(): React.ReactElement {
   ];
 
   return (
-    <div className={styles.container}>
+    <SystemPage title="用户权限">
+      <div className={styles.container}>
       {/* 左栏：用户角色 + 用户独立权限/菜单分配 */}
       <Card className={styles.panel}>
         <div className={styles.panelTitle}>用户角色分配</div>
@@ -406,14 +412,13 @@ export default function UserPermission(): React.ReactElement {
             dataSource={users}
             loading={usersLoading}
             size="small"
-            pagination={{
+            pagination={createTablePagination({
               current: usersPage,
               pageSize: usersPageSize,
               total: usersTotal,
-              showSizeChanger: true,
-              showTotal: (total) => `共 ${total} 条`,
               onChange: (page, pageSize) => void loadUsers(page, pageSize),
-            }}
+            })}
+            scroll={{ y: 220 }}
             rowSelection={{
               type: 'radio',
               selectedRowKeys: selectedUser ? [selectedUser.id] : [],
@@ -661,6 +666,7 @@ export default function UserPermission(): React.ReactElement {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+      </div>
+    </SystemPage>
   );
 }

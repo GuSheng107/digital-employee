@@ -6,10 +6,12 @@ requires-python = ">=3.11"
 dependencies = [
     "api-common==0.1.0",
     "httpx==0.28.1",
+    "observability==0.1.0",
 ]
 
 [tool.uv.sources]
-api-common = { path = "../api-common" }
+api-common = { path = "../api-common", editable = true }
+observability = { path = "../observability", editable = true }
 
 [build-system]
 requires = ["hatchling"]

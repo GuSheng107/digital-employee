@@ -167,6 +167,14 @@ class IdentitySessionService:
             ttl_seconds=window_seconds,
         )
 
+    def get_rate_limit_ttl(self, key: str) -> int:
+        """读取限流窗口剩余秒数。"""
+        return max(1, self._redis.ttl(key))
+
+    def reset_rate_limit(self, key: str) -> None:
+        """清除指定限流桶。"""
+        self._redis.delete(key)
+
     def _read_token(self, kind: str, token: str) -> int | None:
         raw = self._redis.get(self._token_key(kind, token))
         if raw is None:

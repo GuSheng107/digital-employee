@@ -5,7 +5,11 @@ description = "Shared backend-auth authorization and user-context HTTP client."
 requires-python = ">=3.11"
 dependencies = [
     "httpx==0.28.1",
+    "observability==0.1.0",
 ]
+
+[tool.uv.sources]
+observability = { path = "../observability", editable = true }
 
 [build-system]
 requires = ["hatchling"]

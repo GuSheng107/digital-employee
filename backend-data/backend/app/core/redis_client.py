@@ -53,6 +53,24 @@ class RedisClientWrapper:
         value = self._require_client().get(key)
         return str(value) if value is not None else None
 
+    def get_delete(self, key: str) -> str | None:
+        """原子读取并删除一次性值，避免验证码被并发重放。"""
+        client = self._require_client()
+        while True:
+            with client.pipeline() as pipeline:
+                try:
+                    pipeline.watch(key)
+                    value = pipeline.get(key)
+                    if value is None:
+                        pipeline.unwatch()
+                        return None
+                    pipeline.multi()
+                    pipeline.delete(key)
+                    pipeline.execute()
+                    return str(value)
+                except WatchError:
+                    continue
+
     def delete(self, *keys: str) -> int:
         """删除一个或多个 key。"""
         if not keys:
@@ -74,6 +92,10 @@ class RedisClientWrapper:
     def expire(self, key: str, ttl_seconds: int) -> bool:
         """设置 key 的过期时间。"""
         return bool(self._require_client().expire(key, ttl_seconds))
+
+    def ttl(self, key: str) -> int:
+        """读取 key 剩余 TTL 秒数。"""
+        return int(self._require_client().ttl(key))
 
     def increment_with_ttl(self, key: str, *, ttl_seconds: int) -> int:
         """在固定时间窗内原子递增计数并确保 TTL 存在。"""

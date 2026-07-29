@@ -26,6 +26,16 @@ class LoginRequest(BaseModel):
 
     username: str = Field(..., min_length=1, max_length=64)
     password: str = Field(..., min_length=1, max_length=128)
+    captcha_id: str = Field(..., min_length=20, max_length=64)
+    captcha_answer: str = Field(..., min_length=1, max_length=3, pattern=r"^\d+$")
+
+
+class CaptchaChallenge(BaseModel):
+    """前端可展示的算术图片验证码挑战。"""
+
+    captcha_id: str
+    image_data_url: str
+    expires_in: int
 
 
 class RegisterRequest(BaseModel):
@@ -44,6 +54,8 @@ class RegisterRequest(BaseModel):
         min_length=INVITE_CODE_MIN_LENGTH,
         max_length=INVITE_CODE_MAX_LENGTH,
     )
+    captcha_id: str = Field(..., min_length=20, max_length=64)
+    captcha_answer: str = Field(..., min_length=1, max_length=3, pattern=r"^\d+$")
 
     @field_validator("password")
     @classmethod

@@ -1,41 +1,10 @@
 .container {
-  width: 100%;
-  max-width: 1480px;
-  margin: 0 auto;
-}
-
-.toolbar {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-}
-
-.headingBlock {
-  min-width: 0;
-}
-
-.eyebrow {
-  display: block;
-  margin-bottom: 5px;
-  color: var(--ant-color-primary);
-  font-family: "Bahnschrift", var(--ant-font-family);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-}
-
-.pageTitle {
-  margin: 0 0 4px;
-  color: var(--ant-color-text-heading);
-  font-size: 25px;
-  letter-spacing: -0.02em;
-}
-
-.pageDescription {
-  margin: 0;
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .toolbarActions {
@@ -52,7 +21,8 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
-  margin: 22px 0 16px;
+  flex: none;
+  margin: 0;
   padding: 10px;
   background:
     linear-gradient(135deg, rgb(22 119 255 / 7%), transparent 58%),
@@ -88,46 +58,13 @@
 }
 
 .tableWrapper {
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 12px;
   box-shadow: 0 8px 26px rgb(31 52 83 / 7%);
-}
-
-.tableHeader {
-  display: flex;
-  min-height: 56px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 0 18px;
-  background:
-    linear-gradient(90deg, rgb(22 119 255 / 4%), transparent 46%),
-    var(--ant-color-bg-container);
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.tableTitle {
-  color: var(--ant-color-text-heading);
-  font-size: 14px;
-  font-weight: 650;
-}
-
-.tableHint {
-  margin-left: 12px;
-  color: var(--ant-color-text-tertiary);
-  font-size: 12px;
-}
-
-.recordCount {
-  flex: none;
-  padding: 4px 9px;
-  color: var(--ant-color-text-secondary);
-  background: var(--ant-color-fill-quaternary);
-  border-radius: 999px;
-  font-family: "Bahnschrift", var(--ant-font-family);
-  font-size: 11px;
 }
 
 .titleCell {
@@ -313,21 +250,12 @@
 }
 
 @media (max-width: 760px) {
-  .toolbar {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
   .toolbarActions {
     width: 100%;
   }
 
   .toolbarActions :global(.ant-btn) {
     flex: 1;
-  }
-
-  .tableHint {
-    display: none;
   }
 }
 

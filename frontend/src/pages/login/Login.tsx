@@ -1,24 +1,74 @@
+import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Form, Input, Button, message } from 'antd';
+import { Button, Checkbox, Form, Input, message } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useUserStore, getLoginErrorMessage } from '@/store/user-store';
 import logo from '@/assets/images/avatar/logo.svg';
 import styles from './index.module.css';
+import { useRateLimitCountdown } from '@/hooks/use-rate-limit-countdown';
+import { getRateLimitRetryAfter } from '@/utils/request';
+import ArithmeticCaptchaInput from '@/components/arithmetic-captcha/ArithmeticCaptchaInput';
+import { useArithmeticCaptcha } from '@/hooks/use-arithmetic-captcha';
+import {
+  forgetCredentialPreference,
+  isRememberPasswordEnabled,
+  loadRememberedCredential,
+  rememberCredential,
+} from '@/utils/browser-credentials';
 
 interface LoginFormValues {
   username: string;
   password: string;
+  captcha_answer: string;
+  remember_password?: boolean;
 }
 
 export default function Login(): React.ReactElement {
   const navigate = useNavigate();
+  const [form] = Form.useForm<LoginFormValues>();
   const [searchParams] = useSearchParams();
   const login = useUserStore((state) => state.login);
   const loading = useUserStore((state) => state.loading);
+  const { remainingSeconds, startCountdown } = useRateLimitCountdown();
+  const {
+    challenge,
+    loading: captchaLoading,
+    error: captchaError,
+    refreshCaptcha,
+  } = useArithmeticCaptcha();
+
+  useEffect(() => {
+    async function restoreRememberedCredential(): Promise<void> {
+      const credential = await loadRememberedCredential();
+      if (credential) {
+        form.setFieldsValue({
+          username: credential.username,
+          password: credential.password,
+          remember_password: true,
+        });
+      }
+    }
+    void restoreRememberedCredential();
+  }, [form]);
 
   const handleSubmit = async (values: LoginFormValues): Promise<void> => {
+    if (!challenge) {
+      message.error(captchaError ?? '请先获取验证码');
+      await refreshCaptcha();
+      return;
+    }
     try {
-      await login(values.username, values.password);
+      await login({
+        username: values.username,
+        password: values.password,
+        captcha_id: challenge.captcha_id,
+        captcha_answer: values.captcha_answer,
+      });
+      if (values.remember_password) {
+        await rememberCredential(values.username, values.password);
+      } else {
+        await forgetCredentialPreference();
+      }
       const mustChangePassword =
         useUserStore.getState().userInfo?.must_change_password === true;
       if (mustChangePassword) {
@@ -31,8 +81,12 @@ export default function Login(): React.ReactElement {
       const redirect = searchParams.get('redirect') || '/';
       navigate(redirect, { replace: true });
     } catch (error) {
+      const retryAfter = getRateLimitRetryAfter(error);
+      if (retryAfter) startCountdown(retryAfter);
       // 用 message 全局提示替代 Alert，在深色背景上更醒目
       message.error(getLoginErrorMessage(error));
+      form.setFieldValue('captcha_answer', undefined);
+      await refreshCaptcha();
     }
   };
 
@@ -164,9 +218,13 @@ export default function Login(): React.ReactElement {
           <p className={styles.formSubtitle}>登录以开始你的创造之旅</p>
 
           <Form
+            form={form}
             name="login"
             layout="vertical"
             onFinish={handleSubmit}
+            initialValues={{
+              remember_password: isRememberPasswordEnabled(),
+            }}
             autoComplete="off"
             className={styles.form}
           >
@@ -200,15 +258,50 @@ export default function Login(): React.ReactElement {
               />
             </Form.Item>
 
+            <Form.Item
+              name="captcha_answer"
+              label={<span className={styles.formLabel}>图片验证码</span>}
+              rules={[
+                { required: true, message: '请输入计算结果' },
+                { pattern: /^\d{1,3}$/, message: '请输入正确的数字结果' },
+              ]}
+              className={styles.formField}
+            >
+              <ArithmeticCaptchaInput
+                challenge={challenge}
+                loading={captchaLoading}
+                error={captchaError}
+                onRefresh={() => {
+                  form.setFieldValue('captcha_answer', undefined);
+                  void refreshCaptcha();
+                }}
+              />
+            </Form.Item>
+
+            <Form.Item
+              name="remember_password"
+              valuePropName="checked"
+              className={styles.rememberField}
+            >
+              <Checkbox className={styles.rememberCheckbox}>
+                记住密码
+              </Checkbox>
+            </Form.Item>
+
             <Form.Item className={styles.formField}>
               <Button
                 type="primary"
                 htmlType="submit"
                 loading={loading}
+                disabled={remainingSeconds > 0}
                 className={styles.submitButton}
                 size="large"
               >
-                {loading ? '登录中...' : '登 录'}
+                {loading
+                  ? '登录中...'
+                  : remainingSeconds > 0
+                    ? `${remainingSeconds} 秒后重试`
+                    : '登 录'}
               </Button>
             </Form.Item>
           </Form>

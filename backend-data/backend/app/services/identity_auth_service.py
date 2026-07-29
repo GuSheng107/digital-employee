@@ -175,13 +175,33 @@ class IdentityAuthService:
             key=rate_limit_key,
             window_seconds=window_seconds,
         )
+        retry_after_seconds = self._sessions.get_rate_limit_ttl(rate_limit_key)
         if count > limit:
-            raise RateLimitExceededError(message="请求过于频繁，请稍后再试")
+            raise RateLimitExceededError(
+                message=f"请求过于频繁，请在 {retry_after_seconds} 秒后重试",
+                detail={
+                    "retry_after_seconds": retry_after_seconds,
+                    "limit": limit,
+                    "window_seconds": window_seconds,
+                },
+            )
         return {
             "count": count,
             "limit": limit,
             "window_seconds": window_seconds,
+            "retry_after_seconds": retry_after_seconds,
         }
+
+    def reset_rate_limit(
+        self,
+        *,
+        bucket: str,
+        identifier_hash: str,
+    ) -> None:
+        """成功登录后清除账号维度限流桶。"""
+        self._sessions.reset_rate_limit(
+            f"auth:rate-limit:{bucket}:{identifier_hash}"
+        )
 
     def get_current_user_context(
         self,

@@ -22,13 +22,14 @@ from auth_utils import (
     VipLevel,
     get_vip_display,
 )
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.menu import Menu
 from app.models.permission import Permission
 from app.models.role import Role
 from app.models.user import User
+from app.core.pagination import PageSpec, paginate_scalars
 from app.services.identity_session_service import IdentitySessionService
 from app.services.storage_service import StorageService
 
@@ -51,24 +52,17 @@ class UserService:
             ~User.roles.any(Role.code.in_(PROTECTED_ROLE_CODES)),
         )
 
-        # 查询总数
-        total = (
-            self._session.scalar(select(func.count(User.id)).where(*base_filter)) or 0
-        )
-
-        # 分页查询
-        offset = (page - 1) * page_size
-        users = self._session.scalars(
+        page_slice = paginate_scalars(
+            self._session,
             select(User)
             .options(selectinload(User.roles))
             .where(*base_filter)
-            .order_by(User.created_at.desc())
-            .offset(offset)
-            .limit(page_size)
-        ).all()
+            .order_by(User.created_at.desc()),
+            PageSpec(page=page, page_size=page_size),
+        )
 
         items = []
-        for user in users:
+        for user in page_slice.items:
             roles = [r.code for r in user.roles]
             items.append(
                 {
@@ -99,12 +93,7 @@ class UserService:
                 }
             )
 
-        return {
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-            "items": items,
-        }
+        return page_slice.response(items)
 
     def create_user(
         self,

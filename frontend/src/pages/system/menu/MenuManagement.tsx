@@ -14,7 +14,6 @@ import {
   Tag,
   Tooltip,
   TreeSelect,
-  Typography,
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -46,9 +45,8 @@ import {
 import { useUserStore } from '@/store/user-store';
 import { getMenuIcon } from '@/constants/menu-icons';
 import { getRequestErrorMessage } from '@/utils/request';
+import SystemPage from '@/components/system-page/SystemPage';
 import styles from './index.module.css';
-
-const { Title } = Typography;
 
 /** 菜单类型文案与颜色 */
 const MENU_TYPE_META: Record<number, { label: string; color: string }> = {
@@ -448,7 +446,9 @@ export default function MenuManagement(): React.ReactElement {
     {
       title: '操作',
       key: 'action',
+      fixed: 'right',
       width: 154,
+      align: 'center',
       render: (_, record) => {
         // 根目录（顶级）不允许删除，避免误删顶层导航结构
         const isRoot = record.parent_id === 0;
@@ -533,17 +533,9 @@ export default function MenuManagement(): React.ReactElement {
   ];
 
   return (
-    <div className={styles.container}>
-      <div className={styles.toolbar}>
-        <div className={styles.headingBlock}>
-          <span className={styles.eyebrow}>ACCESS CONTROL · NAVIGATION</span>
-          <Title level={3} className={styles.pageTitle}>
-            菜单管理
-          </Title>
-          <p className={styles.pageDescription}>
-            维护系统导航层级、页面路由与权限标识
-          </p>
-        </div>
+    <SystemPage
+      title="菜单管理"
+      actions={(
         <Space className={styles.toolbarActions}>
           <Button
             icon={<ReloadOutlined />}
@@ -556,7 +548,9 @@ export default function MenuManagement(): React.ReactElement {
             新建菜单
           </Button>
         </Space>
-      </div>
+      )}
+    >
+      <div className={styles.container}>
 
       <div className={styles.summaryGrid}>
         <div className={styles.summaryItem}>
@@ -582,15 +576,6 @@ export default function MenuManagement(): React.ReactElement {
       </div>
 
       <div className={styles.tableWrapper}>
-        <div className={styles.tableHeader}>
-          <div>
-            <span className={styles.tableTitle}>菜单结构</span>
-            <span className={styles.tableHint}>
-              目录节点支持展开，页面节点直接关联业务路由
-            </span>
-          </div>
-          <span className={styles.recordCount}>{menus.length} 条配置</span>
-        </div>
         <Table<MenuTreeNode>
           rowKey="id"
           columns={columns}
@@ -599,7 +584,8 @@ export default function MenuManagement(): React.ReactElement {
           pagination={false}
           size="middle"
           tableLayout="fixed"
-          scroll={{ x: 1136 }}
+          sticky
+          scroll={{ x: 1220, y: 'calc(100vh - 350px)' }}
           rowClassName={(record) =>
             record.menu_type === 1 ? styles.directoryRow : styles.menuRow
           }
@@ -733,6 +719,7 @@ export default function MenuManagement(): React.ReactElement {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+      </div>
+    </SystemPage>
   );
 }

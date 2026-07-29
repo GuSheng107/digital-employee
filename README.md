@@ -59,7 +59,7 @@ digital-employee/
 | 模块 / 服务 | 默认端口 | 协议 / 类型 | 说明及常用地址 |
 | --- | --- | --- | --- |
 | **`backend-gateway`** | `8864` | HTTP | 飞书消息网关 API (<http://localhost:8864>)，健康检查为 `GET /api/v1/health` |
-| **`backend-data`** | `8010` | HTTP | 数据平台后端 API (<http://127.0.0.1:8010>)，Swagger 文档 (<http://127.0.0.1:8010/docs>) |
+| **`backend-data`** | `8010` | HTTP | 数据平台后端 API (<http://127.0.0.1:8010>)；production 模式不暴露接口文档 |
 | **`backend-auth`** | `8020` | HTTP | 身份中心 API |
 | **`frontend`** | `5173` | HTTP | React 前端 Vite 开发服务器 (<http://localhost:5173>) |
 
@@ -74,8 +74,9 @@ digital-employee/
 
 ## 快速启动（开箱即用）
 
-各服务从 `.env.example` 创建本地 `.env`。模板只提供本机占位值，不包含
-任何生产、测试或开发环境凭证。
+各服务从 production 模式的 `.env.example` 创建本地 `.env`。模板只提供
+非敏感占位值，不包含任何环境凭证；基础设施配置由本地 `.env` 或 prod
+命名空间的 Nacos 下发。
 
 ### Windows
 
@@ -104,11 +105,13 @@ scripts\frontend\start-web.bat
 ```
 
 启动脚本会自动：
-1. 复制 `.env.example` → `.env`（首次启动）
-2. 清理 `8010`、`8020`、`8864`、`5173` 上的旧项目进程
-3. 按 `backend-data` → `backend-auth` → `backend-gateway` → `frontend` 顺序启动
-4. 注入统一的服务间 API Key，并验证基础设施依赖与消息中间件拓扑
-5. 任一服务或依赖未就绪时结束本次启动并清理已启动进程
+1. 复制 production `.env.example` → `.env`，并创建 `config/bot.json`（首次启动）
+2. 当 `backend-data` 的 `API_KEY` 为空时生成强随机密钥并持久化到本地 `.env`
+3. 按各服务锁文件同步 Python 依赖，安装缺失的前端锁定依赖并构建 production 产物
+4. 清理 `8010`、`8020`、`8864`、`5173` 上的旧项目进程
+5. 按 `backend-data` → `backend-auth` → `backend-gateway` → `frontend preview` 顺序启动
+6. 将同一服务间 API Key 注入 auth/gateway，并验证基础设施依赖与消息中间件拓扑
+7. 任一服务或依赖未就绪时结束本次启动并清理已启动进程
 
 > **注意**：启动脚本需要 `uv` 在 PATH 中。Windows 安装 uv：`pip install uv`；其他平台见 [uv 官方文档](https://docs.astral.sh/uv/)。
 
@@ -137,7 +140,8 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
 # frontend
 cd ..\frontend
 npm ci
-npm run dev
+npm run build
+npm run preview -- --host 127.0.0.1 --port 5173
 ```
 
 ## 配置中心（Nacos）

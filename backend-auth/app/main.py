@@ -23,10 +23,19 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from observability import TraceBatch, TraceMiddleware, TraceService
 
 from app.api.router import api_router
+from app.core.business_observability import configure_business_observability
 from app.core.config import settings
 from app.schemas.health import ServiceInfo
+
+configure_business_observability()
+
+
+async def _export_trace_batch(batch: TraceBatch) -> None:
+    """通过 share/data-client 将日志委托给 backend-data 持久化。"""
+    await get_data_client().submit_trace_batch(batch.model_dump(mode="json"))
 
 
 @asynccontextmanager
@@ -35,6 +44,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await get_data_client().aclose()
         get_data_client().close()
 
 
@@ -54,6 +64,11 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
+app.add_middleware(
+    TraceMiddleware,
+    service=TraceService.BACKEND_AUTH,
+    sink=_export_trace_batch,
+)
 
 
 @app.exception_handler(ApiException)
@@ -65,9 +80,15 @@ async def api_exception_handler(request: Request, exc: ApiException) -> JSONResp
 
     5xx 异常对外脱敏；4xx 异常沿用业务文案。
     """
+    headers = None
+    if exc.http_status == 429 and isinstance(exc.detail, dict):
+        retry_after = exc.detail.get("retry_after_seconds")
+        if isinstance(retry_after, int) and retry_after > 0:
+            headers = {"Retry-After": str(retry_after)}
     return JSONResponse(
         status_code=exc.http_status,
         content=exc.to_response(),
+        headers=headers,
     )
 
 

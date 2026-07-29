@@ -12,8 +12,9 @@ from api_common import InvalidCredentialsError, UserDisabledError
 from data_client import DataClient, get_data_client
 
 from app.core.config import settings
+from app.core.rate_limit import AuthRateLimitBucket
 from app.core.security import generate_token, hash_password, verify_password
-from app.schemas.auth import MenuNode, TokenPair, UserInfo
+from app.schemas.auth import CaptchaChallenge, MenuNode, TokenPair, UserInfo
 
 
 class AuthService:
@@ -30,14 +31,29 @@ class AuthService:
         email: str,
         phone: str,
         invite_code: str,
+        captcha_id: str,
+        captcha_answer: str,
         client_ip: str | None = None,
     ) -> TokenPair:
         """注册用户并签发双 token。"""
+        normalized_ip = client_ip or "unknown"
         self._consume_rate_limit(
-            bucket="register",
-            identifier=f"{client_ip or 'unknown'}:{username.casefold()}",
-            limit=settings.register_rate_limit,
-            window_seconds=settings.register_rate_window_seconds,
+            bucket=AuthRateLimitBucket.REGISTER_IP,
+            identifier=normalized_ip,
+            limit=settings.register_ip_rate_limit,
+            window_seconds=settings.register_ip_rate_window_seconds,
+        )
+        self._consume_rate_limit(
+            bucket=AuthRateLimitBucket.REGISTER_IDENTITY,
+            identifier=(
+                f"{username.casefold()}:{email.casefold()}:{phone.casefold()}"
+            ),
+            limit=settings.register_identity_rate_limit,
+            window_seconds=settings.register_identity_rate_window_seconds,
+        )
+        self._data.verify_identity_captcha(
+            captcha_id=captcha_id,
+            captcha_answer=captcha_answer,
         )
         access_token = generate_token()
         refresh_token = generate_token()
@@ -60,14 +76,34 @@ class AuthService:
         self,
         username: str,
         password: str,
+        captcha_id: str,
+        captcha_answer: str,
         client_ip: str | None = None,
     ) -> TokenPair:
         """校验凭据并落实同账号单会话策略。"""
+        normalized_ip = client_ip or "unknown"
+        normalized_account = username.casefold()
         self._consume_rate_limit(
-            bucket="login",
-            identifier=f"{client_ip or 'unknown'}:{username.casefold()}",
-            limit=settings.login_rate_limit,
-            window_seconds=settings.login_rate_window_seconds,
+            bucket=AuthRateLimitBucket.LOGIN_IP,
+            identifier=normalized_ip,
+            limit=settings.login_ip_rate_limit,
+            window_seconds=settings.login_ip_rate_window_seconds,
+        )
+        self._consume_rate_limit(
+            bucket=AuthRateLimitBucket.LOGIN_PAIR,
+            identifier=f"{normalized_ip}:{normalized_account}",
+            limit=settings.login_pair_rate_limit,
+            window_seconds=settings.login_pair_rate_window_seconds,
+        )
+        self._consume_rate_limit(
+            bucket=AuthRateLimitBucket.LOGIN_ACCOUNT,
+            identifier=normalized_account,
+            limit=settings.login_account_rate_limit,
+            window_seconds=settings.login_account_rate_window_seconds,
+        )
+        self._data.verify_identity_captcha(
+            captcha_id=captcha_id,
+            captcha_answer=captcha_answer,
         )
         credentials = self._data.get_credentials(username)
         if (
@@ -90,10 +126,30 @@ class AuthService:
             access_token=access_token,
             refresh_token=refresh_token,
         )
+        self._reset_rate_limit(
+            bucket=AuthRateLimitBucket.LOGIN_PAIR,
+            identifier=f"{normalized_ip}:{normalized_account}",
+        )
+        self._reset_rate_limit(
+            bucket=AuthRateLimitBucket.LOGIN_ACCOUNT,
+            identifier=normalized_account,
+        )
         return self._build_token_pair(
             access_token=access_token,
             refresh_token=refresh_token,
             metadata=metadata,
+        )
+
+    def create_captcha(self, client_ip: str | None = None) -> CaptchaChallenge:
+        """按客户端 IP 限流后生成算术图片验证码。"""
+        self._consume_rate_limit(
+            bucket=AuthRateLimitBucket.CAPTCHA_IP,
+            identifier=client_ip or "unknown",
+            limit=settings.captcha_ip_rate_limit,
+            window_seconds=settings.captcha_ip_rate_window_seconds,
+        )
+        return CaptchaChallenge.model_validate(
+            self._data.create_identity_captcha()
         )
 
     def refresh(self, refresh_token: str) -> TokenPair:
@@ -178,7 +234,7 @@ class AuthService:
     def _consume_rate_limit(
         self,
         *,
-        bucket: str,
+        bucket: AuthRateLimitBucket,
         identifier: str,
         limit: int,
         window_seconds: int,
@@ -186,8 +242,21 @@ class AuthService:
         """委托 backend-data 消费认证限流计数。"""
         identifier_hash = hashlib.sha256(identifier.encode("utf-8")).hexdigest()
         self._data.consume_identity_rate_limit(
-            bucket=bucket,
+            bucket=bucket.value,
             identifier_hash=identifier_hash,
             limit=limit,
             window_seconds=window_seconds,
+        )
+
+    def _reset_rate_limit(
+        self,
+        *,
+        bucket: AuthRateLimitBucket,
+        identifier: str,
+    ) -> None:
+        """成功登录后清除账号相关失败窗口，IP 总量窗口继续保留。"""
+        identifier_hash = hashlib.sha256(identifier.encode("utf-8")).hexdigest()
+        self._data.reset_identity_rate_limit(
+            bucket=bucket.value,
+            identifier_hash=identifier_hash,
         )

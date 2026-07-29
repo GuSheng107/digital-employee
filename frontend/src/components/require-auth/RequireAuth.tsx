@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { Spin } from 'antd';
 import { useUserStore } from '@/store/user-store';
+import { PageLoading } from '@/components/page-loading/PageLoading';
 
 interface RequireAuthProps {
   children: ReactNode;
@@ -24,19 +24,7 @@ export default function RequireAuth({ children }: RequireAuthProps): React.React
 
   // 正在恢复登录态时显示加载动画
   if (restoring && !isAuthenticated) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          height: '100vh',
-          background: '#0a0e1a',
-        }}
-      >
-        <Spin size="large" />
-      </div>
-    );
+    return <PageLoading fullScreen label="正在恢复登录状态" />;
   }
 
   if (!isAuthenticated) {

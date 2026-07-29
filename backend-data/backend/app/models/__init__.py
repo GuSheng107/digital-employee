@@ -7,6 +7,13 @@ from app.models.agent import Agent, BotAgent
 from app.models.bot import Bot, BotCallPermission, UserBot
 from app.models.data_item import DataItem
 from app.models.menu import Menu, RoleMenu
+from app.models.observability import (
+    TraceEventModel,
+    TracePayloadChunkModel,
+    TracePayloadModel,
+    TraceRecordModel,
+    TraceSpanModel,
+)
 from app.models.permission import Permission, RolePermission
 from app.models.role import Role, UserRole
 from app.models.user import User
@@ -23,6 +30,11 @@ __all__ = [
     "Role",
     "RoleMenu",
     "RolePermission",
+    "TraceEventModel",
+    "TracePayloadChunkModel",
+    "TracePayloadModel",
+    "TraceRecordModel",
+    "TraceSpanModel",
     "User",
     "UserBot",
     "UserMenu",

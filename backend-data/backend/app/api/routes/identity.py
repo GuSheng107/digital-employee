@@ -32,6 +32,7 @@ from app.schemas.identity import (
     RefreshIdentitySessionRequest,
     RegisterIdentityRequest,
     ResetIdentityPasswordRequest,
+    ResetIdentityRateLimitRequest,
     RoleCodesRequest,
     UpdateIdentityMenuRequest,
     UpdateIdentityProfileRequest,
@@ -39,8 +40,10 @@ from app.schemas.identity import (
     UpdateIdentityStatusRequest,
     UpdateIdentityVipRequest,
     UsernameIdentityRequest,
+    VerifyIdentityCaptchaRequest,
 )
 from app.services.identity_auth_service import IdentityAuthService
+from app.services.identity_captcha_service import IdentityCaptchaService
 from app.services.identity_invite_code_service import InviteCodeService
 from app.services.identity_menu_service import MenuService
 from app.services.identity_permission_service import PermissionService
@@ -48,6 +51,19 @@ from app.services.identity_role_service import RoleService
 from app.services.identity_user_service import UserService
 
 router = APIRouter()
+
+
+@router.post("/auth/captcha", response_model=ApiResponse)
+def create_captcha() -> dict:
+    """生成短时有效的算术图片验证码。"""
+    return success_response(IdentityCaptchaService().create())
+
+
+@router.post("/auth/captcha/verify", response_model=ApiResponse)
+def verify_captcha(payload: VerifyIdentityCaptchaRequest) -> dict:
+    """一次性消费并校验算术验证码。"""
+    IdentityCaptchaService().verify(**payload.model_dump())
+    return success_response()
 
 
 @router.post("/auth/register", response_model=ApiResponse)
@@ -377,6 +393,16 @@ def consume_auth_rate_limit(
     return success_response(
         IdentityAuthService(session).consume_rate_limit(**payload.model_dump())
     )
+
+
+@router.post("/auth/rate-limit/reset", response_model=ApiResponse)
+def reset_auth_rate_limit(
+    payload: ResetIdentityRateLimitRequest,
+    session: Session = Depends(get_core_db_session),
+) -> dict:
+    """成功登录后清除账号相关 Redis 限流窗口。"""
+    IdentityAuthService(session).reset_rate_limit(**payload.model_dump())
+    return success_response(None)
 
 
 @router.get("/roles/{role_id}/menus", response_model=ApiResponse)

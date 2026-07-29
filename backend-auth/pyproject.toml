@@ -19,6 +19,7 @@ dependencies = [
     "api-common==0.1.0",
     "auth-utils==0.1.0",
     "data-client==0.1.0",
+    "observability==0.1.0",
 ]
 
 [dependency-groups]
@@ -28,10 +29,11 @@ dev = [
 ]
 
 [tool.uv.sources]
-nacos-client = { path = "../backend-share/nacos-client" }
-api-common = { path = "../backend-share/api-common" }
-auth-utils = { path = "../backend-share/auth-utils" }
-data-client = { path = "../backend-share/data-client" }
+nacos-client = { path = "../backend-share/nacos-client", editable = true }
+api-common = { path = "../backend-share/api-common", editable = true }
+auth-utils = { path = "../backend-share/auth-utils", editable = true }
+data-client = { path = "../backend-share/data-client", editable = true }
+observability = { path = "../backend-share/observability", editable = true }
 
 [build-system]
 requires = ["hatchling"]

@@ -7,7 +7,6 @@ import {
   Form,
   Input,
   Tag,
-  Typography,
   Upload,
   message,
 } from 'antd';
@@ -30,9 +29,8 @@ import {
   getVipDisplayFallback,
   VIP_LEVEL,
 } from '@/constants/access-control';
+import SystemPage from '@/components/system-page/SystemPage';
 import styles from './index.module.css';
-
-const { Title } = Typography;
 
 /** 头像大小上限：3MB（与后端一致） */
 const AVATAR_MAX_SIZE = 3 * 1024 * 1024;
@@ -142,9 +140,9 @@ export default function Profile(): React.ReactElement {
 
   if (!userInfo) {
     return (
-      <div className={styles.page}>
+      <SystemPage title="个人信息" contentMode="scroll">
         <p className={styles.loading}>加载中...</p>
-      </div>
+      </SystemPage>
     );
   }
 
@@ -155,8 +153,8 @@ export default function Profile(): React.ReactElement {
   const isManager = userInfo.vip_level === VIP_LEVEL.MANAGER;
 
   return (
-    <div className={styles.page}>
-      <Title level={3} className={styles.title}>个人信息</Title>
+    <SystemPage title="个人信息" contentMode="scroll">
+      <div className={styles.page}>
       <div className={styles.layout}>
         <div className={styles.avatarSection}>
           <Avatar src={avatar} icon={<UserOutlined />} size={120} className={styles.avatar} />
@@ -320,6 +318,7 @@ export default function Profile(): React.ReactElement {
           </Form>
         </div>
       </div>
-    </div>
+      </div>
+    </SystemPage>
   );
 }

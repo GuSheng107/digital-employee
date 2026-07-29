@@ -1,7 +1,8 @@
-import { Button, Result, Spin } from 'antd';
+import { Button, Result } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { hasAnyPermission } from '@/constants/access-control';
 import { useUserStore } from '@/store/user-store';
+import { PageLoading } from '@/components/page-loading/PageLoading';
 
 interface RequirePermissionProps {
   required: readonly string[];
@@ -17,11 +18,7 @@ export default function RequirePermission({
   const userInfo = useUserStore((state) => state.userInfo);
 
   if (!userInfo) {
-    return (
-      <div style={{ display: 'grid', minHeight: '50vh', placeItems: 'center' }}>
-        <Spin size="large" />
-      </div>
-    );
+    return <PageLoading label="正在核验访问权限" />;
   }
 
   if (!hasAnyPermission(userInfo.roles, userInfo.permissions, required)) {
