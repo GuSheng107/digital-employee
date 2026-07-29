@@ -542,7 +542,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "pydantic", specifier = "==2.13.4" },
-    { name = "starlette", specifier = ">=0.52.1" },
+    { name = "starlette", specifier = "==0.52.1" },
 ]
 
 [[package]]

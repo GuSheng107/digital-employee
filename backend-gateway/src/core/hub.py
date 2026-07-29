@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """纯异步消息路由中枢。
 
 支持 Test/Prod 双模路由调度：
@@ -7,8 +6,10 @@
 """
 
 import asyncio
-from typing import Any, Callable
-from pydantic import ValidationError
+from collections.abc import Callable
+from typing import Any
+
+from loguru import logger
 from observability import (
     SpanKind,
     TraceEventType,
@@ -17,6 +18,7 @@ from observability import (
     TraceTrigger,
     trace_operation,
 )
+from pydantic import ValidationError
 
 from src.core.schemas import (
     MessageContent,
@@ -116,6 +118,7 @@ class MessageHub:
             except ValidationError:
                 return False
             except Exception:
+                logger.exception("[HUB] consume_outbound_payload 解析或投递失败")
                 return False
 
     async def process_outbound(self, msg: StandardMessage) -> bool:
@@ -151,6 +154,7 @@ class MessageHub:
                 bot_instance.adapter.send_message(msg)
             return True
         except Exception:
+            logger.exception("[HUB] process_outbound 消息发送失败")
             return False
 
     async def _mock_agent_process(self, msg: StandardMessage) -> None:
@@ -226,7 +230,7 @@ class MessageHub:
             ):
                 await self.process_outbound(reply_msg)
         except Exception:
-            pass
+            logger.exception("[HUB] _mock_agent_process 测试处理失败")
 
 
 # 全局唯一的消息路由中枢单例

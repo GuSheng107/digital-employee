@@ -20,7 +20,7 @@ dependencies = [
     "api-common==0.1.0",
     "auth-utils==0.1.0",
     "observability==0.1.0",
-    "python-multipart>=0.0.32",
+    "python-multipart==0.0.32",
 ]
 
 [dependency-groups]

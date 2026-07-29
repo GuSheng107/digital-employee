@@ -34,3 +34,20 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+# 中文文档中全角标点（，。：；（）等）为正常用法，不强制改为半角。
+# E501 由 line-length 控制；保留 ruff 行宽软警告以保持可读性。
+ignore = [
+    "E501",
+    "B008",   # FastAPI 推荐在默认参数中使用 Depends()，与项目惯例一致
+    "RUF001",  # 字符串中的中文全角标点
+    "RUF002",  # docstring 中的中文全角标点
+    "RUF003",  # 注释中的中文全角标点
+    "RUF006",  # 字典字面量中的中文全角标点
+]
