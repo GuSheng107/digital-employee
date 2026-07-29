@@ -25,6 +25,7 @@ from api_common.exceptions import (
     ApiException,
     BillingRequiredError,
     ContentFilteredError,
+    ConflictError,
     ContextLengthExceededError,
     DependencyUnavailableError,
     DuplicateResourceError,
@@ -43,6 +44,7 @@ from api_common.exceptions import (
     UserDisabledError,
     ValidationError,
     VectorStoreError,
+    verify_service_api_key,
 )
 from api_common.response import (
     ApiResponse,
@@ -79,11 +81,13 @@ __all__ = [
     "BillingRequiredError",
     # AI 应用
     "ModelUnavailableError",
+    "ConflictError",
     "ContextLengthExceededError",
     "ContentFilteredError",
     "GenerationFailedError",
     "EmbeddingFailedError",
     "VectorStoreError",
+    "verify_service_api_key",
     # 5xx
     "InternalError",
     "DependencyUnavailableError",

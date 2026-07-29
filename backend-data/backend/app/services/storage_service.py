@@ -1,6 +1,7 @@
-import time
 from io import BytesIO
+import time
 from urllib.parse import quote, unquote, urlparse
+from uuid import uuid4
 
 from app.core.config import settings
 from app.core.minio_client import get_minio_client
@@ -96,11 +97,21 @@ class StorageService:
             {"object_name": str, "file_url": str}
         """
         normalized_prefix = prefix.strip("/")
+        if normalized_prefix and any(
+            segment in {"", ".", ".."} for segment in normalized_prefix.split("/")
+        ):
+            raise ValueError("invalid object prefix")
+        if (
+            normalized_prefix == AVATAR_OBJECT_PREFIX
+            or normalized_prefix.startswith(f"{AVATAR_OBJECT_PREFIX}/")
+        ):
+            raise ValueError("reserved object prefix")
         safe_filename = filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1] or "file"
+        unique_name = f"{int(time.time() * 1000)}_{uuid4().hex}_{safe_filename}"
         object_name = (
-            f"{normalized_prefix}/{int(time.time() * 1000)}_{safe_filename}"
+            f"{normalized_prefix}/{unique_name}"
             if normalized_prefix
-            else f"{int(time.time() * 1000)}_{safe_filename}"
+            else unique_name
         )
         storage_url = get_minio_client().upload_file(
             object_name=object_name,
@@ -120,6 +131,35 @@ class StorageService:
         return {
             "object_name": object_name,
             "file_url": file_url,
+        }
+
+    def upload_avatar(
+        self,
+        *,
+        user_id: int,
+        filename: str,
+        data: bytes,
+        content_type: str,
+    ) -> dict:
+        """上传经过身份服务校验的头像对象。"""
+        safe_filename = filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1] or "avatar"
+        object_name = (
+            f"{AVATAR_OBJECT_PREFIX}/{user_id}/"
+            f"{int(time.time() * 1000)}_{uuid4().hex}_{safe_filename}"
+        )
+        get_minio_client().upload_file(
+            object_name=object_name,
+            data=BytesIO(data),
+            length=len(data),
+            content_type=content_type,
+        )
+        avatar_path = quote(object_name.removeprefix(f"{AVATAR_OBJECT_PREFIX}/"), safe="/")
+        return {
+            "object_name": object_name,
+            "file_url": (
+                f"{settings.api_prefix}{STORAGE_ROUTE_PREFIX}"
+                f"{AVATAR_ROUTE_PREFIX}/{avatar_path}"
+            ),
         }
 
     def upload_object(
@@ -194,7 +234,10 @@ class StorageService:
         ):
             raise ValueError("invalid avatar path")
         object_name = f"{AVATAR_OBJECT_PREFIX}/{normalized_path}"
-        return self.download_object(object_name)
+        content, content_type = self.download_object(object_name)
+        if not content_type.startswith("image/"):
+            raise ValueError("invalid avatar content type")
+        return content, content_type
 
     @staticmethod
     def _normalize_object_name(object_name: str) -> str:

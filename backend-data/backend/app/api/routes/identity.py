@@ -6,13 +6,16 @@ backend-auth 形成循环鉴权。所有 PostgreSQL、Redis、MinIO 操作在这
 
 from __future__ import annotations
 
-from api_common import ValidationError
-from auth_utils import AVATAR_MAX_SIZE_BYTES
+from api_common import ApiResponse, ValidationError, success_response
+from auth_utils import (
+    AVATAR_CONTENT_TYPES,
+    AVATAR_MAX_SIZE_BYTES,
+    detect_avatar_content_type,
+)
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.database import get_core_db_session
-from app.schemas.common import ApiResponse
 from app.schemas.identity import (
     AccessTokenIdentityRequest,
     CompleteLoginRequest,
@@ -40,7 +43,6 @@ from app.services.identity_menu_service import MenuService
 from app.services.identity_permission_service import PermissionService
 from app.services.identity_role_service import RoleService
 from app.services.identity_user_service import UserService
-from app.utils.response import success_response
 
 router = APIRouter()
 
@@ -105,7 +107,10 @@ def get_current_user_context(
 ) -> dict:
     """读取 access token 对应的可信用户上下文。"""
     return success_response(
-        IdentityAuthService(session).get_current_user_context(payload.access_token)
+        IdentityAuthService(session).get_current_user_context(
+            payload.access_token,
+            include_menus=payload.include_menus,
+        )
     )
 
 
@@ -152,18 +157,22 @@ def upload_avatar(
     session: Session = Depends(get_core_db_session),
 ) -> dict:
     """上传头像并保存用户头像 URL。"""
-    content = file.file.read()
+    content = file.file.read(AVATAR_MAX_SIZE_BYTES + 1)
     if len(content) > AVATAR_MAX_SIZE_BYTES:
         raise ValidationError(message="头像文件不能超过 3MB")
     content_type = file.content_type or ""
-    if not content_type.startswith("image/"):
-        raise ValidationError(message="仅支持上传图片文件")
+    detected_content_type = detect_avatar_content_type(content)
+    if (
+        content_type not in AVATAR_CONTENT_TYPES
+        or detected_content_type != content_type
+    ):
+        raise ValidationError(message="仅支持 JPEG、PNG、GIF 或 WebP 图片")
     return success_response(
         UserService(session).upload_avatar(
             user_id=user_id,
             filename=file.filename or "avatar",
             data=content,
-            content_type=content_type,
+            content_type=detected_content_type,
         )
     )
 
@@ -179,6 +188,7 @@ def assign_user_roles(
         UserService(session).assign_roles(
             user_id=user_id,
             role_codes=payload.role_codes,
+            actor_role_codes=payload.actor_role_codes,
         )
     )
 
@@ -424,6 +434,11 @@ def create_invite_code(
 
 
 @router.get("/invite-codes", response_model=ApiResponse)
-def list_invite_codes() -> dict:
-    """读取有效与失效邀请码。"""
-    return success_response(InviteCodeService().list_all())
+def list_invite_codes(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> dict:
+    """分页读取有效与失效邀请码。"""
+    return success_response(
+        InviteCodeService().list_page(page=page, page_size=page_size)
+    )

@@ -27,7 +27,7 @@ from src.core.schemas import (
     HealthResponse,
 )
 from src.manager import BotManager
-from src.utils.auth import require_permission
+from src.utils.auth import get_auth_client, require_permission
 from src.utils.data_access import message_bus_client
 
 
@@ -135,6 +135,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await relay_task
         manager.shutdown()
         await message_bus_client.close()
+        get_auth_client().close()
 
 
 app: FastAPI = FastAPI(

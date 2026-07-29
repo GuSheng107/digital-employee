@@ -118,6 +118,15 @@ class AuthService:
         payload["menus"] = self._build_menu_tree(menu_nodes)
         return UserInfo.model_validate(payload)
 
+    def get_authorization_context(self, access_token: str) -> UserInfo:
+        """读取不包含菜单树的跨服务最小鉴权上下文。"""
+        payload = self._data.get_identity_context(
+            access_token,
+            include_menus=False,
+        )
+        payload["menus"] = []
+        return UserInfo.model_validate(payload)
+
     @staticmethod
     def _build_menu_tree(nodes: list[MenuNode]) -> list[MenuNode]:
         """将扁平菜单按 parent_id 构建为树。"""

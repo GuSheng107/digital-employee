@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from api_common import ApiResponse, ValidationError, success_response
 from auth_utils import (
+    AVATAR_CONTENT_TYPES,
     AVATAR_MAX_SIZE_BYTES,
     BUSINESS_VIP_LEVELS,
     PermissionCode,
+    detect_avatar_content_type,
     get_vip_display,
 )
 from fastapi import APIRouter, Depends, File, Query, UploadFile
+from loguru import logger
 
 from app.api.deps import get_current_user, require_permission
 from app.schemas.auth import UserInfo
@@ -52,10 +55,12 @@ def list_users(
 @router.post(
     "",
     response_model=ApiResponse,
-    dependencies=[Depends(require_permission(PermissionCode.USER_MANAGE))],
 )
 def create_user(
     payload: CreateUserRequest,
+    current_user: UserInfo = Depends(
+        require_permission(PermissionCode.USER_MANAGE)
+    ),
 ) -> dict:
     """管理员创建用户。"""
     service = UserService()
@@ -66,6 +71,7 @@ def create_user(
         email=str(payload.email) if payload.email else None,
         phone=payload.phone,
         role_codes=payload.role_codes,
+        actor_role_codes=current_user.roles,
         is_vip=payload.is_vip,
         vip_level=payload.vip_level,
         vip_expires_at=payload.vip_expires_at,
@@ -82,11 +88,19 @@ def update_profile(
     service = UserService()
     result = service.update_profile(
         user_id=current_user.id,
+        username=current_user.username,
         nickname=payload.nickname,
         email=str(payload.email) if payload.email else None,
         phone=payload.phone,
         password=payload.password,
+        current_password=payload.current_password,
     )
+    if payload.password:
+        logger.info(
+            "security_event=password_change user_id={} username={}",
+            current_user.id,
+            current_user.username,
+        )
     return success_response(result)
 
 
@@ -119,19 +133,22 @@ def upload_avatar(
     - 文件大小不超过 3MB
     - Content-Type 必须为 image/* 开头
     """
-    content = file.file.read()
+    content = file.file.read(AVATAR_MAX_SIZE_BYTES + 1)
     if len(content) > AVATAR_MAX_SIZE_BYTES:
         raise ValidationError(message="头像文件不能超过 3MB")
-    # 校验图片类型，防止上传非图片文件
     content_type = file.content_type or ""
-    if not content_type.startswith("image/"):
-        raise ValidationError(message="仅支持上传图片文件")
+    detected_content_type = detect_avatar_content_type(content)
+    if (
+        content_type not in AVATAR_CONTENT_TYPES
+        or detected_content_type != content_type
+    ):
+        raise ValidationError(message="仅支持 JPEG、PNG、GIF 或 WebP 图片")
     service = UserService()
     result = service.upload_avatar(
         user_id=current_user.id,
         filename=file.filename or "avatar",
         data=content,
-        content_type=content_type,
+        content_type=detected_content_type,
     )
     return success_response(result)
 
@@ -139,18 +156,30 @@ def upload_avatar(
 @router.put(
     "/{user_id}/roles",
     response_model=ApiResponse,
-    dependencies=[Depends(require_permission(PermissionCode.USER_PERMISSION))],
 )
 def assign_roles(
     user_id: int,
     payload: AssignRolesRequest,
+    current_user: UserInfo = Depends(
+        require_permission(PermissionCode.USER_PERMISSION)
+    ),
 ) -> dict:
     """分配用户角色（管理员）。
 
     分配时会把角色权限/菜单复制到用户独立集合，之后用户可独立调整。
     """
     service = UserService()
-    result = service.assign_roles(user_id=user_id, role_codes=payload.role_codes)
+    result = service.assign_roles(
+        user_id=user_id,
+        role_codes=payload.role_codes,
+        actor_role_codes=current_user.roles,
+    )
+    logger.info(
+        "security_event=assign_roles actor_user_id={} target_user_id={} roles={}",
+        current_user.id,
+        user_id,
+        payload.role_codes,
+    )
     return success_response(result)
 
 
@@ -166,6 +195,7 @@ def reset_user_password(
     """重置指定用户密码（管理员，覆盖式，不校验旧密码）。"""
     service = UserService()
     result = service.reset_user_password(user_id=user_id, new_password=payload.new_password)
+    logger.info("security_event=admin_password_reset target_user_id={}", user_id)
     return success_response(result)
 
 

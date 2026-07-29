@@ -11,7 +11,8 @@ from __future__ import annotations
 
 from api_common import ApiResponse, success_response
 from auth_utils import PermissionCode
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from loguru import logger
 
 from app.api.deps import require_permission
 from app.schemas.auth import UserInfo
@@ -34,6 +35,11 @@ def create_invite_code(
         created_by=current_user.id,
         custom_code=payload.custom_code,
     )
+    logger.info(
+        "security_event=create_invite_code actor_user_id={} code={}",
+        current_user.id,
+        result.get("code"),
+    )
     return success_response(result)
 
 
@@ -42,7 +48,10 @@ def create_invite_code(
     response_model=ApiResponse,
     dependencies=[Depends(require_permission(PermissionCode.INVITE_CODE_MANAGE))],
 )
-def list_invite_codes() -> dict:
-    """列出所有邀请码，需要 invite_code:manage 权限。"""
+def list_invite_codes(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> dict:
+    """分页列出邀请码，需要 invite_code:manage 权限。"""
     service = InviteCodeService()
-    return success_response(service.list_all())
+    return success_response(service.list_page(page=page, page_size=page_size))

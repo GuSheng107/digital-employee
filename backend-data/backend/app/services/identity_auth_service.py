@@ -22,7 +22,9 @@ from auth_utils import (
     VipLevel,
     get_vip_display,
 )
+from loguru import logger
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.menu import Menu
@@ -77,8 +79,21 @@ class IdentityAuthService:
         self._session.flush()
         user.roles.append(user_role)
 
-        InviteCodeService().consume(invite_code)
-        self._session.commit()
+        invite_codes = InviteCodeService()
+        invite_codes.consume(invite_code)
+        try:
+            self._session.commit()
+        except SQLAlchemyError:
+            self._session.rollback()
+            try:
+                invite_codes.restore(invite_code)
+            except RuntimeError as compensation_error:
+                logger.exception(
+                    "注册事务失败且邀请码补偿失败 code={} error={}",
+                    invite_code,
+                    compensation_error,
+                )
+            raise
         token_meta = self._sessions.issue_token_pair(
             user_id=user.id,
             access_token=access_token,
@@ -149,7 +164,12 @@ class IdentityAuthService:
             refresh_token=refresh_token,
         )
 
-    def get_current_user_context(self, access_token: str) -> dict:
+    def get_current_user_context(
+        self,
+        access_token: str,
+        *,
+        include_menus: bool = True,
+    ) -> dict:
         """根据 access token 返回用户、角色、权限与可见菜单。"""
         user_id = self._sessions.read_access_token(access_token)
         if user_id is None:
@@ -160,15 +180,20 @@ class IdentityAuthService:
             {permission.code for role in user.roles for permission in role.permissions}
             | {permission.code for permission in user.permissions}
         )
-        menu_set = self._load_effective_menus(
-            user=user,
-            role_codes=role_codes,
-            permission_codes=permission_codes,
+        menu_set = (
+            self._load_effective_menus(
+                user=user,
+                role_codes=role_codes,
+                permission_codes=permission_codes,
+            )
+            if include_menus
+            else {}
         )
         must_change_password = self._sessions.is_password_change_required(user.id)
         if must_change_password:
             permission_codes = []
-            menu_set = self._password_change_menu_subset(menu_set)
+            if include_menus:
+                menu_set = self._password_change_menu_subset(menu_set)
         effective_is_vip, effective_vip_level = self._effective_vip(user)
         return {
             "id": user.id,

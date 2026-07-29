@@ -22,8 +22,20 @@ export interface CreateInviteCodeResult {
   expires_in: number;
 }
 
-export function fetchInviteCodes(): Promise<InviteCodeItem[]> {
-  return backendAuthRequest.get<InviteCodeItem[]>('/invite-codes');
+export interface InviteCodeListResponse {
+  items: InviteCodeItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export function fetchInviteCodes(
+  page: number,
+  pageSize: number,
+): Promise<InviteCodeListResponse> {
+  return backendAuthRequest.get<InviteCodeListResponse>('/invite-codes', {
+    params: { page, page_size: pageSize },
+  });
 }
 
 export function createInviteCode(payload: CreateInviteCodePayload): Promise<CreateInviteCodeResult> {

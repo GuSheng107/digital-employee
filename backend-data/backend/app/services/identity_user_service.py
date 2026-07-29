@@ -114,6 +114,7 @@ class UserService:
         email: str | None = None,
         phone: str | None = None,
         role_codes: list[str] | None = None,
+        actor_role_codes: list[str],
         is_vip: bool = False,
         vip_level: int | None = None,
         vip_expires_at: datetime | None = None,
@@ -124,6 +125,10 @@ class UserService:
             raise PermissionDeniedError(
                 message="不能通过用户管理接口分配超级管理员角色"
             )
+        self._ensure_manager_assignment_allowed(
+            role_codes=requested_role_codes,
+            actor_role_codes=actor_role_codes,
+        )
         if ROLE_CODE_MANAGER in requested_role_codes and is_vip:
             raise ValidationError(message="管理员身份不能同时配置业务 VIP")
 
@@ -203,7 +208,13 @@ class UserService:
         if self._session.scalar(statement.limit(1)) is not None:
             raise DuplicateResourceError(message="邮箱已被其他用户使用")
 
-    def assign_roles(self, *, user_id: int, role_codes: list[str]) -> dict:
+    def assign_roles(
+        self,
+        *,
+        user_id: int,
+        role_codes: list[str],
+        actor_role_codes: list[str],
+    ) -> dict:
         """分配用户角色（覆盖式）。
 
         权限组语义：角色作为模板，分配时把角色的权限点与菜单复制到用户的
@@ -221,6 +232,10 @@ class UserService:
             raise PermissionDeniedError(
                 message="不能通过用户管理接口分配超级管理员角色"
             )
+        self._ensure_manager_assignment_allowed(
+            role_codes=role_codes,
+            actor_role_codes=actor_role_codes,
+        )
 
         user = self._session.get(User, user_id)
         if user is None or user.deleted_at is not None:
@@ -242,10 +257,6 @@ class UserService:
             user.vip_level = VipLevel.NORMAL
             user.vip_expires_at = None
 
-        # 把所有分配角色的权限点和菜单 union 到用户独立集合（只增不减）
-        existing_perm_ids = {p.id for p in user.permissions}
-        existing_menu_ids = {m.id for m in user.menus}
-
         new_perm_ids: set[int] = set()
         new_menu_ids: set[int] = set()
         for role in roles:
@@ -255,21 +266,24 @@ class UserService:
                 if menu.deleted_at is None:
                     new_menu_ids.add(menu.id)
 
-        # 批量查询需要新增的 Permission / Menu 对象
-        to_add_perm_ids = new_perm_ids - existing_perm_ids
-        to_add_menu_ids = new_menu_ids - existing_menu_ids
-
-        if to_add_perm_ids:
-            perms = self._session.scalars(
-                select(Permission).where(Permission.id.in_(to_add_perm_ids))
-            ).all()
-            user.permissions = list(user.permissions) + list(perms)
-
-        if to_add_menu_ids:
-            menus = self._session.scalars(
-                select(Menu).where(Menu.id.in_(to_add_menu_ids))
-            ).all()
-            user.menus = list(user.menus) + list(menus)
+        user.permissions = (
+            list(
+                self._session.scalars(
+                    select(Permission).where(Permission.id.in_(new_perm_ids))
+                ).all()
+            )
+            if new_perm_ids
+            else []
+        )
+        user.menus = (
+            list(
+                self._session.scalars(
+                    select(Menu).where(Menu.id.in_(new_menu_ids))
+                ).all()
+            )
+            if new_menu_ids
+            else []
+        )
 
         self._session.commit()
 
@@ -425,8 +439,8 @@ class UserService:
             {"avatar_url": str}
         """
         user = self._get_user(user_id)
-        result = StorageService().upload_file(
-            prefix=f"avatars/{user_id}",
+        result = StorageService().upload_avatar(
+            user_id=user_id,
             filename=filename,
             data=data,
             content_type=content_type,
@@ -590,6 +604,19 @@ class UserService:
         if missing_codes:
             raise ValidationError(message=f"角色不存在：{', '.join(missing_codes)}")
         return roles
+
+    @staticmethod
+    def _ensure_manager_assignment_allowed(
+        *,
+        role_codes: set[str] | list[str],
+        actor_role_codes: list[str],
+    ) -> None:
+        """限制管理员角色只能由超级管理员授予。"""
+        if (
+            ROLE_CODE_MANAGER in role_codes
+            and ROLE_CODE_SUPER_ADMIN not in actor_role_codes
+        ):
+            raise PermissionDeniedError(message="仅超级管理员可以分配管理员角色")
 
     @staticmethod
     def _ensure_not_protected_account(user: User) -> None:

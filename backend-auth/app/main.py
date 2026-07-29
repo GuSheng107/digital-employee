@@ -27,12 +27,16 @@ from loguru import logger
 from app.api.router import api_router
 from app.core.config import settings
 from app.schemas.health import ServiceInfo
+from data_client import get_data_client
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """应用生命周期上下文（当前无启动/关闭副作用，预留扩展点）。"""
-    yield
+    """应用生命周期上下文。"""
+    try:
+        yield
+    finally:
+        get_data_client().close()
 
 
 app = FastAPI(

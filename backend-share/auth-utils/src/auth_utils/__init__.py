@@ -9,6 +9,7 @@ from auth_utils.client import (
 )
 from auth_utils.domain import (
     ADMIN_ROLE_CODES,
+    AVATAR_CONTENT_TYPES,
     AVATAR_MAX_SIZE_BYTES,
     BUSINESS_VIP_LEVELS,
     FULL_ACCESS_ROLE_CODES,
@@ -23,6 +24,7 @@ from auth_utils.domain import (
     USER_PROFILE_ROUTE_PATH,
     MenuType,
     VipLevel,
+    detect_avatar_content_type,
     get_vip_display,
     is_business_vip_level,
 )
@@ -30,6 +32,7 @@ from auth_utils.permissions import PermissionCode
 
 __all__ = [
     "ADMIN_ROLE_CODES",
+    "AVATAR_CONTENT_TYPES",
     "AVATAR_MAX_SIZE_BYTES",
     "AuthClient",
     "AuthenticatedUser",
@@ -50,6 +53,7 @@ __all__ = [
     "ROLE_CODE_USER",
     "USER_PROFILE_ROUTE_PATH",
     "VipLevel",
+    "detect_avatar_content_type",
     "get_vip_display",
     "is_business_vip_level",
 ]

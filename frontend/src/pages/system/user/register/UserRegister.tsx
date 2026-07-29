@@ -35,6 +35,7 @@ import {
   ROLE_CODE,
   VIP_LEVEL,
 } from '@/constants/access-control';
+import { useUserStore } from '@/store/user-store';
 import { getRequestErrorMessage } from '@/utils/request';
 import { PHONE_DIAL_PREFIX } from '@/config/identity-config';
 import {
@@ -81,6 +82,8 @@ function getErrorMessage(error: unknown): string {
 }
 
 export default function UserRegister(): React.ReactElement {
+  const currentUserRoles = useUserStore((state) => state.userInfo?.roles ?? []);
+  const canAssignManager = currentUserRoles.includes(ROLE_CODE.SUPER_ADMIN);
   const [loading, setLoading] = useState<boolean>(false);
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [total, setTotal] = useState<number>(0);
@@ -117,8 +120,10 @@ export default function UserRegister(): React.ReactElement {
   const vipEnabled = Form.useWatch('isVip', vipForm) ?? false;
 
   const roleOptions = useMemo(
-    () => roles.map((role) => ({ label: role.name, value: role.code })),
-    [roles],
+    () => roles
+      .filter((role) => role.code !== ROLE_CODE.MANAGER || canAssignManager)
+      .map((role) => ({ label: role.name, value: role.code })),
+    [canAssignManager, roles],
   );
 
   async function loadUsers(pageNum = page, pageSz = pageSize): Promise<void> {

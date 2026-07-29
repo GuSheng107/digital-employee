@@ -1,11 +1,13 @@
-from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from api_common import (
     ApiException,
+    ApiResponse,
     DependencyUnavailableError,
     ErrorCode,
     InternalError,
+    success_response,
 )
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -16,12 +18,11 @@ from psycopg2 import errorcodes
 from sqlalchemy.exc import ProgrammingError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.api.deps import get_auth_client
 from app.api.router import api_router
 from app.core.config import settings
-from app.schemas.common import ApiResponse
 from app.schemas.health import ServiceInfo
 from app.services.message_broker_service import get_message_broker_service
-from app.utils.response import success_response
 
 
 @asynccontextmanager
@@ -30,6 +31,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         await get_message_broker_service().close()
+        get_auth_client().close()
 
 
 app = FastAPI(

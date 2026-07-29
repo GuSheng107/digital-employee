@@ -1,10 +1,9 @@
 from fastapi import APIRouter
 
 from app.core.config import settings
-from app.schemas.common import ApiResponse
+from api_common import ApiResponse, success_response
 from app.schemas.system_config import TestConnectionsRequest
 from app.services.health_service import HealthService
-from app.utils.response import success_response
 
 
 router = APIRouter()

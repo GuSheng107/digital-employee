@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from api_common import (
+    ConflictError,
     DuplicateResourceError,
     PermissionDeniedError,
     ResourceNotFoundError,
@@ -179,7 +180,7 @@ class RoleService:
         if role.users:
             user_count = len([u for u in role.users if u.deleted_at is None])
             if user_count > 0:
-                raise PermissionDeniedError(
+                raise ConflictError(
                     message=f"角色仍关联 {user_count} 个用户，请先解除关联后再删除"
                 )
 

@@ -7,9 +7,17 @@
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 
 import bcrypt
+
+PASSWORD_HASH_PREFIX = "$bcrypt-sha256$"
+
+
+def _prepare_password(password: str) -> bytes:
+    """以固定长度摘要输入 bcrypt，避免 72 字节截断碰撞。"""
+    return hashlib.sha256(password.encode("utf-8")).digest()
 
 
 def hash_password(password: str) -> str:
@@ -21,9 +29,8 @@ def hash_password(password: str) -> str:
     Returns:
         bcrypt 哈希字符串（含 salt 与版本信息）。
     """
-    # bcrypt 限制密码最长 72 字节，超长截断
-    password_bytes = password.encode("utf-8")[:72]
-    return bcrypt.hashpw(password_bytes, bcrypt.gensalt()).decode("utf-8")
+    password_hash = bcrypt.hashpw(_prepare_password(password), bcrypt.gensalt())
+    return f"{PASSWORD_HASH_PREFIX}{password_hash.decode('utf-8')}"
 
 
 def verify_password(password: str, password_hash: str) -> bool:
@@ -38,9 +45,10 @@ def verify_password(password: str, password_hash: str) -> bool:
         避免向上抛出异常暴露内部状态。
     """
     try:
-        password_bytes = password.encode("utf-8")[:72]
-        hash_bytes = password_hash.encode("utf-8")
-        return bcrypt.checkpw(password_bytes, hash_bytes)
+        if password_hash.startswith(PASSWORD_HASH_PREFIX):
+            encoded_hash = password_hash.removeprefix(PASSWORD_HASH_PREFIX).encode("utf-8")
+            return bcrypt.checkpw(_prepare_password(password), encoded_hash)
+        return bcrypt.checkpw(password.encode("utf-8")[:72], password_hash.encode("utf-8"))
     except (ValueError, TypeError):
         return False
 

@@ -34,6 +34,7 @@ class AccessTokenIdentityRequest(BaseModel):
     """按 access token 读取可信用户上下文。"""
 
     access_token: str = Field(..., min_length=1)
+    include_menus: bool = True
 
 
 class CompleteLoginRequest(BaseModel):
@@ -69,6 +70,7 @@ class CreateIdentityUserRequest(BaseModel):
     email: str | None = Field(default=None, max_length=128)
     phone: str | None = Field(default=None, max_length=32)
     role_codes: list[str] = Field(default_factory=list)
+    actor_role_codes: list[str] = Field(default_factory=list)
     is_vip: bool = False
     vip_level: int | None = None
     vip_expires_at: datetime | None = None
@@ -114,6 +116,7 @@ class RoleCodesRequest(BaseModel):
     """角色代码集合。"""
 
     role_codes: list[str] = Field(default_factory=list)
+    actor_role_codes: list[str] = Field(default_factory=list)
 
 
 class IdsRequest(BaseModel):

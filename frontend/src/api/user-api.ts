@@ -44,6 +44,8 @@ export interface UpdateProfilePayload {
   phone?: string;
   /** 修改密码时传入，不传或为空表示不修改 */
   password?: string;
+  /** 修改密码时必须提供当前密码 */
+  current_password?: string;
 }
 
 export function fetchUsers(page: number, pageSize: number): Promise<UserListResponse> {

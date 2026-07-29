@@ -1,4 +1,5 @@
 from io import BytesIO
+from threading import Lock
 from urllib.parse import urlparse
 
 from minio import Minio
@@ -18,27 +19,30 @@ class MinioClientWrapper:
         self.bucket_name = settings.minio_default_bucket
         self.client: Minio | None = None
         self._initialized = False
+        self._init_lock = Lock()
 
     def init_client(self) -> None:
         if self._initialized:
             return
-
-        self.client = Minio(
-            endpoint=self.endpoint,
-            access_key=self.access_key,
-            secret_key=self.secret_key,
-            secure=self.secure,
-            http_client=PoolManager(
-                timeout=Timeout(
-                    connect=settings.dependency_timeout_seconds,
-                    read=settings.dependency_timeout_seconds,
+        with self._init_lock:
+            if self._initialized:
+                return
+            self.client = Minio(
+                endpoint=self.endpoint,
+                access_key=self.access_key,
+                secret_key=self.secret_key,
+                secure=self.secure,
+                http_client=PoolManager(
+                    timeout=Timeout(
+                        connect=settings.dependency_timeout_seconds,
+                        read=settings.dependency_timeout_seconds,
+                    ),
+                    retries=False,
                 ),
-                retries=False,
-            ),
-        )
-        if not self.client.bucket_exists(self.bucket_name):
-            self.client.make_bucket(self.bucket_name)
-        self._initialized = True
+            )
+            if not self.client.bucket_exists(self.bucket_name):
+                self.client.make_bucket(self.bucket_name)
+            self._initialized = True
 
     def ensure_bucket(self, bucket_name: str | None = None) -> dict:
         self.init_client()

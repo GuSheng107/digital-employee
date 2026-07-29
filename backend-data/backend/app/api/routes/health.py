@@ -2,9 +2,8 @@ from auth_utils import PermissionCode
 from fastapi import APIRouter, Depends
 
 from app.api.deps import require_service_or_permission
-from app.schemas.common import ApiResponse
+from api_common import ApiResponse, success_response
 from app.services.health_service import HealthService
-from app.utils.response import success_response
 
 
 router = APIRouter()

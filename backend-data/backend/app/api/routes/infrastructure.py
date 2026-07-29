@@ -5,13 +5,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 
 from app.core.config import settings
-from app.schemas.common import ApiResponse
+from api_common import ApiResponse, success_response
 from app.schemas.infrastructure import (
     MessageReceiptRequest,
     PublishInboundMessageRequest,
 )
 from app.services.message_broker_service import get_message_broker_service
-from app.utils.response import success_response
 
 
 router = APIRouter()

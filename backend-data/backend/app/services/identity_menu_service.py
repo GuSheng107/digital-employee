@@ -10,13 +10,13 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from api_common import (
+    ConflictError,
     DuplicateResourceError,
-    PermissionDeniedError,
     ResourceNotFoundError,
     ValidationError,
 )
 from auth_utils import MenuType
-from sqlalchemy import select
+from sqlalchemy import literal, select
 from sqlalchemy.orm import Session
 
 from app.models.menu import Menu
@@ -185,7 +185,7 @@ class MenuService:
 
         Raises:
             ResourceNotFoundError: 菜单不存在。
-            PermissionDeniedError: 仍存在子菜单。
+            ConflictError: 仍存在子菜单。
         """
         menu = self._session.get(Menu, menu_id)
         if menu is None or menu.deleted_at is not None:
@@ -201,7 +201,7 @@ class MenuService:
             .limit(1)
         )
         if child_count is not None:
-            raise PermissionDeniedError(message="该菜单下仍有子菜单，请先删除子菜单")
+            raise ConflictError(message="该菜单下仍有子菜单，请先删除子菜单")
 
         menu.deleted_at = datetime.now(UTC)
         self._session.commit()
@@ -272,21 +272,26 @@ class MenuService:
             raise DuplicateResourceError(message="菜单路由路径不能重复")
 
     def _is_descendant(self, candidate_id: int, ancestor_id: int) -> bool:
-        """判断 candidate_id 是否为 ancestor_id 的子孙（避免环）。
-
-        从 candidate 向上回溯 parent_id 链，若遇到 ancestor_id 则为子孙。
-        """
-        current_id = candidate_id
-        visited: set[int] = set()
-        while current_id != 0 and current_id not in visited:
-            visited.add(current_id)
-            menu = self._session.get(Menu, current_id)
-            if menu is None or menu.deleted_at is not None:
-                return False
-            if menu.parent_id == ancestor_id:
-                return True
-            current_id = menu.parent_id
-        return False
+        """使用递归 CTE 判断候选节点是否位于祖先节点的子树中。"""
+        descendants = (
+            select(Menu.id)
+            .where(
+                Menu.id == candidate_id,
+                Menu.deleted_at.is_(None),
+            )
+            .cte(name="menu_ancestors", recursive=True)
+        )
+        descendants = descendants.union_all(
+            select(Menu.parent_id).join(
+                descendants,
+                Menu.id == descendants.c.id,
+            )
+        )
+        return self._session.scalar(
+            select(literal(True))
+            .where(descendants.c.id == ancestor_id)
+            .limit(1)
+        ) is True
 
     def _to_dict(self, menu: Menu) -> dict:
         return {

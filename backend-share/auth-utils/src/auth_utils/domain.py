@@ -48,6 +48,14 @@ INVITE_CODE_MAX_LENGTH = 32
 INVITE_CODE_GENERATED_LENGTH = 8
 INVITE_CODE_ALLOWED_PATTERN = r"^[A-Z0-9_-]+$"
 AVATAR_MAX_SIZE_BYTES = 3 * 1024 * 1024
+AVATAR_CONTENT_TYPES = frozenset(
+    {
+        "image/gif",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+    }
+)
 USER_PROFILE_ROUTE_PATH = "/system/user/profile"
 
 
@@ -76,3 +84,20 @@ def is_business_vip_level(level: int | None) -> bool:
         return VipLevel(level) in BUSINESS_VIP_LEVELS
     except ValueError:
         return False
+
+
+def detect_avatar_content_type(content: bytes) -> str | None:
+    """根据文件签名识别允许的头像格式。"""
+    if content.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if content.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if (
+        len(content) >= 12
+        and content.startswith(b"RIFF")
+        and content[8:12] == b"WEBP"
+    ):
+        return "image/webp"
+    return None

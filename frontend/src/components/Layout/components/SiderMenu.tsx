@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Layout, Menu } from 'antd';
 import type { MenuProps } from 'antd';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -40,22 +41,7 @@ function convertMenusToItems(menus: MenuNode[]): MenuItem[] {
 }
 
 /** 收集所有含 children 的菜单 key（父菜单），用于 onClick 时判断不跳转 */
-function collectParentKeys(menus: MenuNode[]): Set<string> {
-  const keys = new Set<string>();
-  const walk = (list: MenuNode[]) => {
-    list.forEach((m) => {
-      if (m.children && m.children.length > 0) {
-        keys.add(menuKey(m));
-        walk(m.children);
-      }
-    });
-  };
-  walk(menus);
-  return keys;
-}
-
-/** 递归收集所有含 children 的菜单 key（含多层），用于默认全展开 */
-function collectAllParentKeys(menus: MenuNode[]): string[] {
+function collectParentKeys(menus: MenuNode[]): string[] {
   const keys: string[] = [];
   const walk = (list: MenuNode[]) => {
     list.forEach((m) => {
@@ -75,11 +61,17 @@ export default function SiderMenu(): React.ReactElement {
   const menus = useUserStore((s) => s.menus);
 
   // 空菜单代表未授权，不使用本地兜底菜单绕过服务端授权结果。
-  const items: MenuItem[] = convertMenusToItems(menus);
-  const parentKeys = collectParentKeys(menus);
+  const items = useMemo<MenuItem[]>(() => convertMenusToItems(menus), [menus]);
+  const parentKeys = useMemo(() => collectParentKeys(menus), [menus]);
+  const parentKeySet = useMemo(() => new Set(parentKeys), [parentKeys]);
+  const [openKeys, setOpenKeys] = useState<string[]>([]);
 
-  // 默认全展开：递归收集所有层级含 children 的菜单 key
-  const defaultOpenKeys = collectAllParentKeys(menus);
+  useEffect(() => {
+    setOpenKeys((currentKeys) => {
+      const retainedKeys = currentKeys.filter((key) => parentKeySet.has(key));
+      return retainedKeys.length > 0 ? retainedKeys : parentKeys;
+    });
+  }, [parentKeys, parentKeySet]);
 
   const selectedKeys = [location.pathname];
 
@@ -93,10 +85,11 @@ export default function SiderMenu(): React.ReactElement {
         theme="dark"
         mode="inline"
         selectedKeys={selectedKeys}
-        defaultOpenKeys={defaultOpenKeys}
+        openKeys={openKeys}
+        onOpenChange={(keys) => setOpenKeys(keys)}
         onClick={({ key }) => {
           // 父菜单（含 children）仅负责展开/折叠，不触发路由跳转
-          if (parentKeys.has(key)) return;
+          if (parentKeySet.has(key)) return;
           navigate(key);
         }}
         items={items}

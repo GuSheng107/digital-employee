@@ -33,6 +33,7 @@
 
 from __future__ import annotations
 
+import secrets
 from typing import Any
 
 from api_common.response import ErrorCode
@@ -118,6 +119,14 @@ class DuplicateResourceError(ApiException):
 
     code = ErrorCode.DUPLICATE_RESOURCE
     message = "resource already exists"
+    http_status = 409
+
+
+class ConflictError(ApiException):
+    """资源当前状态与请求操作冲突。"""
+
+    code = ErrorCode.RESOURCE_CONFLICT
+    message = "resource state conflict"
     http_status = 409
 
 
@@ -251,3 +260,15 @@ class ServiceUnavailableError(ApiException):
     code = ErrorCode.SERVICE_UNAVAILABLE
     message = "service unavailable"
     http_status = 503
+
+
+def verify_service_api_key(
+    *,
+    provided: str | None,
+    expected: str,
+) -> None:
+    """以 fail-closed 策略校验服务间 API Key。"""
+    if not expected:
+        raise ServiceUnavailableError(message="服务间 API Key 尚未配置")
+    if not provided or not secrets.compare_digest(provided, expected):
+        raise TokenInvalidError(message="服务凭证无效")

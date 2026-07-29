@@ -3,7 +3,7 @@
 邀请码存储在 Redis，key 为 ``invite_code:{code}``，
 value 为 JSON ``{code, remaining, expires_at, created_by, created_at}``。
 注册流程（见 AuthService.register）会消费邀请码：remaining -1，
-归零后删除 key。
+归零后保留至原 TTL，以便数据库事务失败时补回次数。
 """
 
 from __future__ import annotations
@@ -115,6 +115,17 @@ class InviteCodeService:
         items.sort(key=lambda x: x["created_at"], reverse=True)
         return items
 
+    def list_page(self, *, page: int, page_size: int) -> dict:
+        """分页返回邀请码列表。"""
+        items = self.list_all()
+        start = (page - 1) * page_size
+        return {
+            "items": items[start : start + page_size],
+            "total": len(items),
+            "page": page,
+            "page_size": page_size,
+        }
+
     def consume(self, code: str) -> None:
         """原子消费一次邀请码。"""
         updated = self._redis.consume_json_counter(
@@ -123,6 +134,13 @@ class InviteCodeService:
         )
         if updated is None:
             raise InvalidCredentialsError(message="邀请码无效或已用完")
+
+    def restore(self, code: str) -> None:
+        """在注册事务失败时补回邀请码次数。"""
+        self._redis.restore_json_counter(
+            self._key(code),
+            counter_field="remaining",
+        )
 
     def _generate_code(self) -> str:
         """生成 8 位随机候选邀请码，唯一性由 Redis ``SET NX`` 保证。"""

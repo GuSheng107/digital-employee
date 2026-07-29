@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from datetime import datetime
 from typing import Any
 
@@ -31,6 +32,7 @@ class DataClient:
         self._base_url = configured_url.rstrip("/")
         self._api_key = api_key or os.environ.get("BACKEND_DATA_API_KEY", "")
         self._timeout = timeout
+        self._sync_client = httpx.Client(timeout=self._timeout)
         self._async_client: httpx.AsyncClient | None = None
 
     def register_identity(
@@ -127,12 +129,17 @@ class DataClient:
     def get_identity_context(
         self,
         access_token: str,
+        *,
+        include_menus: bool = True,
     ) -> dict[str, Any]:
         """读取 access token 对应的可信用户上下文。"""
         return self._request_dict(
             "POST",
             "/api/v1/identity/auth/context",
-            json={"access_token": access_token},
+            json={
+                "access_token": access_token,
+                "include_menus": include_menus,
+            },
         )
 
     def list_users(self, *, page: int, page_size: int) -> dict[str, Any]:
@@ -152,6 +159,7 @@ class DataClient:
         email: str | None,
         phone: str | None,
         role_codes: list[str],
+        actor_role_codes: list[str],
         is_vip: bool,
         vip_level: int | None,
         vip_expires_at: datetime | None,
@@ -167,6 +175,7 @@ class DataClient:
                 "email": email,
                 "phone": phone,
                 "role_codes": role_codes,
+                "actor_role_codes": actor_role_codes,
                 "is_vip": is_vip,
                 "vip_level": vip_level,
                 "vip_expires_at": (vip_expires_at.isoformat() if vip_expires_at else None),
@@ -214,12 +223,16 @@ class DataClient:
         *,
         user_id: int,
         role_codes: list[str],
+        actor_role_codes: list[str],
     ) -> dict[str, Any]:
         """覆盖用户角色。"""
         return self._request_dict(
             "PUT",
             f"/api/v1/identity/users/{user_id}/roles",
-            json={"role_codes": role_codes},
+            json={
+                "role_codes": role_codes,
+                "actor_role_codes": actor_role_codes,
+            },
         )
 
     def reset_user_password(
@@ -453,11 +466,17 @@ class DataClient:
             },
         )
 
-    def list_invite_codes(self) -> list[dict[str, Any]]:
-        """读取邀请码列表。"""
-        return self._request_list(
+    def list_invite_codes(
+        self,
+        *,
+        page: int,
+        page_size: int,
+    ) -> dict[str, Any]:
+        """分页读取邀请码列表。"""
+        return self._request_dict(
             "GET",
             "/api/v1/identity/invite-codes",
+            params={"page": page, "page_size": page_size},
         )
 
     def test_dependencies(
@@ -507,12 +526,11 @@ class DataClient:
     def download_object(self, object_name: str) -> tuple[bytes, str]:
         """由 backend-data 下载对象内容，调用方不接触 MinIO 配置。"""
         try:
-            with httpx.Client(timeout=self._timeout) as client:
-                response = client.get(
-                    f"{self._base_url}/api/v1/storage/objects/content",
-                    headers=self._headers(),
-                    params={"object_name": object_name},
-                )
+            response = self._sync_client.get(
+                f"{self._base_url}/api/v1/storage/objects/content",
+                headers=self._headers(),
+                params={"object_name": object_name},
+            )
         except httpx.HTTPError as exc:
             raise ServiceUnavailableError(
                 message="backend-data 服务暂不可用",
@@ -529,12 +547,11 @@ class DataClient:
     def download_object_by_url(self, file_url: str) -> tuple[bytes, str]:
         """由 backend-data 校验存储 URL 并下载对象。"""
         try:
-            with httpx.Client(timeout=self._timeout) as client:
-                response = client.get(
-                    f"{self._base_url}/api/v1/storage/objects/by-url",
-                    headers=self._headers(),
-                    params={"file_url": file_url},
-                )
+            response = self._sync_client.get(
+                f"{self._base_url}/api/v1/storage/objects/by-url",
+                headers=self._headers(),
+                params={"file_url": file_url},
+            )
         except httpx.HTTPError as exc:
             raise ServiceUnavailableError(
                 message="backend-data 服务暂不可用",
@@ -617,6 +634,10 @@ class DataClient:
             await self._async_client.aclose()
             self._async_client = None
 
+    def close(self) -> None:
+        """关闭复用的同步 HTTP 连接池。"""
+        self._sync_client.close()
+
     def _request_dict(
         self,
         method: str,
@@ -644,13 +665,12 @@ class DataClient:
     ) -> Any:
         headers = self._headers(kwargs.pop("headers", None))
         try:
-            with httpx.Client(timeout=self._timeout) as client:
-                response = client.request(
-                    method,
-                    f"{self._base_url}{path}",
-                    headers=headers,
-                    **kwargs,
-                )
+            response = self._sync_client.request(
+                method,
+                f"{self._base_url}{path}",
+                headers=headers,
+                **kwargs,
+            )
         except httpx.HTTPError as exc:
             raise ServiceUnavailableError(
                 message="backend-data 服务暂不可用",
@@ -751,11 +771,14 @@ class DataClient:
 
 
 _data_client: DataClient | None = None
+_data_client_lock = threading.Lock()
 
 
 def get_data_client() -> DataClient:
     """获取进程内 DataClient 单例。"""
     global _data_client
     if _data_client is None:
-        _data_client = DataClient()
+        with _data_client_lock:
+            if _data_client is None:
+                _data_client = DataClient()
     return _data_client

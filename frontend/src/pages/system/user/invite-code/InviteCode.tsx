@@ -51,6 +51,9 @@ function getErrorMessage(error: unknown): string {
 
 export default function InviteCode(): React.ReactElement {
   const [loading, setLoading] = useState<boolean>(false);
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+  const [total, setTotal] = useState<number>(0);
   const [inviteCodes, setInviteCodes] = useState<InviteCodeItem[]>([]);
 
   const [createOpen, setCreateOpen] = useState<boolean>(false);
@@ -65,11 +68,17 @@ export default function InviteCode(): React.ReactElement {
     return { total, valid, invalid: total - valid };
   }, [inviteCodes]);
 
-  async function loadInviteCodes(): Promise<void> {
+  async function loadInviteCodes(
+    pageNumber: number = page,
+    currentPageSize: number = pageSize,
+  ): Promise<void> {
     setLoading(true);
     try {
-      const list = await fetchInviteCodes();
-      setInviteCodes(list);
+      const response = await fetchInviteCodes(pageNumber, currentPageSize);
+      setInviteCodes(response.items);
+      setTotal(response.total);
+      setPage(response.page);
+      setPageSize(response.page_size);
     } catch (error) {
       message.error(getErrorMessage(error));
     } finally {
@@ -81,7 +90,7 @@ export default function InviteCode(): React.ReactElement {
   // 不会在 effect 同步阶段触发级联渲染，符合 react-hooks 规范例外。
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadInviteCodes();
+    void loadInviteCodes(1, 10);
   }, []);
 
   function openCreateModal(): void {
@@ -215,8 +224,14 @@ export default function InviteCode(): React.ReactElement {
           dataSource={inviteCodes}
           loading={loading}
           pagination={{
-            pageSize: 10,
+            current: page,
+            pageSize,
+            total,
+            showSizeChanger: true,
             showTotal: (total) => `共 ${total} 条`,
+            onChange: (nextPage, nextPageSize) => {
+              void loadInviteCodes(nextPage, nextPageSize);
+            },
           }}
         />
       </div>

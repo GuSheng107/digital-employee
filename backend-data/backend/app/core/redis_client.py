@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import secrets
 import time
+from threading import Lock
 from typing import Any
 
 from redis import Redis
@@ -21,16 +22,20 @@ class RedisClientWrapper:
     def __init__(self) -> None:
         self.redis_url = settings.redis_url
         self.client: Redis | None = None
+        self._init_lock = Lock()
 
     def init_client(self) -> None:
         if self.client is not None:
             return
-        self.client = Redis.from_url(
-            self.redis_url,
-            decode_responses=True,
-            socket_connect_timeout=settings.dependency_timeout_seconds,
-            socket_timeout=settings.dependency_timeout_seconds,
-        )
+        with self._init_lock:
+            if self.client is not None:
+                return
+            self.client = Redis.from_url(
+                self.redis_url,
+                decode_responses=True,
+                socket_connect_timeout=settings.dependency_timeout_seconds,
+                socket_timeout=settings.dependency_timeout_seconds,
+            )
 
     def ping(self) -> bool:
         return bool(self._require_client().ping())
@@ -308,7 +313,8 @@ class RedisClientWrapper:
         """原子递减 JSON 对象中的计数字段。
 
         通过最小权限 Redis 账号可用的 ``SET NX`` 短租约锁串行化消费，
-        防止并发注册超额使用同一邀请码；计数归零时删除 key。
+        防止并发注册超额使用同一邀请码；计数归零时保留 key 到原 TTL，
+        以便数据库事务失败后执行补偿。
         """
         client = self._require_client()
         lock_key = f"{key}:lock"
@@ -322,13 +328,10 @@ class RedisClientWrapper:
                 return None
             remaining = int(data.get(counter_field, 0))
             if remaining <= 0:
-                client.delete(key)
                 return None
             data[counter_field] = remaining - 1
             ttl_seconds = int(client.ttl(key))
-            if data[counter_field] <= 0:
-                client.delete(key)
-            elif ttl_seconds > 0:
+            if ttl_seconds > 0:
                 client.set(
                     key,
                     json.dumps(
@@ -348,6 +351,37 @@ class RedisClientWrapper:
                     ),
                 )
             return data
+        finally:
+            self._release_lock(client, lock_key, lock_token)
+
+    def restore_json_counter(
+        self,
+        key: str,
+        *,
+        counter_field: str,
+    ) -> None:
+        """补回一次已消费的 JSON 计数，保持原有 TTL。"""
+        client = self._require_client()
+        lock_key = f"{key}:lock"
+        lock_token = self._acquire_lock(client, lock_key)
+        try:
+            raw = client.get(key)
+            if raw is None:
+                raise RuntimeError("counter no longer exists")
+            data = json.loads(str(raw))
+            if not isinstance(data, dict):
+                raise RuntimeError("counter payload is invalid")
+            data[counter_field] = int(data.get(counter_field, 0)) + 1
+            ttl_seconds = int(client.ttl(key))
+            serialized = json.dumps(
+                data,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            if ttl_seconds > 0:
+                client.set(key, serialized, ex=ttl_seconds)
+            else:
+                client.set(key, serialized)
         finally:
             self._release_lock(client, lock_key, lock_token)
 

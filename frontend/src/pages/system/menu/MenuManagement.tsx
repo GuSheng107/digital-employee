@@ -200,9 +200,13 @@ export default function MenuManagement(): React.ReactElement {
   async function loadMenus(): Promise<void> {
     setLoading(true);
     try {
-      const list = await fetchMenus();
+      const [list, permissionList] = await Promise.all([
+        fetchMenus(),
+        fetchPermissions(),
+      ]);
       setMenus(list);
       setExpandedRowKeys(getExpandableDirectoryIds(list));
+      setPermissions(permissionList);
     } catch (error) {
       message.error(getErrorMessage(error));
     } finally {
@@ -277,14 +281,14 @@ export default function MenuManagement(): React.ReactElement {
     form.resetFields();
   }
 
-  /** 菜单变更后，刷新本地列表 + 清除前端菜单缓存，并提示用户手动刷新页面 */
+  /** 菜单变更后刷新列表与当前用户菜单缓存。 */
   async function refreshAfterChange(): Promise<void> {
     await loadMenus();
     try {
       // 重新拉取 /auth/me 刷新当前用户的菜单树缓存
       await reloadMenus();
       // 路由/侧边栏等部分依赖页面初始化时构建，提示用户手动刷新以确保完全生效
-      message.success('菜单已更新，请按 F5 刷新页面以使侧边栏与路由完全生效');
+      message.success('菜单已更新，侧边栏已同步刷新');
     } catch {
       // 静默处理：菜单列表本身已刷新，缓存刷新失败不阻塞主流程
     }

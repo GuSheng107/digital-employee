@@ -14,8 +14,9 @@ from __future__ import annotations
 
 from api_common import ApiResponse, TokenInvalidError, success_response
 from fastapi import APIRouter, Depends, Request
+from loguru import logger
 
-from app.api.deps import get_auth_service, get_current_user
+from app.api.deps import _extract_bearer, get_auth_service, get_current_user
 from app.schemas.auth import (
     LoginRequest,
     LogoutRequest,
@@ -42,6 +43,11 @@ def register(
         phone=payload.phone,
         invite_code=payload.invite_code,
     )
+    logger.info(
+        "security_event=register username={} user_id={}",
+        payload.username,
+        token_pair.user_id,
+    )
     return success_response(token_pair.model_dump())
 
 
@@ -57,6 +63,12 @@ def login(
         username=payload.username,
         password=payload.password,
         client_ip=client_ip,
+    )
+    logger.info(
+        "security_event=login username={} user_id={} client_ip={}",
+        payload.username,
+        token_pair.user_id,
+        client_ip,
     )
     return success_response(token_pair.model_dump())
 
@@ -90,6 +102,7 @@ def logout(
         raise TokenInvalidError(message="missing access_token")
     refresh_token = payload.refresh_token if payload else None
     service.logout(access_token=access_token, refresh_token=refresh_token)
+    logger.info("security_event=logout")
     return success_response(message="logged out")
 
 
@@ -99,3 +112,15 @@ def me(
 ) -> dict:
     """返回当前登录用户信息（含角色 code 与权限 code 列表）。"""
     return success_response(current_user.model_dump())
+
+
+@router.get("/authorization-context", response_model=ApiResponse)
+def authorization_context(
+    request: Request,
+    service: AuthService = Depends(get_auth_service),
+) -> dict:
+    """返回跨服务鉴权所需的最小用户上下文。"""
+    token = _extract_bearer(request.headers.get("Authorization"))
+    return success_response(
+        service.get_authorization_context(token).model_dump(exclude={"menus"})
+    )

@@ -36,6 +36,12 @@ const { Title } = Typography;
 
 /** 头像大小上限：3MB（与后端一致） */
 const AVATAR_MAX_SIZE = 3 * 1024 * 1024;
+const AVATAR_CONTENT_TYPES = new Set([
+  'image/gif',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+]);
 
 interface ProfileFormValues {
   nickname: string;
@@ -43,6 +49,8 @@ interface ProfileFormValues {
   phone: string;
   /** 修改密码时填入，留空表示不修改 */
   password?: string;
+  /** 当前密码，仅修改密码时必填 */
+  currentPassword?: string;
   /** 确认密码，与 password 必须一致 */
   confirmPassword?: string;
 }
@@ -70,6 +78,10 @@ export default function Profile(): React.ReactElement {
     // antd-img-crop 裁剪后返回 File；兼容 Blob 场景
     if (!(file instanceof File) && !(file instanceof Blob)) {
       message.error('请选择有效的图片文件');
+      return;
+    }
+    if (!AVATAR_CONTENT_TYPES.has(file.type)) {
+      message.error('仅支持 JPEG、PNG、GIF 或 WebP 图片');
       return;
     }
     // 前端预校验大小，避免无效请求
@@ -111,11 +123,16 @@ export default function Profile(): React.ReactElement {
         phone: normalizedPhone,
         // 密码为空字符串时不传，避免后端把空串当新密码校验
         password: values.password ? values.password : undefined,
+        current_password: values.password ? values.currentPassword : undefined,
       });
       await reloadMenus();
       message.success('个人信息更新成功');
       // 清空密码字段，避免下次提交重复带值
-      form.setFieldsValue({ password: undefined, confirmPassword: undefined });
+      form.setFieldsValue({
+        currentPassword: undefined,
+        password: undefined,
+        confirmPassword: undefined,
+      });
     } catch (error) {
       message.error(getRequestErrorMessage(error, '个人信息更新失败'));
     } finally {
@@ -233,6 +250,23 @@ export default function Profile(): React.ReactElement {
                 placeholder="请输入手机号"
                 autoComplete="tel"
               />
+            </Form.Item>
+            <Form.Item
+              label="当前密码"
+              name="currentPassword"
+              dependencies={['password']}
+              rules={[
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    if (!getFieldValue('password') || value) {
+                      return Promise.resolve();
+                    }
+                    return Promise.reject(new Error('修改密码前请输入当前密码'));
+                  },
+                }),
+              ]}
+            >
+              <Input.Password placeholder="修改密码时必填" autoComplete="current-password" />
             </Form.Item>
             <Form.Item
               label="修改密码"

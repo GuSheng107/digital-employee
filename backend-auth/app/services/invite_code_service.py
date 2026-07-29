@@ -29,6 +29,6 @@ class InviteCodeService:
             custom_code=custom_code,
         )
 
-    def list_all(self) -> list[dict[str, Any]]:
-        """列出邀请码。"""
-        return self._data.list_invite_codes()
+    def list_page(self, *, page: int, page_size: int) -> dict[str, Any]:
+        """分页列出邀请码。"""
+        return self._data.list_invite_codes(page=page, page_size=page_size)

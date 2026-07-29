@@ -10,7 +10,7 @@ import httpx
 
 from auth_utils.domain import ROLE_CODE_SUPER_ADMIN
 
-AUTH_ME_PATH = "/api/v1/auth/me"
+AUTH_CONTEXT_PATH = "/api/v1/auth/authorization-context"
 DEFAULT_AUTH_BASE_URL = "http://127.0.0.1:8020"
 DEFAULT_TIMEOUT_SECONDS = 5.0
 
@@ -58,16 +58,16 @@ class AuthClient:
         )
         self._base_url = configured_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
+        self._client = httpx.Client(timeout=timeout_seconds)
 
     def get_current_user(self, access_token: str) -> AuthenticatedUser:
         """向 backend-auth 校验 token 并返回最小用户上下文。"""
         if not access_token:
             raise AuthenticationError("missing access token")
         try:
-            response = httpx.get(
-                f"{self._base_url}{AUTH_ME_PATH}",
+            response = self._client.get(
+                f"{self._base_url}{AUTH_CONTEXT_PATH}",
                 headers={"Authorization": f"Bearer {access_token}"},
-                timeout=self._timeout_seconds,
             )
         except httpx.HTTPError as exc:
             raise AuthServiceUnavailableError("backend-auth unavailable") from exc
@@ -100,6 +100,10 @@ class AuthClient:
             permissions=_read_string_list(data.get("permissions")),
             must_change_password=data.get("must_change_password") is True,
         )
+
+    def close(self) -> None:
+        """关闭复用的同步 HTTP 连接池。"""
+        self._client.close()
 
     def require_any_permission(
         self,

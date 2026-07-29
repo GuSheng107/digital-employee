@@ -12,10 +12,13 @@
 
 from __future__ import annotations
 
-import secrets
 from collections.abc import Callable
 
-from api_common import PermissionDeniedError, TokenInvalidError
+from api_common import (
+    PermissionDeniedError,
+    TokenInvalidError,
+    verify_service_api_key,
+)
 from auth_utils import ADMIN_ROLE_CODES, FULL_ACCESS_ROLE_CODES
 from fastapi import Depends, Header
 
@@ -38,11 +41,7 @@ def verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
     Raises:
         PermissionDeniedError: 当 ``API_KEY`` 已配置但请求头缺失或不匹配时。
     """
-    expected = settings.api_key
-    if not expected:
-        return
-    if not x_api_key or not secrets.compare_digest(x_api_key, expected):
-        raise PermissionDeniedError(message="invalid api key")
+    verify_service_api_key(provided=x_api_key, expected=settings.api_key)
 
 
 def get_auth_service() -> AuthService:
@@ -146,9 +145,7 @@ def require_permission(
         # 检查用户是否持有任一所需权限码
         user_perms = set(current_user.permissions)
         if not any(code in user_perms for code in permission_codes):
-            raise PermissionDeniedError(
-                message=f"无权限访问该接口（需要权限：{', '.join(permission_codes)}）"
-            )
+            raise PermissionDeniedError(message="无权访问该接口")
         return current_user
 
     return _check

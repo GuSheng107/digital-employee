@@ -9,9 +9,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from api_common import InvalidCredentialsError, PermissionDeniedError
+from auth_utils import ROLE_CODE_MANAGER, ROLE_CODE_SUPER_ADMIN
 from data_client import DataClient, get_data_client
 
-from app.core.security import hash_password
+from app.core.security import hash_password, verify_password
 
 
 class UserService:
@@ -33,28 +35,46 @@ class UserService:
         email: str | None = None,
         phone: str | None = None,
         role_codes: list[str] | None = None,
+        actor_role_codes: list[str],
         is_vip: bool = False,
         vip_level: int | None = None,
         vip_expires_at: datetime | None = None,
     ) -> dict:
         """管理员创建用户。"""
+        requested_roles = role_codes or []
+        self._ensure_manager_assignment_allowed(
+            role_codes=requested_roles,
+            actor_role_codes=actor_role_codes,
+        )
         return self._data.create_user(
             username=username,
             password_hash=hash_password(password),
             nickname=nickname,
             email=email,
             phone=phone,
-            role_codes=role_codes or [],
+            role_codes=requested_roles,
+            actor_role_codes=actor_role_codes,
             is_vip=is_vip,
             vip_level=vip_level,
             vip_expires_at=vip_expires_at,
         )
 
-    def assign_roles(self, *, user_id: int, role_codes: list[str]) -> dict:
+    def assign_roles(
+        self,
+        *,
+        user_id: int,
+        role_codes: list[str],
+        actor_role_codes: list[str],
+    ) -> dict:
         """覆盖用户角色。"""
+        self._ensure_manager_assignment_allowed(
+            role_codes=role_codes,
+            actor_role_codes=actor_role_codes,
+        )
         return self._data.assign_user_roles(
             user_id=user_id,
             role_codes=role_codes,
+            actor_role_codes=actor_role_codes,
         )
 
     def get_user_menus(self, *, user_id: int) -> list[dict[str, Any]]:
@@ -113,12 +133,23 @@ class UserService:
         self,
         *,
         user_id: int,
+        username: str,
         nickname: str | None = None,
         email: str | None = None,
         phone: str | None = None,
         password: str | None = None,
+        current_password: str | None = None,
     ) -> dict:
         """更新当前用户资料；主动改密时清除强制改密标志。"""
+        if password:
+            credentials = self._data.get_credentials(username)
+            password_hash = credentials.get("password_hash") if credentials else None
+            if (
+                not current_password
+                or not isinstance(password_hash, str)
+                or not verify_password(current_password, password_hash)
+            ):
+                raise InvalidCredentialsError(message="当前密码不正确")
         return self._data.update_profile(
             user_id=user_id,
             nickname=nickname,
@@ -126,6 +157,19 @@ class UserService:
             phone=phone,
             password_hash=hash_password(password) if password else None,
         )
+
+    @staticmethod
+    def _ensure_manager_assignment_allowed(
+        *,
+        role_codes: list[str],
+        actor_role_codes: list[str],
+    ) -> None:
+        """限制管理员角色只能由超级管理员授予。"""
+        if (
+            ROLE_CODE_MANAGER in role_codes
+            and ROLE_CODE_SUPER_ADMIN not in actor_role_codes
+        ):
+            raise PermissionDeniedError(message="仅超级管理员可以分配管理员角色")
 
     def reset_user_password(
         self,

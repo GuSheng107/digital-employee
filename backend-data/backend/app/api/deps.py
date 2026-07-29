@@ -13,6 +13,7 @@ from api_common import (
     PermissionDeniedError,
     ServiceUnavailableError,
     TokenInvalidError,
+    verify_service_api_key,
 )
 from auth_utils import (
     AuthClient,
@@ -20,7 +21,7 @@ from auth_utils import (
     AuthorizationError,
     AuthServiceUnavailableError,
 )
-from fastapi import Header, HTTPException
+from fastapi import Header
 
 from app.core.config import settings
 
@@ -28,23 +29,17 @@ from app.core.config import settings
 async def verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
     """校验请求头 ``X-API-Key`` 是否与服务端配置一致。
 
-    当 ``API_KEY`` 未配置时跳过校验，便于本地开发；
-    生产环境应通过环境变量显式配置 ``API_KEY``。
-
-    使用 ``secrets.compare_digest`` 进行常量时间比较，避免时序攻击。
+    ``API_KEY`` 未配置时拒绝内部接口访问，避免服务间鉴权静默失效；
+    已配置时使用常量时间比较校验请求凭证。
 
     Args:
         x_api_key: 请求头 ``X-API-Key`` 的值，缺失或为空表示未携带。
 
     Raises:
-        HTTPException: 当 ``API_KEY`` 已配置但请求头缺失或不匹配时，
-            返回 401 未授权。
+        ServiceUnavailableError: 当服务端未配置 ``API_KEY`` 时。
+        TokenInvalidError: 当请求头缺失或不匹配时。
     """
-    expected = settings.api_key
-    if not expected:
-        return
-    if not x_api_key or not secrets.compare_digest(x_api_key, expected):
-        raise HTTPException(status_code=401, detail="invalid api key")
+    verify_service_api_key(provided=x_api_key, expected=settings.api_key)
 
 
 @lru_cache

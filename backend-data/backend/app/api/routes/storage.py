@@ -1,4 +1,9 @@
-from api_common import ResourceNotFoundError, ValidationError
+from api_common import (
+    ApiResponse,
+    ResourceNotFoundError,
+    ValidationError,
+    success_response,
+)
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile
 from minio.error import S3Error
 
@@ -6,9 +11,8 @@ from app.core.storage_constants import (
     AVATAR_ROUTE_PREFIX,
     IMMUTABLE_ASSET_CACHE_CONTROL,
 )
-from app.schemas.common import ApiResponse
+from auth_utils import AVATAR_MAX_SIZE_BYTES
 from app.services.storage_service import StorageService
-from app.utils.response import success_response
 
 
 router = APIRouter()
@@ -36,6 +40,8 @@ def read_avatar(avatar_path: str) -> Response:
         headers={
             "Cache-Control": IMMUTABLE_ASSET_CACHE_CONTROL,
             "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            "Content-Disposition": "inline",
         },
     )
 
@@ -70,13 +76,18 @@ def upload_file(
     接收 multipart 文件，存储到 Minio，返回可访问 URL。
     prefix 用于指定存储路径前缀，如 "avatars/1"。
     """
-    content = file.file.read()
-    result = StorageService().upload_file(
-        prefix=prefix,
-        filename=file.filename or "",
-        data=content,
-        content_type=file.content_type or "application/octet-stream",
-    )
+    content = file.file.read(AVATAR_MAX_SIZE_BYTES + 1)
+    if len(content) > AVATAR_MAX_SIZE_BYTES:
+        raise ValidationError(message="上传文件不能超过 3MB")
+    try:
+        result = StorageService().upload_file(
+            prefix=prefix,
+            filename=file.filename or "",
+            data=content,
+            content_type=file.content_type or "application/octet-stream",
+        )
+    except ValueError as exc:
+        raise ValidationError(message="文件存储前缀无效") from exc
     return success_response(result)
 
 
