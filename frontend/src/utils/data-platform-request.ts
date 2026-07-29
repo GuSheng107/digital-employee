@@ -1,4 +1,6 @@
-import { BaseRequest, getRequestErrorMessage } from './request';
+import { getRequestErrorMessage } from './request';
+import { AuthenticatedRequest } from './authenticated-request';
+import { DATA_PLATFORM_API_BASE_URL } from '@/config/api-config';
 
 /** 数据中台响应信封：{ success, message, data } */
 export interface DataPlatformApiResponse<T> {
@@ -19,15 +21,27 @@ function isDataPlatformResponse(body: unknown): body is DataPlatformApiResponse<
   );
 }
 
+/** 从 data 字段中提取业务错误码（data.code），不存在则返回 undefined */
+function extractDataPlatformErrorCode(body: unknown): string | undefined {
+  if (isDataPlatformResponse(body)) {
+    const data = body.data;
+    if (data != null && typeof data === 'object' && 'code' in data) {
+      const code = (data as { code: unknown }).code;
+      if (typeof code === 'string' && code) return code;
+    }
+  }
+  return undefined;
+}
+
 /**
  * DataPlatformRequest — 对接 backend-data (port 8010) 的请求类。
  *
  * 响应格式：{ success, message, data }，success === true 表示成功。
- * 无 token 认证，无 401/403 处理。
+ * 统一携带 Bearer token；401 时尝试刷新一次，失败后清理会话并回登录页。
  */
-class DataPlatformRequest extends BaseRequest {
+class DataPlatformRequest extends AuthenticatedRequest {
   constructor() {
-    super(import.meta.env.VITE_DATA_PLATFORM_API_BASE_URL || '/data-platform-api');
+    super(DATA_PLATFORM_API_BASE_URL);
   }
 
   protected isSuccess(body: unknown): boolean {
@@ -43,6 +57,11 @@ class DataPlatformRequest extends BaseRequest {
       return body.message;
     }
     return '数据中台请求失败';
+  }
+
+  /** 从 data.code 提取业务错误码（如 DEPENDENCY_UNAVAILABLE） */
+  protected getErrorCode(body: unknown): string | undefined {
+    return extractDataPlatformErrorCode(body);
   }
 }
 

@@ -12,6 +12,8 @@
 - 连接已有 PostgreSQL 向量库，当前阶段先做健康检查预留。
 - 连接 Redis，封装必要缓存读写能力。
 - 连接 MinIO，封装 bucket 和对象读写能力。
+- 连接 RabbitMQ，统一声明拓扑、发布消息，并通过 Redis 租约交付出站消息。
+- 保存身份域用户、角色、菜单、权限、会话与强制改密状态。
 - 基于已有表结构提供 API，例如 `data_items` CRUD。
 - 提供健康检查、脱敏配置查看、连接测试接口。
 
@@ -27,7 +29,7 @@
 
 ## 技术栈
 
-- 后端：Python 3.10+、FastAPI、Uvicorn、SQLAlchemy 2.0、psycopg2-binary、redis-py、python-dotenv、MinIO SDK、Pydantic
+- 后端：Python 3.11+、FastAPI、Uvicorn、SQLAlchemy 2.0、psycopg2-binary、redis-py、MinIO SDK、aio-pika、Pydantic
 - 前端：由主项目 `frontend/` 统一管理，使用 React + TypeScript + Ant Design
 - 默认后端端口：`8010`
 
@@ -118,6 +120,8 @@ MINIO_ENDPOINT=127.0.0.1:9000
 MINIO_ACCESS_KEY=minio_access_key
 MINIO_SECRET_KEY=minio_secret_key
 MINIO_DEFAULT_BUCKET=digital-employee
+
+RABBITMQ_URL=amqp://app_user:your_password@127.0.0.1:5672/
 ```
 
 前端配置（在主项目 `frontend/` 下）：
@@ -146,17 +150,21 @@ VITE_DATA_PLATFORM_API_BASE_URL=/data-platform-api
 - `GET /api/v1/storage/buckets`
 - `POST /api/v1/storage/test-object`
 - `GET /api/v1/storage/test-object`
+- `POST /api/v1/identity/*`（仅 backend-auth 的服务 API Key）
+- `POST /api/v1/infrastructure/message-broker/*`（仅 data-client 服务调用）
 
 ## 与主项目交互方式
 
 ```text
-digital-employee 主项目
-  -> HTTP API
+其他后端服务
+  -> backend-share/data-client
   -> backend-data
-  -> PostgreSQL / Redis / MinIO
+  -> PostgreSQL / Redis / MinIO / RabbitMQ
 ```
 
-本服务保持独立进程和独立端口，避免直接侵入主项目 `backend-gateway`。
+浏览器访问数据中台接口时，`backend-data` 使用
+`backend-share/auth-utils` 向 `backend-auth` 获取可信用户上下文；
+服务调用则使用 `data-client` 自动携带 API Key。
 
 ## 文档
 

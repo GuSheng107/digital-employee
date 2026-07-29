@@ -1,7 +1,9 @@
 """FastAPI 启动入口。
 
 构造应用实例、注册全局异常处理、挂载 CORS 中间件与 API 路由。
-统一响应格式为 ``{"success": bool, "message": str, "data": Any}``。
+统一响应格式为 ``{"success": bool, "message": str, "data": Any}``，
+错误响应的 ``data`` 字段统一为 ``{"code": str, "detail": str}``，
+前端可通过 ``error.code`` 做差异化处理（如 401 跳登录、429 限流退避）。
 """
 
 from __future__ import annotations
@@ -9,23 +11,31 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from api_common import (
+    ApiResponse,
+    ErrorCode,
+    InternalError,
+    success_response,
+)
+from api_common.exceptions import ApiException
+from data_client import get_data_client
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from loguru import logger
 
 from app.api.router import api_router
 from app.core.config import settings
-from app.schemas.common import ApiResponse
 from app.schemas.health import ServiceInfo
-from app.utils.response import fail_response, success_response
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """应用生命周期上下文（当前无启动/关闭副作用，预留扩展点）。"""
-    yield
+    """应用生命周期上下文。"""
+    try:
+        yield
+    finally:
+        get_data_client().close()
 
 
 app = FastAPI(
@@ -46,27 +56,43 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(ApiException)
+async def api_exception_handler(request: Request, exc: ApiException) -> JSONResponse:
+    """业务异常统一处理。
+
+    将 ``ApiException`` 转换为统一响应信封：
+    ``{"success": False, "message": str, "data": {"code": str, "detail": str}}``。
+
+    5xx 异常对外脱敏；4xx 异常沿用业务文案。
+    """
+    return JSONResponse(
+        status_code=exc.http_status,
+        content=exc.to_response(),
+    )
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    """统一处理 HTTPException。
+    """FastAPI 内置 HTTPException 兜底处理。
 
-    对 5xx 服务端异常进行日志记录并对外脱敏；4xx 客户端异常
-    沿用 detail 文案，便于调用方定位问题。
+    部分第三方依赖（如 Starlette 的认证中间件）仍会抛出 HTTPException，
+    这里将其转换为统一信封，code 字段用 ``HTTP_{status}`` 标识，便于前端
+    区分来源。
     """
     if exc.status_code >= 500:
-        logger.warning(
-            "[HTTPException] {} {} status={} detail={}",
-            request.method,
-            request.url.path,
-            exc.status_code,
-            exc.detail,
-        )
         message = "internal server error"
     else:
         message = str(exc.detail) if exc.detail else "error"
     return JSONResponse(
         status_code=exc.status_code,
-        content=fail_response(message=message),
+        content={
+            "success": False,
+            "message": message,
+            "data": {
+                "code": f"HTTP_{exc.status_code}",
+                "detail": str(exc.detail) if exc.detail else "",
+            },
+        },
     )
 
 
@@ -76,24 +102,37 @@ async def validation_exception_handler(
     exc: RequestValidationError,
 ) -> JSONResponse:
     """请求体校验失败统一返回 422 与详细错误信息。"""
+    validation_errors = [
+        {
+            "location": [str(part) for part in error.get("loc", ())],
+            "message": str(error.get("msg", "请求参数校验失败")),
+            "type": str(error.get("type", "validation_error")),
+        }
+        for error in exc.errors()
+    ]
+    first_message = validation_errors[0]["message"] if validation_errors else "请求参数校验失败"
     return JSONResponse(
         status_code=422,
-        content=fail_response(message="request validation failed", data=exc.errors()),
+        content={
+            "success": False,
+            "message": f"请求参数校验失败：{first_message}",
+            "data": {
+                "code": ErrorCode.VALIDATION_FAILED,
+                "detail": validation_errors,
+            },
+        },
     )
 
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """兜底未捕获异常，避免向上抛出原始堆栈。"""
-    logger.exception(
-        "[UNHANDLED] {} {}: {}",
-        request.method,
-        request.url.path,
-        exc,
-    )
+    """兜底未捕获异常，避免向上抛出原始堆栈。
+
+    统一转换为 ``InternalError`` 响应，对外脱敏。
+    """
     return JSONResponse(
         status_code=500,
-        content=fail_response(message="internal server error"),
+        content=InternalError().to_response(),
     )
 
 

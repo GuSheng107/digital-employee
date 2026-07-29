@@ -6,33 +6,40 @@ Digital Employee 是一个面向企业 IM 场景的数字员工项目。仓库�
 
 | 模块 | 默认端口 | 技术栈 | 当前职责与状态 |
 | --- | --- | --- | --- |
-| `backend-gateway/` | `8864` | Python 3.11+、FastAPI、lark-oapi、RabbitMQ、MinIO | 飞书多 Bot 长连接、消息归一化、多模态转存、Test/Prod 双模式路由和 Admin API |
-| `backend-data/` | `8010` | Python 3.11+、FastAPI、Uvicorn、Redis、MinIO、PostgreSQL | 数据中台后端服务、数据项管理与状态检查 |
-| `backend-auth/` | `8020`（规划） | Python 3.11+、FastAPI、PostgreSQL、Redis | 身份中心：用户登录、双 token 鉴权、用户/角色/权限/菜单/Bot 权限管理（搭建中） |
+| `backend-gateway/` | `8864` | Python 3.11+、FastAPI、平台 SDK | 飞书/企业微信协议适配、消息归一化、Test/Prod 路由和 Admin API |
+| `backend-data/` | `8010` | Python 3.11+、FastAPI、PostgreSQL、Redis、MinIO、RabbitMQ | 全仓库唯一基础设施访问服务，含身份数据、对象存储和可靠消息租约 |
+| `backend-auth/` | `8020` | Python 3.11+、FastAPI | 登录、注册、密码策略、用户/角色/菜单/权限业务编排 |
 | `frontend/` | `5173` | React 19、TypeScript、Ant Design 6、Vite 8 | 管理端前端，对接各后端服务的 API |
-| `backend-share/` | - | Python 3.11+ | 跨服务共享包，含 Nacos 配置中心客户端（`nacos-client`） |
+| `backend-share/` | - | Python 3.11+ | 跨服务契约：`data-client`、`auth-utils`、`api-common`、`nacos-client` |
 
 当前可确认的平台实现：
 
 - 飞书：由 `backend-gateway/src/platforms/feishu/` 接入。
-- 其他平台：当前代码中没有可运行的适配器。
+- 企业微信：由 `backend-gateway/src/platforms/wechat/` 接入。
 
 ## 架构现状
 
 ```text
-飞书 <-> backend-gateway <-> MinIO（多模态文件）
-                    |
-          test: 内存 Mock 回显
-          prod: RabbitMQ 入站/出站队列
-                    |
-          Agent 侧 MQ 消费者尚未在本仓库实现
+飞书 / 企业微信
+       |
+backend-gateway
+       |  backend-share/data-client
+       v
+backend-data <-> PostgreSQL / Redis / MinIO / RabbitMQ
+       ^
+       |  backend-share/data-client
+backend-auth
 
-backend-data  <-> PostgreSQL / Redis / MinIO  （数据中台）
-backend-auth  <-> PostgreSQL / Redis          （身份中心，搭建中）
-
-所有后端服务通过 backend-share/nacos-client 从 Nacos 配置中心
-拉取基础设施连接信息（DB/Redis/MinIO/RabbitMQ）。
+其他服务 --backend-share/auth-utils--> backend-auth
 ```
+
+硬边界：
+
+- 数据库、Redis、MinIO、RabbitMQ 的驱动、连接和执行只允许出现在
+  `backend-data`。
+- 其他服务只能通过 `backend-share/data-client` 使用数据与基础设施能力。
+- 其他服务只能通过 `backend-share/auth-utils` 获取用户上下文和执行权限校验。
+- 禁止跨服务导入对方的实现目录。
 
 ## 目录结构
 
@@ -53,18 +60,11 @@ digital-employee/
 | --- | --- | --- | --- |
 | **`backend-gateway`** | `8864` | HTTP | 飞书消息网关 API (<http://localhost:8864>)，健康检查为 `GET /api/v1/health` |
 | **`backend-data`** | `8010` | HTTP | 数据平台后端 API (<http://127.0.0.1:8010>)，Swagger 文档 (<http://127.0.0.1:8010/docs>) |
-| **`backend-auth`** | `8020` | HTTP | 身份中心 API（搭建中） |
+| **`backend-auth`** | `8020` | HTTP | 身份中心 API |
 | **`frontend`** | `5173` | HTTP | React 前端 Vite 开发服务器 (<http://localhost:5173>) |
 
-基础设施（部署在服务器，通过 Nacos 配置中心下发连接信息）：
-
-| 服务 | 端口 | 说明 |
-| --- | --- | --- |
-| Nacos | `18848` | 配置中心 API（Web 控制台 `18838`） |
-| PostgreSQL | `15432` | 主数据库（`db_data` / `db_rag` 两个库） |
-| Redis | `16379` | 缓存 + token 存储 |
-| MinIO | `19000` | 对象存储 API（控制台 `19001`） |
-| RabbitMQ | `25672` | AMQP（管理界面 `15670`） |
+基础设施地址与凭证只配置给 `backend-data`，并通过部署环境或 Nacos 下发，
+不在仓库文档中记录实际服务器地址。
 
 ## 环境要求
 
@@ -74,7 +74,8 @@ digital-employee/
 
 ## 快速启动（开箱即用）
 
-所有后端服务的 `.env` 配置已默认指向 prod 环境 Nacos（`106.54.60.80`，受限账号 `test`），新成员克隆代码后直接运行启动脚本即可。
+各服务从 `.env.example` 创建本地 `.env`。模板只提供本机占位值，不包含
+任何生产、测试或开发环境凭证。
 
 ### Windows
 
@@ -131,7 +132,8 @@ npm run dev
 
 ## 配置中心（Nacos）
 
-所有后端服务启动时通过 `backend-share/nacos-client` 从 Nacos 拉取共享基础设施配置（DB/Redis/MinIO/RabbitMQ 连接信息），优先级高于本地 `.env`。
+`backend-data` 可通过 `backend-share/nacos-client` 拉取基础设施配置，
+其他服务只拉取自身运行配置及 share 服务地址。
 
 - Nacos 凭证（`NACOS_*` 系列环境变量）只从环境变量读取，不入库不入 Nacos，避免循环依赖。
 - 配置 `dataId` 默认为 `${NACOS_NAMESPACE}.yaml`（即 `prod.yaml` / `dev.yaml`），`DEFAULT_GROUP`。

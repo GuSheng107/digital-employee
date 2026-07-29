@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """跨平台端口进程清理工具。
 
-按端口查找占用进程并强制结束，默认覆盖项目四个服务的端口。
+按端口查找占用进程并强制结束，默认覆盖项目现有服务的端口。
 支持 Windows 与 Unix（依赖 netstat / lsof）。
 
 Usage:
     python kill-port.py              # 清理全部默认服务端口
-    python kill-port.py 8765 5173    # 仅清理指定端口
+    python kill-port.py 8020 5173    # 仅清理指定端口
 """
 
 from __future__ import annotations
@@ -18,9 +18,9 @@ from collections.abc import Sequence
 
 # 默认服务端口（须与 start 脚本中的端口一致）
 DEFAULT_PORTS: dict[int, str] = {
-    8765: "backend-agent",
     8864: "backend-gateway",
     8010: "backend-data",
+    8020: "backend-auth",
     5173: "frontend",
 }
 

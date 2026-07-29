@@ -13,8 +13,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ant-design/icons": "^6.3.2",
     "antd": "6.4.4",
+    "antd-img-crop": "^4.30.0",
     "axios": "^1.18.0",
+    "dayjs": "^1.11.21",
+    "libphonenumber-js": "^1.13.9",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-router-dom": "7.18.0",

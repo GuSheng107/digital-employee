@@ -21,15 +21,11 @@
 """
 
 from __future__ import annotations
-
-import logging
 import os
 from typing import Any
 
 import httpx
 import yaml
-
-logger = logging.getLogger("nacos_client")
 
 
 class NacosConfigError(Exception):
@@ -165,18 +161,10 @@ class NacosClient:
         避免任一配置项格式错误阻断服务启动。
         """
         if not os.getenv("NACOS_SERVER_ADDR"):
-            logger.info(
-                "[Nacos] NACOS_SERVER_ADDR 未设置，跳过 Nacos 配置拉取，使用本地配置。"
-            )
             return None
         try:
             return cls.from_env(default_data_id, default_namespace)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "[Nacos] 初始化失败 (%s: %s)，降级到本地配置。",
-                type(exc).__name__,
-                exc,
-            )
+        except Exception:  # noqa: BLE001
             return None
 
     def _login(self) -> str | None:
@@ -198,15 +186,9 @@ class NacosClient:
             resp.raise_for_status()
             token = resp.json().get("accessToken")
             if not token:
-                logger.warning("[Nacos] 登录响应无 accessToken 字段")
                 return None
             return token
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "[Nacos] 登录失败 (%s: %s)，降级到本地配置",
-                type(exc).__name__,
-                exc,
-            )
+        except Exception:  # noqa: BLE001
             return None
 
     def _fetch_raw(self) -> str | None:
@@ -234,30 +216,14 @@ class NacosClient:
                 timeout=self._timeout,
             )
             if resp.status_code == 404:
-                logger.warning(
-                    "[Nacos] 配置不存在: namespace=%s data_id=%s group=%s",
-                    self._namespace,
-                    self._data_id,
-                    self._group,
-                )
                 return None
             resp.raise_for_status()
             body = resp.json()
             if body.get("code") != 0:
-                logger.warning(
-                    "[Nacos] v3 API 返回错误: code=%s message=%s",
-                    body.get("code"),
-                    body.get("message"),
-                )
                 return None
             data = body.get("data") or {}
             return data.get("content")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "[Nacos] 配置拉取失败，降级到本地配置: %s: %s",
-                type(exc).__name__,
-                exc,
-            )
+        except Exception:  # noqa: BLE001
             return None
 
     def fetch_config(self) -> dict[str, Any]:
@@ -274,26 +240,11 @@ class NacosClient:
 
         try:
             data = yaml.safe_load(raw) or {}
-        except yaml.YAMLError as exc:
-            logger.warning(
-                "[Nacos] YAML 解析失败: %s，降级到本地配置",
-                exc,
-            )
+        except yaml.YAMLError:
             return {}
 
         if not isinstance(data, dict):
-            logger.warning(
-                "[Nacos] 配置根节点不是 dict (类型=%s)，跳过",
-                type(data).__name__,
-            )
             return {}
-
-        logger.info(
-            "[Nacos] 配置拉取成功: namespace=%s data_id=%s 顶层 keys=%d",
-            self._namespace,
-            self._data_id,
-            len(data),
-        )
         return data
 
     def load_to_environ(

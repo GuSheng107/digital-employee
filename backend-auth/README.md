@@ -1,72 +1,49 @@
 # Backend Auth
 
-数字员工身份中心服务：用户登录、双 token 鉴权、用户/角色/权限/菜单/Bot 权限管理。
+数字员工身份与授权服务，负责登录、注册、密码策略、token 生成，以及
+用户/角色/权限/菜单接口的业务编排。
 
-## 技术栈
+## 架构边界
 
-- Python 3.11+、[uv](https://docs.astral.sh/uv/)
-- FastAPI、Uvicorn
-- PostgreSQL（共用 `db_data` 库）
-- Redis（双 token 存储 + 缓存）
-- [backend-share/nacos-client](../backend-share/nacos-client)（配置中心）
-
-## 鉴权方案
-
-**双 token + Redis 存储（不使用 JWT）**
-
-- `access_token`：短 TTL（默认 30 分钟），用于业务接口鉴权。
-- `refresh_token`：长 TTL（默认 7 天），用于换取新的 access_token。
-- Token 为 opaque 字符串（`secrets.token_urlsafe`），所有状态保存在 Redis，支持主动失效。
-- 各服务本地查 Redis 验证 token，去中心化鉴权，不依赖 auth 服务在线。
-
-Redis key 设计：
-
-```
-auth:access:{token}    -> user_id      (TTL = access_token_ttl)
-auth:refresh:{token}   -> user_id      (TTL = refresh_token_ttl)
-auth:user:{uid}:tokens -> set[token]   (用户活跃 token 集合，用于全量登出)
-```
-
-## 目录结构
+`backend-auth` 不安装也不直接使用 PostgreSQL、Redis、MinIO 或 MQ 驱动：
 
 ```text
-backend-auth/
-├── app/
-│   ├── api/            # 路由与依赖
-│   ├── core/           # 配置、数据库、Redis、安全工具
-│   ├── models/         # SQLAlchemy ORM 模型
-│   ├── schemas/        # Pydantic 请求/响应模型
-│   ├── services/       # 业务编排层
-│   ├── utils/          # 通用工具
-│   └── main.py         # FastAPI 启动入口
-├── docs/
-│   └── schema.sql      # 数据库表结构初始化脚本
-├── tests/
-├── .env.example
-└── pyproject.toml
+backend-auth
+  -> backend-share/data-client
+  -> backend-data
+  -> PostgreSQL / Redis / MinIO / RabbitMQ
 ```
 
-## 快速启动
+其他业务服务获取用户上下文和执行权限校验时统一使用：
+
+```text
+business service
+  -> backend-share/auth-utils
+  -> backend-auth /api/v1/auth/me
+```
+
+禁止跨服务导入实现目录，服务间只通过 `backend-share` 的公开契约调用。
+
+## 登录与授权
+
+- access/refresh token 均为 opaque token，不在客户端携带可篡改的权限数据。
+- Redis token 状态由 `backend-data` 统一读写。
+- 同账号后登录会原子撤销旧 token 对；旧端下次请求返回 401，前端刷新失败后
+  清理会话并跳转登录页。
+- 管理员重置密码后由 Redis 保存强制改密标志；用户只可进入个人信息页，
+  主动设置合规密码后解除限制。
+- `super_admin` 拥有最高权限旁路；`manager` 必须持有明确权限码。
+
+## 开发
 
 ```bash
-# 1. 安装依赖
 uv sync
-
-# 2. 复制配置
-cp .env.example .env
-
-# 3. 启动服务（默认端口 8020）
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8020
+uv run ruff check app tests
+uv run pytest -q
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8020
 ```
 
-健康检查：`GET http://localhost:8020/api/v1/health`
+配置模板见 `.env.example`。本服务只需要 `backend-data` 的服务地址/API Key、
+token 生成策略、手机号默认地区等配置，不应出现基础设施连接凭证。
 
-Swagger 文档：`http://localhost:8020/docs`（生产环境关闭）
-
-## 数据库初始化
-
-执行一次 `docs/schema.sql` 建表（幂等）：
-
-```bash
-docker exec -i dk-pg16 psql -U postgres -d db_data < backend-auth/docs/schema.sql
-```
+数据库结构和幂等迁移 SQL 位于 `docs/`，由数据库负责人审阅后执行。

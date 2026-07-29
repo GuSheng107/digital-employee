@@ -5,16 +5,21 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from 'axios';
 
-/** HTTP 错误：保留 status/data/config 等结构化字段，便于调用方按状态码分支处理 */
+/** HTTP 错误：保留 status/data/config/code 等结构化字段，便于调用方按状态码分支处理 */
 export class HttpError extends Error {
   readonly status?: number;
+  readonly code?: string;
   readonly data?: unknown;
   readonly config?: unknown;
 
-  constructor(message: string, opts: { status?: number; data?: unknown; config?: unknown } = {}) {
+  constructor(
+    message: string,
+    opts: { status?: number; code?: string; data?: unknown; config?: unknown } = {},
+  ) {
     super(message);
     this.name = 'HttpError';
     this.status = opts.status;
+    this.code = opts.code;
     this.data = opts.data;
     this.config = opts.config;
   }
@@ -78,13 +83,33 @@ export abstract class BaseRequest {
   }
 
   /** 401/403 认证失败 hook，默认空实现。子类可覆写以清用户态 */
-  protected onAuthError(_status: number): void {
+  protected onAuthError(
+    _status: number,
+    _config?: unknown,
+    _code?: string,
+  ): void {
     // default: no-op
+  }
+
+  /**
+   * HTTP 错误恢复 hook。
+   *
+   * 子类可在错误标准化前尝试恢复请求（例如 access token 过期后刷新 token
+   * 并重放原请求）。返回 AxiosResponse 表示恢复成功；返回 undefined
+   * 则继续走统一 HttpError 构造流程。
+   */
+  protected recoverFromHttpError(_error: unknown): Promise<AxiosResponse | undefined> {
+    return Promise.resolve(undefined);
   }
 
   /** 从响应体提取错误消息，子类可覆写 */
   protected getErrorMessage(body: unknown): string {
     return readMessageField(body, '请求失败');
+  }
+
+  /** 从响应体提取业务错误码（如 INVALID_CREDENTIALS / RATE_LIMIT_EXCEEDED），子类可覆写 */
+  protected getErrorCode(_body: unknown): string | undefined {
+    return undefined;
   }
 
   // ── 公共固定实现 ────────────────────────────────
@@ -99,21 +124,26 @@ export abstract class BaseRequest {
       (error) => Promise.reject(error),
     );
 
-    // 响应拦截：normalize HTTP 错误为 HttpError（保留 status/data/config），
+    // 响应拦截：normalize HTTP 错误为 HttpError（保留 status/code/data/config），
     // 不展示错误（不耦合 UI 库），调用方在 catch 中自行展示
     this.instance.interceptors.response.use(
       (response: AxiosResponse) => response,
-      (error) => {
-        const { message, status, data, config } = this.buildHttpError(error);
-        return Promise.reject(new HttpError(message, { status, data, config }));
+      async (error) => {
+        const recoveredResponse = await this.recoverFromHttpError(error);
+        if (recoveredResponse) {
+          return recoveredResponse;
+        }
+        const { message, status, code, data, config } = this.buildHttpError(error);
+        return Promise.reject(new HttpError(message, { status, code, data, config }));
       },
     );
   }
 
-  /** 将原始 axios 错误转换为 { message, status, data, config }，保留结构化字段 */
+  /** 将原始 axios 错误转换为 { message, status, code, data, config }，保留结构化字段 */
   protected buildHttpError(error: unknown): {
     message: string;
     status?: number;
+    code?: string;
     data?: unknown;
     config?: unknown;
   } {
@@ -127,22 +157,48 @@ export abstract class BaseRequest {
         | undefined;
       if (response) {
         const { status, data, config } = response;
+        const code = this.getErrorCode(data);
+        // 优先使用后端返回的业务文案（统一信封中的 message），兜底用状态码默认文案。
+        // 这样 401 登录失败时能显示"用户名或密码错误"而非"登录状态已过期"。
+        const backendMessage = this.getErrorMessage(data);
         let message: string;
         switch (status) {
           case 401:
-            this.onAuthError(status);
-            message = '登录状态已过期，请重新登录';
+            // 登录接口 401（INVALID_CREDENTIALS）与 token 过期 401（TOKEN_INVALID）
+            // 都走这里：onAuthError 内部判断当前路径，登录页不跳转。
+            this.onAuthError(status, config, code);
+            message = backendMessage || '登录状态已过期，请重新登录';
             break;
           case 403:
-            message = '您没有权限访问该资源';
+            message = backendMessage || '您没有权限访问该资源';
+            break;
+          case 404:
+            message = backendMessage || '请求的资源不存在';
+            break;
+          case 408:
+            message = backendMessage || '请求超时，请稍后再试';
+            break;
+          case 422:
+            message = backendMessage || '请求参数校验失败';
+            break;
+          case 429:
+            // 限流场景：前端可结合 error.code === 'RATE_LIMIT_EXCEEDED' 做退避提示
+            message = backendMessage || '请求过于频繁，请稍后再试';
             break;
           case 500:
-            message = '服务器内部错误，请稍后再试';
+            message = backendMessage || '服务器内部错误，请稍后再试';
+            break;
+          case 502:
+          case 503:
+            message = backendMessage || '服务暂不可用，请稍后再试';
+            break;
+          case 504:
+            message = backendMessage || '网关超时，请稍后再试';
             break;
           default:
-            message = this.getErrorMessage(data) || '网络请求异常';
+            message = backendMessage || '网络请求异常';
         }
-        return { message, status, data, config };
+        return { message, status, code, data, config };
       }
     }
 
@@ -161,12 +217,15 @@ export abstract class BaseRequest {
 
   /**
    * 业务响应解包：校验 isSuccess，提取 data。
-   * 消除审核报告 #7 的双重 as unknown as 断言。
-   * 业务失败时 throw Error，不展示（调用方 catch 展示）。
+   * 业务失败时抛 HttpError（携带 code/message/data），调用方可在 catch 中
+   * 通过 error.code 做差异化处理（如 RATE_LIMIT_EXCEEDED 显示倒计时）。
    */
   protected unwrapResponse<T>(body: unknown): T {
     if (!this.isSuccess(body)) {
-      throw new Error(this.getErrorMessage(body));
+      throw new HttpError(this.getErrorMessage(body), {
+        code: this.getErrorCode(body),
+        data: body,
+      });
     }
     return this.extractData(body) as T;
   }
@@ -190,7 +249,34 @@ export abstract class BaseRequest {
   }
 }
 
-/** 通用错误信息提取 */
+/** 通用错误信息提取。
+ *
+ * 如果是 HttpError 且携带业务码，返回 `[CODE] message` 格式；
+ * 否则返回纯 message。这样前端 message.error 能直接显示业务码+原因，
+ * 便于用户定位问题（如 [PERMISSION_DENIED] 无权限访问）。
+ */
 export function getRequestErrorMessage(error: unknown, fallback = '请求失败'): string {
+  if (error instanceof HttpError) {
+    const nestedCode = readNestedErrorCode(error.data);
+    const errorCode = error.code ?? nestedCode;
+    if (errorCode) {
+      return `[${errorCode}] ${error.message}`;
+    }
+    return error.message;
+  }
   return error instanceof Error ? error.message : fallback;
+}
+
+/** 兼容直接错误详情与统一响应信封两种 data 结构。 */
+function readNestedErrorCode(value: unknown): string | undefined {
+  if (value == null || typeof value !== 'object') {
+    return undefined;
+  }
+  if ('code' in value && typeof value.code === 'string') {
+    return value.code;
+  }
+  if ('data' in value) {
+    return readNestedErrorCode(value.data);
+  }
+  return undefined;
 }

@@ -9,8 +9,6 @@ import time
 import threading
 from typing import Any
 
-from loguru import logger
-
 
 class BaseBot(abc.ABC):
     """Bot 实例抽象基类。
@@ -81,7 +79,6 @@ class BaseBot(abc.ABC):
         在独立子线程中启动 Bot 的主循环。
         """
         if self.is_running:
-            logger.warning("[BotID: {}] Bot 已在运行，跳过启动", self.bot_id)
             return
 
         self._is_running = True
@@ -93,7 +90,6 @@ class BaseBot(abc.ABC):
             daemon=True,
         )
         self._thread.start()
-        logger.info("[BotID: {}] Bot 子线程已启动", self.bot_id)
 
     def stop(self) -> None:
         """停止 Bot 实例。
@@ -101,19 +97,13 @@ class BaseBot(abc.ABC):
         子类应在 _on_stop 中实现具体的停止逻辑（如断开 WebSocket）。
         """
         if not self._is_running:
-            logger.warning("[BotID: {}] Bot 未在运行", self.bot_id)
             return
-
-        logger.info("[BotID: {}] 正在停止 Bot...", self.bot_id)
         self._is_running = False
         self._on_stop()
         if self._thread is not None:
             self._thread.join(timeout=10.0)
-            if self._thread.is_alive():
-                logger.warning("[BotID: {}] 线程未能在超时内退出", self.bot_id)
         self._thread = None
         self._start_time = None
-        logger.info("[BotID: {}] Bot 已停止", self.bot_id)
 
     def _safe_run(self) -> None:
         """线程安全的运行包装器，捕获异常并记录。"""
@@ -122,11 +112,6 @@ class BaseBot(abc.ABC):
         except Exception as exc:
             self._last_error = str(exc)
             self._is_running = False
-            logger.error(
-                "[BotID: {}] Bot 运行异常退出: {}",
-                self.bot_id,
-                exc,
-            )
 
     @abc.abstractmethod
     def _run(self) -> None:

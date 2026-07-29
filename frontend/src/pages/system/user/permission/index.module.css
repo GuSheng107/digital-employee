@@ -1,0 +1,115 @@
+.container {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+.panel {
+  flex: 1;
+  min-width: 0;
+}
+
+.panelTitle {
+  margin-bottom: 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ant-color-text-heading);
+}
+
+.userTable {
+  margin-bottom: 16px;
+}
+
+.roleSection {
+  padding-top: 16px;
+  border-top: 1px solid var(--ant-color-border);
+}
+
+.hintAlert {
+  margin-top: 16px;
+  margin-bottom: 16px;
+}
+
+.userPermSection {
+  padding-top: 16px;
+  border-top: 1px solid var(--ant-color-border);
+}
+
+.roleToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.roleToolbar .panelTitle {
+  margin-bottom: 0;
+}
+
+.roleList {
+  display: block;
+  margin-bottom: 16px;
+}
+
+.roleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.roleRow:hover {
+  background: var(--ant-color-fill-quaternary);
+}
+
+.roleName {
+  font-weight: 500;
+}
+
+.roleCode {
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+  margin-left: 2px;
+}
+
+.builtinTag {
+  margin-left: 8px;
+}
+
+.roleActions {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.roleRow:hover .roleActions {
+  opacity: 1;
+}
+
+.menuTree {
+  padding-top: 16px;
+  border-top: 1px solid var(--ant-color-border);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.emptyHint {
+  padding: 24px 0;
+}
+
+@media (max-width: 1024px) {
+  .container {
+    flex-direction: column;
+  }
+}

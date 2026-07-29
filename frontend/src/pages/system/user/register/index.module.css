@@ -1,0 +1,47 @@
+.container {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.tableWrapper {
+  background: var(--ant-color-bg-container);
+  border-radius: var(--ant-border-radius-lg);
+  overflow: hidden;
+}
+
+.contactCell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--ant-color-text);
+}
+
+.contactCell span:last-child,
+.cellMeta {
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+}
+
+.resetHint {
+  margin-top: 4px;
+  padding: 10px 12px;
+  border-radius: var(--ant-border-radius);
+  color: var(--ant-color-text-secondary);
+  background: var(--ant-color-fill-quaternary);
+  line-height: 1.6;
+}
+
+@media (max-width: 760px) {
+  .toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

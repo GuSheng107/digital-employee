@@ -7,63 +7,17 @@
 import asyncio
 import os
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
-
-from dotenv import load_dotenv
-
-# 启动时尽早加载 .env，让 Nacos 凭证（NACOS_*）可被 NacosClient 读到。
-# 必须在 import 业务模块（src.utils.minio_client 等）之前完成，
-# 因为这些模块在 import 时就会读环境变量。
-load_dotenv()
-
-# 从 Nacos 拉取共享基础设施配置并注入 os.environ，优先级高于本地 .env。
-# 失败时静默降级（缺凭证/包未安装/网络异常都仅打日志），不阻塞启动。
-
-from nacos_client import adapter as nacos_adapter
-
-
-def _adapt_nacos_to_gateway_env() -> None:
-    """把 Nacos 拍平的 key 适配到 backend-gateway 期望的字段名。
-
-    Nacos dev.yaml 用嵌套结构（minio.host / rabbitmq.host 等），
-    NacosClient.load_to_environ 拍平后注入 MINIO_HOST / RABBITMQ_HOST 等。
-    backend-gateway 代码用 os.getenv 读 MINIO_ENDPOINT / RABBITMQ_URL 等，
-    需要这层适配转换。
-
-    Nacos 优先级高于本地 .env：src 存在时覆盖 dst，确保 Nacos 配置生效。
-    本地调试时设 NACOS_SERVER_ADDR 为空可跳过 Nacos 拉取，回退到 .env。
-    """
-    # MinIO: host + api_port -> endpoint
-    nacos_adapter.compose_endpoint("MINIO_HOST", "MINIO_API_PORT", "MINIO_ENDPOINT")
-    nacos_adapter.copy_overwrite("MINIO_USERNAME", "MINIO_ACCESS_KEY")
-    nacos_adapter.copy_overwrite("MINIO_PASSWORD", "MINIO_SECRET_KEY")
-    # RabbitMQ: host + amqp_port + user + pass -> url（凭证 URL 编码在 adapter 内处理）
-    nacos_adapter.compose_rabbitmq_url()
-
-
-try:
-    from nacos_client import NacosClient
-
-    _nacos_client = NacosClient.from_env_optional()
-    if _nacos_client is not None:
-        _nacos_client.load_to_environ()
-        _adapt_nacos_to_gateway_env()
-except Exception as _nacos_exc:  # noqa: BLE001
-    # 捕获所有异常（含 ImportError / NacosClient 内部异常 / YAML 解析异常），
-    # 统一降级到本地配置，避免任一环节失败阻断服务启动。
-    import logging
-    logging.getLogger("nacos_client").warning(
-        "[Nacos] 初始化失败 (%s: %s)，降级到本地配置。",
-        type(_nacos_exc).__name__,
-        _nacos_exc,
-    )
-
+from contextlib import asynccontextmanager, suppress
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException
+from api_common import ApiException
+from auth_utils import PermissionCode
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-
+from fastapi.responses import JSONResponse
 from loguru import logger
+from nacos_client import NacosClient
 
 from src.core.schemas import (
     BotConfig,
@@ -72,20 +26,58 @@ from src.core.schemas import (
     HealthResponse,
 )
 from src.manager import BotManager
-from src.utils.auth import verify_admin_api_key
-from src.utils.rabbitmq import mq_client
+from src.utils.auth import close_auth_client, require_permission
+from src.utils.data_access import message_bus_client
 
-# 配置日志输出到文件
-logger.add(
-    "log/backend-gateway.log",
-    rotation="10 MB",
-    retention="7 days",
-    encoding="utf-8",
-    enqueue=True,
-)
+
+def _load_service_configuration() -> None:
+    """加载本地和 Nacos 服务配置；基础设施凭证不由网关适配。"""
+    load_dotenv()
+    try:
+        nacos_client = NacosClient.from_env_optional()
+        if nacos_client is not None:
+            nacos_client.load_to_environ()
+    except Exception:  # noqa: BLE001
+        return
+
+
+_load_service_configuration()
 
 # 初始化全局 BotManager 实例
 manager: BotManager = BotManager(config_path="config/bot.json")
+
+
+async def _outbound_relay_loop() -> None:
+    """经 data-client 长轮询领取消息，并按处理结果 ACK/NACK。"""
+    from src.core.hub import hub
+
+    while True:
+        receipt_id: str | None = None
+        finalized = False
+        try:
+            claimed = await message_bus_client.claim()
+            if claimed is None:
+                continue
+            raw_receipt = claimed.get("receipt_id")
+            payload = claimed.get("payload")
+            if not isinstance(raw_receipt, str) or not isinstance(payload, str):
+                raise ValueError("backend-data 返回了无效消息租约")
+            receipt_id = raw_receipt
+
+            delivered = await hub.consume_outbound_payload(payload)
+            if delivered:
+                await message_bus_client.acknowledge(receipt_id)
+            else:
+                await message_bus_client.reject(receipt_id)
+            finalized = True
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            message_bus_client.is_available = False
+            if receipt_id is not None and not finalized:
+                with suppress(Exception):
+                    await message_bus_client.reject(receipt_id)
+            await asyncio.sleep(message_bus_client.retry_seconds)
 
 
 @asynccontextmanager
@@ -93,64 +85,59 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """FastAPI 生命周期管理上下文。
 
     启动时完成以下初始化序列：
-    1. 建立 RabbitMQ 连接并声明拓扑结构。
-    2. 注册 MQ 出站队列消费者回调。
-    3. 从配置文件加载机器人并注入主事件循环。
-    4. 启动 Watchdog 守护线程。
+    1. 经 data-client 要求 backend-data 核验消息拓扑。
+    2. 从配置文件加载机器人并注入主事件循环。
+    3. 启动 share 消息租约轮询与 Watchdog 守护线程。
     """
-    # 1. 尝试连接 RabbitMQ 并声明拓扑，失败则容错降级
+    # 1. backend-data 是唯一消息基础设施持有者；网关只检查 share 契约。
     try:
-        outbound_queue = await mq_client.connect_and_setup()
-        # 2. 注册出站队列消费者（由 hub 处理 Agent 回复）
-        from src.core.hub import hub
-        await outbound_queue.consume(hub.consume_outbound)
-        logger.info("[MQ] RabbitMQ 消费者注册成功，生产模式就绪。")
+        await message_bus_client.ensure_ready()
+        logger.info("[MESSAGE-RELAY] backend-data 消息能力已就绪。")
     except Exception as exc:
         logger.error(
-            "[MQ] 警告：RabbitMQ 连接或初始化失败 ({})。网关将降级运行：所有 Prod 模式 Bot 的消息发送可能受阻，Test 模式 Bot 仍可正常运行。",
+            "[MESSAGE-RELAY] backend-data 消息能力暂不可用 ({})。"
+            "网关将保留 Test 模式并在后台重试。",
             exc,
         )
 
-    # 3. 启动后台重连与连接状态监控守护协程（每分钟执行一次检测重连）
-    async def _mq_reconnect_loop():
-        from src.core.hub import hub
-        while True:
-            try:
-                await asyncio.sleep(60.0)
-                if not mq_client.is_connected:
-                    logger.info("[MQ] 检测到 RabbitMQ 当前处于断开状态，尝试自动重连中...")
-                    outbound_queue = await mq_client.connect_and_setup()
-                    await outbound_queue.consume(hub.consume_outbound)
-                    logger.info("[MQ] RabbitMQ 自动重连成功并已重新订阅出站队列！")
-            except asyncio.CancelledError:
-                break
-            except Exception as err:
-                logger.error("[MQ] RabbitMQ 自动重连尝试失败，60秒后将再次重试: {}", err)
-
-    reconnect_task = asyncio.create_task(_mq_reconnect_loop())
-
-    # 4. 加载 Bot 配置并注入主事件循环
+    # 2. 加载 Bot 配置并注入主事件循环
     main_loop = asyncio.get_running_loop()
     manager.load_from_file()
     manager.inject_main_loop_to_all(main_loop)
 
-    # 5. 启动 Watchdog
+    # 3. 启动消息租约轮询和 Watchdog
+    relay_task = asyncio.create_task(_outbound_relay_loop())
     manager.start_watchdog()
     try:
         yield
     finally:
-        # 服务关闭时清理
-        reconnect_task.cancel()
+        relay_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await relay_task
         manager.shutdown()
-        await mq_client.close()
+        await message_bus_client.close()
+        close_auth_client()
 
 
 app: FastAPI = FastAPI(
     title="BOT Gateway Service",
-    description="智能机器人系统消息侧网关（三期：RabbitMQ 双模路由）",
+    description="智能机器人系统消息侧网关（基础设施经 backend-data 访问）",
     version="3.0.0",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(ApiException)
+async def api_exception_handler(
+    _request: Request,
+    exc: ApiException,
+) -> JSONResponse:
+    """统一输出业务错误码与具体错误信息。"""
+    return JSONResponse(
+        status_code=exc.http_status,
+        content=exc.to_response(),
+    )
+
 
 # CORS 中间件：允许前端管理后台跨域调用 Admin API。
 # 默认放行本地开发前端端口（5173），可通过环境变量 CORS_ORIGINS 扩展。
@@ -159,7 +146,11 @@ app.add_middleware(
     allow_origins=[
         "http://127.0.0.1:5173",
         "http://localhost:5173",
-        *(origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()),
+        *(
+            origin.strip()
+            for origin in os.getenv("CORS_ORIGINS", "").split(",")
+            if origin.strip()
+        ),
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
@@ -187,7 +178,7 @@ async def get_health() -> HealthResponse:
 @app.get(
     "/api/v1/admin/bots",
     response_model=list[BotStatusResponse],
-    dependencies=[Depends(verify_admin_api_key)],
+    dependencies=[Depends(require_permission(PermissionCode.BOT_MANAGE))],
 )
 async def get_bots() -> list[BotStatusResponse]:
     """获取所有 Bot 实例当前的运行详情。
@@ -200,7 +191,7 @@ async def get_bots() -> list[BotStatusResponse]:
 
 @app.post(
     "/api/v1/admin/bots",
-    dependencies=[Depends(verify_admin_api_key)],
+    dependencies=[Depends(require_permission(PermissionCode.BOT_MANAGE))],
 )
 async def add_or_update_bot(req: BotConfigRequest) -> dict[str, str]:
     """动态添加或更新 Bot 凭证。
@@ -221,12 +212,15 @@ async def add_or_update_bot(req: BotConfigRequest) -> dict[str, str]:
         app_secret=req.app_secret,
     )
     manager.add_or_update_bot(bot_cfg)
-    return {"status": "success", "message": f"Bot {req.bot_id} has been added or updated"}
+    return {
+        "status": "success",
+        "message": f"Bot {req.bot_id} has been added or updated",
+    }
 
 
 @app.delete(
     "/api/v1/admin/bots/{bot_id}",
-    dependencies=[Depends(verify_admin_api_key)],
+    dependencies=[Depends(require_permission(PermissionCode.BOT_MANAGE))],
 )
 async def delete_bot(bot_id: str) -> dict[str, str]:
     """销毁并注销指定的 Bot 实例，断开其与平台的长连接。

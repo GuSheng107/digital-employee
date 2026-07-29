@@ -14,6 +14,7 @@
 - redis-py
 - python-dotenv
 - MinIO Python SDK
+- aio-pika
 - Pydantic
 - pytest
 
@@ -63,6 +64,7 @@ router -> service -> repository/client wrapper
 - `core/database.py`：PostgreSQL 连接封装。
 - `core/redis_client.py`：Redis 客户端封装。
 - `core/minio_client.py`：MinIO 客户端封装。
+- `services/message_broker_service.py`：RabbitMQ 与 Redis 消息租约封装。
 - `utils/response.py`：统一响应格式。
 
 ## 数据库结构边界
@@ -97,6 +99,8 @@ router -> service -> repository/client wrapper
 - `GET /api/v1/storage/buckets`
 - `POST /api/v1/storage/test-object`
 - `GET /api/v1/storage/test-object`
+- `POST /api/v1/identity/*`
+- `POST /api/v1/infrastructure/message-broker/*`
 
 ## 测试
 

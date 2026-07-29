@@ -1,226 +1,193 @@
-"""认证业务编排层：双 token 体系核心实现。
+"""认证业务编排层。
 
-Token 为 opaque 字符串，状态完全存 Redis：
-- ``{prefix}:access:{token}``  -> user_id      (TTL = access_token_ttl)
-- ``{prefix}:refresh:{token}`` -> user_id      (TTL = refresh_token_ttl)
-- ``{prefix}:user:{uid}:tokens`` -> set[token]  (用户活跃 token 集合)
-
-不使用 JWT：所有状态在服务端，支持主动失效，避免客户端签名无法撤销的问题。
-各服务可本地直连同一 Redis 验证 access_token，去中心化鉴权。
+backend-auth 负责密码哈希校验与 token 生成；所有 PostgreSQL/Redis 读写
+通过 backend-share 的 data-client 交由 backend-data 执行。
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import hashlib
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from api_common import InvalidCredentialsError, UserDisabledError
+from data_client import DataClient, get_data_client
 
 from app.core.config import settings
-from app.core.redis_client import get_redis_client
-from app.core.security import generate_token, verify_password
-from app.models.user import User
-from app.schemas.auth import TokenPair, UserInfo
-
-
-class AuthError(Exception):
-    """认证业务异常基类。"""
-
-
-class InvalidCredentialsError(AuthError):
-    """用户名或密码错误。"""
-
-
-class UserDisabledError(AuthError):
-    """用户已被禁用。"""
-
-
-class InvalidTokenError(AuthError):
-    """token 无效或已过期。"""
+from app.core.security import generate_token, hash_password, verify_password
+from app.schemas.auth import MenuNode, TokenPair, UserInfo
 
 
 class AuthService:
-    """认证服务：登录、刷新、登出、当前用户信息。"""
+    """登录、注册、刷新、登出与用户上下文编排。"""
 
-    def __init__(self, session: Session) -> None:
-        self._session = session
-        self._redis = get_redis_client()
-        self._prefix = settings.token_redis_prefix
-        self._access_ttl = settings.access_token_ttl_seconds
-        self._refresh_ttl = settings.refresh_token_ttl_seconds
+    def __init__(self, data_client: DataClient | None = None) -> None:
+        self._data = data_client or get_data_client()
 
-    def login(self, username: str, password: str, client_ip: str | None = None) -> TokenPair:
-        """用户名密码登录，签发双 token。
-
-        Args:
-            username: 用户名。
-            password: 明文密码。
-            client_ip: 客户端 IP，用于记录 last_login_ip。
-
-        Returns:
-            双 token 响应对象。
-
-        Raises:
-            InvalidCredentialsError: 用户名不存在或密码错误。
-            UserDisabledError: 用户已被禁用。
-        """
-        user = self._fetch_user_by_username(username)
-        if user is None or not verify_password(password, user.password_hash):
-            raise InvalidCredentialsError("用户名或密码错误")
-        if user.status != 1:
-            raise UserDisabledError("用户已被禁用")
-
-        self._update_login_state(user, client_ip)
-        return self._issue_token_pair(user.id)
-
-    def refresh(self, refresh_token: str) -> TokenPair:
-        """用 refresh_token 换取新的双 token。
-
-        refresh 一次性使用：成功后旧 refresh_token 立即失效，
-        同时失效对应的 access_token，避免 token 滚动被劫持。
-
-        Args:
-            refresh_token: 上一次签发的 refresh_token。
-
-        Returns:
-            新的双 token 响应对象。
-
-        Raises:
-            InvalidTokenError: refresh_token 无效或已过期。
-        """
-        user_id = self._read_token("refresh", refresh_token)
-        if user_id is None:
-            raise InvalidTokenError("refresh_token 无效或已过期")
-
-        # 一次性使用：刷新成功后立即撤销旧 refresh 与对应 access
-        self._revoke_token("refresh", refresh_token)
-        return self._issue_token_pair(user_id)
-
-    def logout(self, access_token: str, refresh_token: str | None = None) -> None:
-        """登出，撤销 access_token 与可选的 refresh_token。
-
-        Args:
-            access_token: 当前 access_token，必填。
-            refresh_token: 当前 refresh_token，可选。
-        """
-        self._revoke_token("access", access_token)
-        if refresh_token:
-            self._revoke_token("refresh", refresh_token)
-
-    def get_current_user(self, access_token: str) -> UserInfo:
-        """根据 access_token 获取当前登录用户信息。
-
-        Args:
-            access_token: 请求头携带的 access_token。
-
-        Returns:
-            用户信息（含角色 code 列表与权限 code 列表）。
-
-        Raises:
-            InvalidTokenError: access_token 无效或已过期。
-        """
-        user_id = self._read_token("access", access_token)
-        if user_id is None:
-            raise InvalidTokenError("access_token 无效或已过期")
-
-        user = self._session.get(User, user_id)
-        if user is None or user.deleted_at is not None:
-            raise InvalidTokenError("用户不存在或已删除")
-        if user.status != 1:
-            raise UserDisabledError("用户已被禁用")
-
-        role_codes = [r.code for r in user.roles]
-        permission_codes = [
-            p.code for role in user.roles for p in role.permissions
-        ]
-        return UserInfo(
-            id=user.id,
-            username=user.username,
-            nickname=user.nickname,
-            email=user.email,
-            phone=user.phone,
-            avatar_url=user.avatar_url,
-            is_vip=user.is_vip,
-            vip_level=user.vip_level,
-            status=user.status,
-            roles=role_codes,
-            permissions=permission_codes,
+    def register(
+        self,
+        *,
+        username: str,
+        password: str,
+        email: str,
+        phone: str,
+        invite_code: str,
+        client_ip: str | None = None,
+    ) -> TokenPair:
+        """注册用户并签发双 token。"""
+        self._consume_rate_limit(
+            bucket="register",
+            identifier=f"{client_ip or 'unknown'}:{username.casefold()}",
+            limit=settings.register_rate_limit,
+            window_seconds=settings.register_rate_window_seconds,
         )
-
-    # ---------- 内部工具方法 ----------
-
-    def _fetch_user_by_username(self, username: str) -> User | None:
-        """按用户名查询未软删的用户。"""
-        stmt = select(User).where(
-            User.username == username,
-            User.deleted_at.is_(None),
-        )
-        return self._session.execute(stmt).scalar_one_or_none()
-
-    def _update_login_state(self, user: User, client_ip: str | None) -> None:
-        """更新用户最近登录时间与 IP。"""
-        user.last_login_at = datetime.now(UTC)
-        if client_ip:
-            user.last_login_ip = client_ip
-        self._session.commit()
-
-    def _issue_token_pair(self, user_id: int) -> TokenPair:
-        """签发一对新的 access/refresh token 并写入 Redis。"""
         access_token = generate_token()
         refresh_token = generate_token()
-
-        self._redis.set(
-            self._access_key(access_token),
-            str(user_id),
-            ttl_seconds=self._access_ttl,
+        metadata = self._data.register_identity(
+            username=username,
+            password_hash=hash_password(password),
+            email=email,
+            phone=phone,
+            invite_code=invite_code,
+            access_token=access_token,
+            refresh_token=refresh_token,
         )
-        self._redis.set(
-            self._refresh_key(refresh_token),
-            str(user_id),
-            ttl_seconds=self._refresh_ttl,
+        return self._build_token_pair(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            metadata=metadata,
         )
-        # 维护用户活跃 token 集合（用于全量登出），TTL 跟随 refresh
-        user_tokens_key = self._user_tokens_key(user_id)
-        self._redis.sadd(user_tokens_key, access_token, refresh_token)
-        self._redis.expire(user_tokens_key, self._refresh_ttl)
 
+    def login(
+        self,
+        username: str,
+        password: str,
+        client_ip: str | None = None,
+    ) -> TokenPair:
+        """校验凭据并落实同账号单会话策略。"""
+        self._consume_rate_limit(
+            bucket="login",
+            identifier=f"{client_ip or 'unknown'}:{username.casefold()}",
+            limit=settings.login_rate_limit,
+            window_seconds=settings.login_rate_window_seconds,
+        )
+        credentials = self._data.get_credentials(username)
+        if (
+            credentials is None
+            or not isinstance(credentials.get("password_hash"), str)
+            or not verify_password(password, credentials["password_hash"])
+        ):
+            raise InvalidCredentialsError(message="用户名或密码错误")
+        if credentials.get("status") != 1:
+            raise UserDisabledError(message="用户已被禁用")
+        user_id = credentials.get("id")
+        if not isinstance(user_id, int):
+            raise InvalidCredentialsError(message="用户名或密码错误")
+
+        access_token = generate_token()
+        refresh_token = generate_token()
+        metadata = self._data.complete_login(
+            user_id=user_id,
+            client_ip=client_ip,
+            access_token=access_token,
+            refresh_token=refresh_token,
+        )
+        return self._build_token_pair(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            metadata=metadata,
+        )
+
+    def refresh(self, refresh_token: str) -> TokenPair:
+        """一次性轮换 refresh/access token。"""
+        access_token = generate_token()
+        new_refresh_token = generate_token()
+        metadata = self._data.refresh_identity_session(
+            refresh_token=refresh_token,
+            new_access_token=access_token,
+            new_refresh_token=new_refresh_token,
+        )
+        return self._build_token_pair(
+            access_token=access_token,
+            refresh_token=new_refresh_token,
+            metadata=metadata,
+        )
+
+    def logout(
+        self,
+        access_token: str,
+        refresh_token: str | None = None,
+    ) -> None:
+        """撤销 access token 与可选 refresh token。"""
+        self._data.logout_identity_session(
+            access_token=access_token,
+            refresh_token=refresh_token,
+        )
+
+    def get_current_user(self, access_token: str) -> UserInfo:
+        """读取可信用户上下文并构建菜单树。"""
+        payload = self._data.get_identity_context(access_token)
+        raw_menus = payload.get("menus")
+        menu_nodes = (
+            [MenuNode.model_validate(item) for item in raw_menus]
+            if isinstance(raw_menus, list)
+            else []
+        )
+        payload["menus"] = self._build_menu_tree(menu_nodes)
+        return UserInfo.model_validate(payload)
+
+    def get_authorization_context(self, access_token: str) -> UserInfo:
+        """读取不包含菜单树的跨服务最小鉴权上下文。"""
+        payload = self._data.get_identity_context(
+            access_token,
+            include_menus=False,
+        )
+        payload["menus"] = []
+        return UserInfo.model_validate(payload)
+
+    @staticmethod
+    def _build_menu_tree(nodes: list[MenuNode]) -> list[MenuNode]:
+        """将扁平菜单按 parent_id 构建为树。"""
+        node_map = {node.id: node for node in nodes}
+        roots: list[MenuNode] = []
+        for node in nodes:
+            if node.parent_id == 0 or node.parent_id not in node_map:
+                roots.append(node)
+            else:
+                node_map[node.parent_id].children.append(node)
+        roots.sort(key=lambda node: node.sort)
+        for node in nodes:
+            node.children.sort(key=lambda child: child.sort)
+        return roots
+
+    @staticmethod
+    def _build_token_pair(
+        *,
+        access_token: str,
+        refresh_token: str,
+        metadata: dict,
+    ) -> TokenPair:
+        """把 backend-data 返回的 TTL 元数据组装为公开 token 响应。"""
         return TokenPair(
             access_token=access_token,
             refresh_token=refresh_token,
-            access_expires_in=self._access_ttl,
-            refresh_expires_in=self._refresh_ttl,
-            user_id=user_id,
+            access_expires_in=int(metadata["access_expires_in"]),
+            refresh_expires_in=int(metadata["refresh_expires_in"]),
+            user_id=int(metadata["user_id"]),
+            must_change_password=bool(metadata.get("must_change_password", False)),
         )
 
-    def _read_token(self, kind: str, token: str) -> int | None:
-        """读取 token 对应的 user_id，不存在返回 None。"""
-        key = self._token_key(kind, token)
-        raw = self._redis.get(key)
-        if raw is None:
-            return None
-        try:
-            return int(raw)
-        except (TypeError, ValueError):
-            return None
-
-    def _revoke_token(self, kind: str, token: str) -> None:
-        """撤销单个 token。"""
-        key = self._token_key(kind, token)
-        self._redis.delete(key)
-
-    def _access_key(self, token: str) -> str:
-        return f"{self._prefix}:access:{token}"
-
-    def _refresh_key(self, token: str) -> str:
-        return f"{self._prefix}:refresh:{token}"
-
-    def _token_key(self, kind: str, token: str) -> str:
-        """根据 kind（access/refresh）拼接 Redis key。"""
-        if kind == "access":
-            return self._access_key(token)
-        if kind == "refresh":
-            return self._refresh_key(token)
-        raise ValueError(f"unknown token kind: {kind}")
-
-    def _user_tokens_key(self, user_id: int) -> str:
-        return f"{self._prefix}:user:{user_id}:tokens"
+    def _consume_rate_limit(
+        self,
+        *,
+        bucket: str,
+        identifier: str,
+        limit: int,
+        window_seconds: int,
+    ) -> None:
+        """委托 backend-data 消费认证限流计数。"""
+        identifier_hash = hashlib.sha256(identifier.encode("utf-8")).hexdigest()
+        self._data.consume_identity_rate_limit(
+            bucket=bucket,
+            identifier_hash=identifier_hash,
+            limit=limit,
+            window_seconds=window_seconds,
+        )

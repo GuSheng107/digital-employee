@@ -1,4 +1,5 @@
 from io import BytesIO
+from threading import Lock
 from urllib.parse import urlparse
 
 from minio import Minio
@@ -18,27 +19,30 @@ class MinioClientWrapper:
         self.bucket_name = settings.minio_default_bucket
         self.client: Minio | None = None
         self._initialized = False
+        self._init_lock = Lock()
 
     def init_client(self) -> None:
         if self._initialized:
             return
-
-        self.client = Minio(
-            endpoint=self.endpoint,
-            access_key=self.access_key,
-            secret_key=self.secret_key,
-            secure=self.secure,
-            http_client=PoolManager(
-                timeout=Timeout(
-                    connect=settings.dependency_timeout_seconds,
-                    read=settings.dependency_timeout_seconds,
+        with self._init_lock:
+            if self._initialized:
+                return
+            self.client = Minio(
+                endpoint=self.endpoint,
+                access_key=self.access_key,
+                secret_key=self.secret_key,
+                secure=self.secure,
+                http_client=PoolManager(
+                    timeout=Timeout(
+                        connect=settings.dependency_timeout_seconds,
+                        read=settings.dependency_timeout_seconds,
+                    ),
+                    retries=False,
                 ),
-                retries=False,
-            ),
-        )
-        if not self.client.bucket_exists(self.bucket_name):
-            self.client.make_bucket(self.bucket_name)
-        self._initialized = True
+            )
+            if not self.client.bucket_exists(self.bucket_name):
+                self.client.make_bucket(self.bucket_name)
+            self._initialized = True
 
     def ensure_bucket(self, bucket_name: str | None = None) -> dict:
         self.init_client()
@@ -100,6 +104,32 @@ class MinioClientWrapper:
         finally:
             response.close()
             response.release_conn()
+
+    def download_file_with_content_type(
+        self,
+        *,
+        object_name: str,
+        bucket_name: str | None = None,
+    ) -> tuple[bytes, str]:
+        """下载对象内容及其存储时记录的 MIME 类型。
+
+        Args:
+            object_name: MinIO 对象名。
+            bucket_name: 可选桶名，默认使用业务桶。
+
+        Returns:
+            ``(文件字节, MIME 类型)``。
+        """
+        client = self._require_client()
+        bucket = bucket_name or self.bucket_name
+        stat = client.stat_object(bucket_name=bucket, object_name=object_name)
+        response = client.get_object(bucket_name=bucket, object_name=object_name)
+        try:
+            content = response.read()
+        finally:
+            response.close()
+            response.release_conn()
+        return content, stat.content_type or "application/octet-stream"
 
     def build_file_url(self, *, object_name: str, bucket_name: str | None = None) -> str:
         scheme = "https" if self.secure else "http"

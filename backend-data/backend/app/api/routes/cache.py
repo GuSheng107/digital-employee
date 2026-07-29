@@ -1,8 +1,7 @@
 from fastapi import APIRouter
 
-from app.schemas.common import ApiResponse
+from api_common import ApiResponse, success_response
 from app.services.cache_service import CacheService
-from app.utils.response import success_response
 
 
 router = APIRouter()

@@ -1,9 +1,9 @@
+from auth_utils import PermissionCode
 from fastapi import APIRouter, Depends
 
-from app.api.deps import verify_api_key
-from app.schemas.common import ApiResponse
+from app.api.deps import require_service_or_permission
+from api_common import ApiResponse, success_response
 from app.services.health_service import HealthService
-from app.utils.response import success_response
 
 
 router = APIRouter()
@@ -15,11 +15,17 @@ def api_health() -> dict:
 
 
 # /dependencies 返回依赖探活详情（失败时可能携带异常消息），
-# 单独挂载 API Key 认证；基础 /health 仍豁免以支持 K8s 探活。
+# 单独要求服务 API Key 或 Dashboard 权限；基础 /health 仍豁免以支持探活。
 @router.get(
     "/dependencies",
     response_model=ApiResponse,
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[
+        Depends(
+            require_service_or_permission(
+                PermissionCode.DATA_PLATFORM_DASHBOARD
+            )
+        )
+    ],
 )
 def dependencies() -> dict:
     statuses = HealthService().test_dependencies()
