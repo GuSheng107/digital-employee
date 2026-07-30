@@ -1,10 +1,11 @@
 import { useNavigate } from 'react-router-dom';
-import { Form, Input, Button, message } from 'antd';
+import { Button, Form, Input, message } from 'antd';
 import {
   GiftOutlined,
   LockOutlined,
   MailOutlined,
   PhoneOutlined,
+  SafetyCertificateOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { useUserStore, getRegisterErrorMessage } from '@/store/user-store';
@@ -18,6 +19,7 @@ import {
   normalizePhoneNumber,
 } from '@/utils/identity-validation';
 import logo from '@/assets/images/avatar/logo.svg';
+import innovationArt from '@/assets/images/illustrations/innovation-pana.svg';
 import styles from './index.module.css';
 import { useRateLimitCountdown } from '@/hooks/use-rate-limit-countdown';
 import { getRateLimitRetryAfter } from '@/utils/request';
@@ -69,12 +71,10 @@ export default function Register(): React.ReactElement {
         captcha_answer: values.captcha_answer,
       });
       message.success('注册成功');
-      // 注册成功后自动登录，跳转首页
       navigate('/', { replace: true });
     } catch (error) {
       const retryAfter = getRateLimitRetryAfter(error);
       if (retryAfter) startCountdown(retryAfter);
-      // 用 message 全局提示替代 Alert，在深色背景上更醒目
       message.error(getRegisterErrorMessage(error));
       form.setFieldValue('captcha_answer', undefined);
       await refreshCaptcha();
@@ -83,42 +83,67 @@ export default function Register(): React.ReactElement {
 
   return (
     <div className={styles.container}>
-      {/* 左侧品牌展示区 */}
-      <div className={styles.brandPanel}>
-        <div className={styles.brandBg} />
-        <div className={`${styles.brandGlow} ${styles.brandGlow1}`} />
-        <div className={`${styles.brandGlow} ${styles.brandGlow2}`} />
-        <div className={`${styles.brandGlow} ${styles.brandGlow3}`} />
-
-        <div className={styles.brandContent}>
-          <div className={styles.brandLogo}>
-            <div className={styles.brandLogoIcon}>
-              <img src={logo} alt="logo" className={styles.brandLogoImg} />
-            </div>
-            <span className={styles.brandLogoText}>Digital Employee</span>
-          </div>
-
-          <h1 className={styles.brandTitle}>
-            加入我们
-            <br />
-            开启创造之旅
-          </h1>
-
-          <p className={styles.brandSubtitle}>
-            让人<span className={styles.brandSubtitleAccent}>回归创造</span>
-            ，把重复交给 AI
-          </p>
-          <p className={styles.brandTagline}>JOIN · CREATE · ELEVATE</p>
+      <section className={styles.brandPanel} aria-label="品牌展示">
+        <div className={styles.brandAtmosphere} aria-hidden="true">
+          <span className={`${styles.orb} ${styles.orbA}`} />
+          <span className={`${styles.orb} ${styles.orbB}`} />
+          <span className={`${styles.orb} ${styles.orbC}`} />
+          <span className={styles.wave} />
+          <span className={`${styles.spark} ${styles.spark1}`} />
+          <span className={`${styles.spark} ${styles.spark2}`} />
+          <span className={`${styles.spark} ${styles.spark3}`} />
+          <span className={`${styles.spark} ${styles.spark4}`} />
+          <span className={styles.sheen} />
         </div>
 
-        <div className={styles.brandFooter}>© 2026 Digital Employee. All rights reserved.</div>
-      </div>
+        <header className={styles.brandHeader}>
+          <div className={styles.brandMark}>
+            <img src={logo} alt="" className={styles.brandMarkImg} />
+          </div>
+          <span className={styles.brandName}>Digital Employee</span>
+        </header>
 
-      {/* 右侧注册表单区 */}
-      <div className={styles.formPanel}>
-        <div className={styles.formCard}>
-          <h2 className={styles.formTitle}>创建账号</h2>
-          <p className={styles.formSubtitle}>填写信息完成注册</p>
+        <div className={styles.heroVisual}>
+          <div className={styles.heroGlow} />
+          <img
+            src={innovationArt}
+            alt=""
+            className={styles.heroArt}
+          />
+          <span className={styles.heroShadow} />
+        </div>
+
+        <div className={styles.brandCopy}>
+          <h1 className={styles.brandTitle}>加入团队</h1>
+          <p className={styles.brandSubtitle}>
+            几分钟完成注册，让数字员工开始替你处理重复工作。
+          </p>
+        </div>
+
+        <footer className={styles.brandFooter}>
+          <span>© 2026 Digital Employee</span>
+        </footer>
+      </section>
+
+      <section className={styles.formPanel}>
+        <div className={styles.formAtmosphere} aria-hidden="true">
+          <span className={`${styles.formOrb} ${styles.formOrbA}`} />
+          <span className={`${styles.formOrb} ${styles.formOrbB}`} />
+          <span className={`${styles.formOrb} ${styles.formOrbC}`} />
+          <span className={styles.formGrid} />
+          <span className={styles.formRing} />
+          <span className={styles.formSpeck} />
+        </div>
+
+        <div className={styles.formStage}>
+          <p className={styles.formGreeting}>欢迎加入</p>
+          <h2 className={styles.formTitle}>
+            创建账号
+            <em>开启你的协作中枢</em>
+          </h2>
+          <p className={styles.formSubtitle}>
+            填写基础信息与邀请码，注册后即可登录使用。
+          </p>
 
           <Form
             form={form}
@@ -127,6 +152,7 @@ export default function Register(): React.ReactElement {
             onFinish={handleSubmit}
             autoComplete="off"
             className={styles.form}
+            requiredMark={false}
           >
             <Form.Item
               name="username"
@@ -138,110 +164,114 @@ export default function Register(): React.ReactElement {
               className={styles.formField}
             >
               <Input
-                prefix={<UserOutlined style={{ color: '#94a3b8' }} />}
-                placeholder="请输入用户名"
+                prefix={<UserOutlined className={styles.inputIcon} />}
+                placeholder="4-64 个字符"
                 className={styles.formInput}
                 size="large"
                 autoComplete="username"
               />
             </Form.Item>
 
-            <Form.Item
-              name="password"
-              label={<span className={styles.formLabel}>密码</span>}
-              rules={[
-                { required: true, message: '请输入密码' },
-                {
-                  pattern: PASSWORD_COMPLEXITY_PATTERN,
-                  message: PASSWORD_COMPLEXITY_MESSAGE,
-                },
-              ]}
-              className={styles.formField}
-            >
-              <Input.Password
-                prefix={<LockOutlined style={{ color: '#94a3b8' }} />}
-                placeholder="请输入密码"
-                className={styles.formInput}
-                size="large"
-                autoComplete="new-password"
-              />
-            </Form.Item>
-
-            <Form.Item
-              name="confirmPassword"
-              label={<span className={styles.formLabel}>确认密码</span>}
-              dependencies={['password']}
-              rules={[
-                { required: true, message: '请再次输入密码' },
-                ({ getFieldValue }) => ({
-                  validator(_, value) {
-                    if (!value || getFieldValue('password') === value) {
-                      return Promise.resolve();
-                    }
-                    return Promise.reject(new Error('两次输入的密码不一致'));
+            <div className={styles.fieldPair}>
+              <Form.Item
+                name="password"
+                label={<span className={styles.formLabel}>密码</span>}
+                rules={[
+                  { required: true, message: '请输入密码' },
+                  {
+                    pattern: PASSWORD_COMPLEXITY_PATTERN,
+                    message: PASSWORD_COMPLEXITY_MESSAGE,
                   },
-                }),
-              ]}
-              className={styles.formField}
-            >
-              <Input.Password
-                prefix={<LockOutlined style={{ color: '#94a3b8' }} />}
-                placeholder="请再次输入密码"
-                className={styles.formInput}
-                size="large"
-                autoComplete="new-password"
-              />
-            </Form.Item>
+                ]}
+                className={styles.formField}
+              >
+                <Input.Password
+                  prefix={<LockOutlined className={styles.inputIcon} />}
+                  placeholder="设置密码"
+                  className={styles.formInput}
+                  size="large"
+                  autoComplete="new-password"
+                />
+              </Form.Item>
 
-            <Form.Item
-              name="email"
-              label={<span className={styles.formLabel}>邮箱</span>}
-              rules={[
-                { required: true, message: '请输入邮箱' },
-                { pattern: EMAIL_PATTERN, message: '请输入有效的邮箱地址' },
-              ]}
-              className={styles.formField}
-            >
-              <Input
-                prefix={<MailOutlined style={{ color: '#94a3b8' }} />}
-                placeholder="请输入邮箱"
-                className={styles.formInput}
-                size="large"
-                autoComplete="email"
-              />
-            </Form.Item>
+              <Form.Item
+                name="confirmPassword"
+                label={<span className={styles.formLabel}>确认密码</span>}
+                dependencies={['password']}
+                rules={[
+                  { required: true, message: '请再次输入密码' },
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      if (!value || getFieldValue('password') === value) {
+                        return Promise.resolve();
+                      }
+                      return Promise.reject(new Error('两次输入的密码不一致'));
+                    },
+                  }),
+                ]}
+                className={styles.formField}
+              >
+                <Input.Password
+                  prefix={<LockOutlined className={styles.inputIcon} />}
+                  placeholder="再次输入"
+                  className={styles.formInput}
+                  size="large"
+                  autoComplete="new-password"
+                />
+              </Form.Item>
+            </div>
 
-            <Form.Item
-              name="phone"
-              label={<span className={styles.formLabel}>手机号</span>}
-              rules={[
-                { required: true, message: '请输入手机号' },
-                {
-                  validator: (_, value: string | undefined) => {
-                    if (!value || normalizePhoneNumber(value)) {
-                      return Promise.resolve();
-                    }
-                    return Promise.reject(
-                      new Error(`请输入有效的 ${PHONE_DIAL_PREFIX} 手机号码`),
-                    );
+            <div className={styles.fieldPair}>
+              <Form.Item
+                name="email"
+                label={<span className={styles.formLabel}>邮箱</span>}
+                rules={[
+                  { required: true, message: '请输入邮箱' },
+                  { pattern: EMAIL_PATTERN, message: '请输入有效的邮箱地址' },
+                ]}
+                className={styles.formField}
+              >
+                <Input
+                  prefix={<MailOutlined className={styles.inputIcon} />}
+                  placeholder="name@company.com"
+                  className={styles.formInput}
+                  size="large"
+                  autoComplete="email"
+                />
+              </Form.Item>
+
+              <Form.Item
+                name="phone"
+                label={<span className={styles.formLabel}>手机号</span>}
+                rules={[
+                  { required: true, message: '请输入手机号' },
+                  {
+                    validator: (_, value: string | undefined) => {
+                      if (!value || normalizePhoneNumber(value)) {
+                        return Promise.resolve();
+                      }
+                      return Promise.reject(
+                        new Error(`请输入有效的 ${PHONE_DIAL_PREFIX} 手机号码`),
+                      );
+                    },
                   },
-                },
-              ]}
-              className={styles.formField}
-            >
-              <Input
-                prefix={
-                  <>
-                    <PhoneOutlined style={{ color: '#94a3b8' }} />
-                    <span>{PHONE_DIAL_PREFIX}</span>
-                  </>
-                }
-                placeholder="请输入手机号"
-                className={styles.formInput}
-                size="large"
-                autoComplete="tel"
-              />
-            </Form.Item>
+                ]}
+                className={styles.formField}
+              >
+                <Input
+                  prefix={
+                    <span className={styles.phonePrefix}>
+                      <PhoneOutlined className={styles.inputIcon} />
+                      <span>{PHONE_DIAL_PREFIX}</span>
+                    </span>
+                  }
+                  placeholder="手机号码"
+                  className={styles.formInput}
+                  size="large"
+                  autoComplete="tel"
+                />
+              </Form.Item>
+            </div>
 
             <Form.Item
               name="invite_code"
@@ -256,7 +286,7 @@ export default function Register(): React.ReactElement {
               className={styles.formField}
             >
               <Input
-                prefix={<GiftOutlined style={{ color: '#94a3b8' }} />}
+                prefix={<GiftOutlined className={styles.inputIcon} />}
                 placeholder="请输入邀请码"
                 className={styles.formInput}
                 size="large"
@@ -267,7 +297,12 @@ export default function Register(): React.ReactElement {
 
             <Form.Item
               name="captcha_answer"
-              label={<span className={styles.formLabel}>图片验证码</span>}
+              label={
+                <span className={styles.formLabel}>
+                  <SafetyCertificateOutlined className={styles.labelIcon} />
+                  验证码
+                </span>
+              }
               rules={[
                 { required: true, message: '请输入计算结果' },
                 { pattern: /^\d{1,3}$/, message: '请输入正确的数字结果' },
@@ -285,7 +320,7 @@ export default function Register(): React.ReactElement {
               />
             </Form.Item>
 
-            <Form.Item className={styles.formField}>
+            <Form.Item className={styles.submitField}>
               <Button
                 type="primary"
                 htmlType="submit"
@@ -295,23 +330,28 @@ export default function Register(): React.ReactElement {
                 size="large"
               >
                 {loading
-                  ? '注册中...'
+                  ? '正在注册...'
                   : remainingSeconds > 0
                     ? `${remainingSeconds} 秒后重试`
-                    : '注 册'}
+                    : '注册'}
               </Button>
             </Form.Item>
           </Form>
 
-          <div className={styles.registerLink}>
-            已有账号？<a onClick={() => navigate('/login')}>返回登录</a>
-          </div>
+          <p className={styles.registerLine}>
+            已有账号？
+            <button
+              type="button"
+              className={styles.registerAction}
+              onClick={() => navigate('/login')}
+            >
+              返回登录
+            </button>
+          </p>
 
-          <div className={styles.formFooter}>
-            注册即代表同意遵守平台使用规范
-          </div>
+          <p className={styles.formNote}>注册即代表同意遵守平台使用规范</p>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
