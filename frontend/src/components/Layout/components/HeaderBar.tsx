@@ -85,10 +85,16 @@ export default function HeaderBar(): React.ReactElement {
     || userInfo?.username
     || (profileLoading ? '加载中' : profileError ? '加载失败' : '未登录');
   const breadcrumbItems = useMemo(
-    () => [
-      { title: '数字员工' },
-      ...(findMenuTrail(menus, location.pathname) ?? []).map((title) => ({ title })),
-    ],
+    () => {
+      const menuTrail = findMenuTrail(menus, location.pathname) ?? [];
+      const normalizedTrail = menuTrail[0] === '数字员工'
+        ? menuTrail.slice(1)
+        : menuTrail;
+      return [
+        { title: '数字员工' },
+        ...normalizedTrail.map((title) => ({ title })),
+      ];
+    },
     [location.pathname, menus],
   );
   const systemPageByPath = useMemo(

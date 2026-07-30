@@ -122,8 +122,9 @@ export const router = createBrowserRouter([
           [PERMISSION_CODE.OBSERVABILITY_LOG_VIEW],
         ),
       },
+      // 数字员工-Bot管理
       {
-        path: 'system/bot',
+        path: 'digital-employee/bots',
         element: withPermission(
           <BotManagement />,
           [PERMISSION_CODE.BOT_MANAGE],

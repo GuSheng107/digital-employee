@@ -372,6 +372,9 @@ requires-dist = [
     { name = "observability", editable = "../backend-share/observability" },
 ]
 
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.0" }]
+
 [[package]]
 name = "fastapi"
 version = "0.140.7"

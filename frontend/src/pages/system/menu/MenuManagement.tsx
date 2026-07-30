@@ -43,7 +43,7 @@ import {
   type PermissionItem,
 } from '@/api/permission-api';
 import { useUserStore } from '@/store/user-store';
-import { getMenuIcon } from '@/constants/menu-icons';
+import { getMenuIcon, MENU_ICON_NAMES } from '@/constants/menu-icons';
 import { getRequestErrorMessage } from '@/utils/request';
 import SystemPage from '@/components/system-page/SystemPage';
 import styles from './index.module.css';
@@ -682,10 +682,23 @@ export default function MenuManagement(): React.ReactElement {
           <Form.Item
             label="图标名"
             name="icon"
-            rules={[{ max: 64, message: '图标名不超过 64 字符' }]}
-            extra="antd 图标组件名，如 DatabaseOutlined、SettingOutlined"
+            extra="从前端已注册的 Ant Design 图标中选择；留空则使用默认图标"
           >
-            <Input placeholder="DatabaseOutlined" />
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="value"
+              placeholder="选择菜单图标"
+              options={MENU_ICON_NAMES.map((iconName) => ({
+                value: iconName,
+                label: (
+                  <Space size={8}>
+                    {getMenuIcon(iconName)}
+                    <span>{iconName}</span>
+                  </Space>
+                ),
+              }))}
+            />
           </Form.Item>
 
           <Form.Item

@@ -231,6 +231,9 @@ requires-dist = [
     { name = "observability", editable = "../backend-share/observability" },
 ]
 
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.0" }]
+
 [[package]]
 name = "dnspython"
 version = "2.8.0"

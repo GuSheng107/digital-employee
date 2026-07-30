@@ -37,7 +37,10 @@ export default function BotManagement(): React.ReactElement {
   }
 
   useEffect(() => {
-    void loadData(1, DEFAULT_PAGE_SIZE);
+    const timerId = window.setTimeout(() => {
+      void loadData(1, DEFAULT_PAGE_SIZE);
+    }, 0);
+    return () => window.clearTimeout(timerId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -145,7 +148,8 @@ export default function BotManagement(): React.ReactElement {
 
   return (
     <SystemPage
-      title="机器人配置管理"
+      title="Bot管理"
+      sectionLabel="数字员工"
       actions={
         <div style={{ display: 'flex', gap: 8 }}>
           <Button icon={<ReloadOutlined />} onClick={() => void loadData(page, pageSize)}>
