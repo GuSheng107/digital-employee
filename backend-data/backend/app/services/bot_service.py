@@ -1,14 +1,23 @@
 """Bot 管理业务逻辑层。
 
 负责 Bot 的 CRUD 操作，包括分页查询、创建、更新、软删除。
+
+app_secret 加密策略：
+- 写入（create/update）：调用 ``secret_crypto.encrypt`` 加密后落库，密文带
+  ``enc:v1:`` 前缀。
+- 读取给 Gateway（``list_active_bots``）：调 ``secret_crypto.decrypt`` 还原明文，
+  Gateway 拿到的是明文，零改动。
+- 读取给前端（``list_bots``）：app_secret 脱敏为 ``***``，不暴露密文也不暴露明文。
+- 兼容过渡：``decrypt`` 见到无前缀的值视为明文原样返回，存量数据迁移前可正常工作。
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from api_common import DuplicateResourceError, ResourceNotFoundError
+from secret_crypto import decrypt, encrypt
 
 from app.core.database import DatabaseRole, get_database_client
 from app.models.bot import Bot
@@ -19,7 +28,8 @@ def _bot_to_dict(bot: Bot, *, mask_secret: bool = False) -> dict[str, Any]:
 
     Args:
         bot: Bot ORM 实例。
-        mask_secret: 是否脱敏 app_secret。
+        mask_secret: 是否脱敏 app_secret。脱敏时返回 ``***``；不脱敏时返回
+            解密后的明文（供 Gateway 使用）。
     """
     return {
         "id": bot.id,
@@ -27,7 +37,7 @@ def _bot_to_dict(bot: Bot, *, mask_secret: bool = False) -> dict[str, Any]:
         "name": bot.name,
         "platform": bot.platform,
         "app_id": bot.app_id,
-        "app_secret": "***" if mask_secret else bot.app_secret,
+        "app_secret": "***" if mask_secret else decrypt(bot.app_secret or ""),
         "mode": bot.mode,
         "status": bot.status,
         "created_at": bot.created_at.isoformat() if bot.created_at else None,
@@ -87,14 +97,14 @@ class BotService:
             name: Bot 显示名称。
             platform: 平台类型（feishu / wechat）。
             app_id: 平台应用 ID。
-            app_secret: 平台应用密钥。
+            app_secret: 平台应用密钥（明文传入，service 层加密后落库）。
             mode: 运行模式（test / prod）。
 
         Returns:
             创建后的 Bot 字典（app_secret 脱敏）。
 
         Raises:
-            DuplicateResourceError: bot_id 已存在。
+            DuplicateResourceError: bot_id 已存在（未删除范围内）。
         """
         with self._db.session() as session:
             existing = (
@@ -112,7 +122,7 @@ class BotService:
                 name=name,
                 platform=platform,
                 app_id=app_id,
-                app_secret=app_secret,
+                app_secret=encrypt(app_secret),
                 mode=mode,
                 status=1,
             )
@@ -126,7 +136,7 @@ class BotService:
 
         Args:
             bot_id: 目标 Bot 的业务标识。
-            **fields: 待更新字段。
+            **fields: 待更新字段。若包含 ``app_secret``，会先加密再落库。
 
         Returns:
             更新后的 Bot 字典（app_secret 脱敏）。
@@ -146,13 +156,16 @@ class BotService:
                 )
             for key, value in fields.items():
                 if value is not None and hasattr(bot, key):
-                    setattr(bot, key, value)
+                    setattr(bot, key, encrypt(value) if key == "app_secret" else value)
             session.commit()
             session.refresh(bot)
             return _bot_to_dict(bot, mask_secret=True)
 
     def delete_bot(self, *, bot_id: str) -> dict[str, Any]:
         """软删除 Bot（填写 deleted_at）。
+
+        软删除后同 ``bot_id`` 可再次创建（partial unique index 仅约束
+        ``deleted_at IS NULL`` 的行），实现「删除后重建」语义。
 
         Args:
             bot_id: 目标 Bot 的业务标识。
@@ -173,6 +186,6 @@ class BotService:
                 raise ResourceNotFoundError(
                     message=f"Bot '{bot_id}' 不存在",
                 )
-            bot.deleted_at = datetime.now(tz=timezone.utc)
+            bot.deleted_at = datetime.now(tz=UTC)
             session.commit()
             return {"bot_id": bot_id, "deleted": True}

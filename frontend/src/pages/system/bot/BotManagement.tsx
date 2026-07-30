@@ -38,6 +38,7 @@ export default function BotManagement(): React.ReactElement {
 
   useEffect(() => {
     void loadData(1, DEFAULT_PAGE_SIZE);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function handleCreate(): void {

@@ -25,4 +25,3 @@ export const InviteCode = lazy(() => import('@/pages/system/user/invite-code/Inv
 export const MenuManagement = lazy(() => import('@/pages/system/menu/MenuManagement'));
 export const LogQuery = lazy(() => import('@/pages/system/log-query/LogQuery'));
 export const BotManagement = lazy(() => import('@/pages/system/bot/BotManagement'));
-

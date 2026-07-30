@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """飞书消息协议适配器。
 
 负责在飞书的原生 Event/API Payload 与全局归一化 StandardMessage 协议之间进行双向翻译，
@@ -79,9 +78,7 @@ class FeishuAdapter(BaseAdapter):
             except Exception:
                 user_text = event.message.content
 
-            standard_msg.content.append(
-                MessageContent(msg_type=MessageType.TEXT, text=user_text)
-            )
+            standard_msg.content.append(MessageContent(msg_type=MessageType.TEXT, text=user_text))
 
         # 2. 单张图片消息类型转换
         elif msg_type == "image":
@@ -102,9 +99,7 @@ class FeishuAdapter(BaseAdapter):
                 session_id=session_id,
             )
             if storage_url:
-                standard_msg.content.append(
-                    MessageContent(msg_type="image", file_url=storage_url)
-                )
+                standard_msg.content.append(MessageContent(msg_type="image", file_url=storage_url))
             else:
                 return
 
@@ -195,7 +190,7 @@ class FeishuAdapter(BaseAdapter):
                 unified_post_data = post_content
 
             # 平铺（Flatten）富文本中的节点到扁平的一维内容列表中，消除 post 类型
-            for lang, post_detail in unified_post_data.items():
+            for _lang, post_detail in unified_post_data.items():
                 if not isinstance(post_detail, dict):
                     continue
                 paragraphs = post_detail.get("content", [])
@@ -224,18 +219,14 @@ class FeishuAdapter(BaseAdapter):
                                 )
                                 if storage_url:
                                     standard_msg.content.append(
-                                        MessageContent(
-                                            msg_type="image", file_url=storage_url
-                                        )
+                                        MessageContent(msg_type="image", file_url=storage_url)
                                     )
                         elif tag == "a":
                             text_str = element.get("text", "")
                             href = element.get("href", "")
                             if text_str:
                                 standard_msg.content.append(
-                                    MessageContent(
-                                        msg_type="text", text=f"[{text_str}]({href})"
-                                    )
+                                    MessageContent(msg_type="text", text=f"[{text_str}]({href})")
                                 )
 
         else:
@@ -305,9 +296,7 @@ class FeishuAdapter(BaseAdapter):
         for item in msg.content:
             if item.msg_type == MessageType.TEXT:
                 text_content = item.text or ""
-                post_content["zh_cn"]["content"].append(
-                    [{"tag": "text", "text": text_content}]
-                )
+                post_content["zh_cn"]["content"].append([{"tag": "text", "text": text_content}])
 
             elif item.msg_type == MessageType.IMAGE:
                 file_url = item.file_url or ""
@@ -358,9 +347,7 @@ class FeishuAdapter(BaseAdapter):
         elif msg.chat_type == "group":
             self._reply_post_group(msg.message_id, raw_post_content)
 
-    def handle_card_action(
-        self, data: P2CardActionTrigger
-    ) -> P2CardActionTriggerResponse:
+    def handle_card_action(self, data: P2CardActionTrigger) -> P2CardActionTriggerResponse:
         """处理飞书交互卡片动作（Card Action）回调事件，归一化为 StandardMessage 文本消息。
 
         根据飞书卡片回调官方响应规范，返回包装了 Toast 的 P2CardActionTriggerResponse 对象。

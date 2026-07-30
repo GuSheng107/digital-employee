@@ -1,5 +1,5 @@
-from io import BytesIO
 import time
+from io import BytesIO
 from urllib.parse import quote, unquote, urlparse
 from uuid import uuid4
 

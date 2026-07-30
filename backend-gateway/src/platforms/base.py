@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """平台适配器抽象基类定义。
 
 为多平台扩展（如企业微信、钉钉等）预留标准化的接口契约。
@@ -6,6 +5,7 @@
 
 import abc
 from typing import Any
+
 from src.core.schemas import StandardMessage
 
 

@@ -1,11 +1,11 @@
+from collections.abc import Callable
 from time import perf_counter
-from typing import Callable
 
 from app.core.config import ConnectionTarget
 from app.core.database import DatabaseRole, get_database_client
 from app.core.minio_client import get_minio_client
 from app.core.redis_client import get_redis_client
-from app.schemas.health import DependencyStatus, DependenciesStatus
+from app.schemas.health import DependenciesStatus, DependencyStatus
 
 
 def _measure(check: Callable[[], None]) -> DependencyStatus:

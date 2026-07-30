@@ -148,5 +148,5 @@ class IdentityCaptchaService:
     @staticmethod
     def _answer_digest(challenge_id: str, answer: int) -> str:
         secret = settings.api_key.encode("utf-8")
-        value = f"captcha:{challenge_id}:{answer}".encode("utf-8")
+        value = f"captcha:{challenge_id}:{answer}".encode()
         return hmac.new(secret, value, hashlib.sha256).hexdigest()

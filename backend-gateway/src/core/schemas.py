@@ -1,10 +1,11 @@
-# -*- coding: utf-8 -*-
 """数据模型定义。
 
 使用 Pydantic v2 定义 Bot 配置、API 请求和响应等数据结构。
 """
 
 from enum import Enum
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -12,12 +13,10 @@ class BotConfig(BaseModel):
     """单个 Bot 实例的配置模型。"""
 
     bot_id: str = Field(..., description="Bot 实例唯一标识")
-    platform: str = Field(default="feishu", description="平台类型")
+    platform: Literal["feishu", "wechat"] = Field(default="feishu", description="平台类型")
     app_id: str = Field(..., description="飞书应用 APP_ID 或企业微信机器人 BOTID")
-    app_secret: str = Field(
-        ..., description="飞书应用 APP_SECRET 或企业微信机器人 Secret"
-    )
-    mode: str = Field(
+    app_secret: str = Field(..., description="飞书应用 APP_SECRET 或企业微信机器人 Secret")
+    mode: Literal["test", "prod"] = Field(
         default="test", description="运行模式：test（内存模拟）或 prod（MQ生产投递）"
     )
 
@@ -26,12 +25,10 @@ class BotConfigRequest(BaseModel):
     """通过 Admin API 动态注入的 Bot 配置请求体。"""
 
     bot_id: str = Field(..., description="Bot 实例唯一标识")
-    platform: str = Field(default="feishu", description="平台类型")
+    platform: Literal["feishu", "wechat"] = Field(default="feishu", description="平台类型")
     app_id: str = Field(..., description="飞书应用 APP_ID 或企业微信机器人 BOTID")
-    app_secret: str = Field(
-        ..., description="飞书应用 APP_SECRET 或企业微信机器人 Secret"
-    )
-    mode: str = Field(
+    app_secret: str = Field(..., description="飞书应用 APP_SECRET 或企业微信机器人 Secret")
+    mode: Literal["test", "prod"] = Field(
         default="test", description="运行模式：test（内存模拟）或 prod（MQ生产投递）"
     )
 
@@ -52,9 +49,7 @@ class HealthResponse(BaseModel):
 
     status: str = Field(default="ok", description="服务状态")
     active_bots: int = Field(default=0, description="活跃 Bot 数量")
-    bots: list[BotStatusResponse] = Field(
-        default_factory=list, description="各 Bot 状态详情"
-    )
+    bots: list[BotStatusResponse] = Field(default_factory=list, description="各 Bot 状态详情")
 
 
 class MessageType(str, Enum):
@@ -79,18 +74,14 @@ class CardOptionItem(BaseModel):
         default=None, description="选项标识（若空则适配器自动按索引分配 A, B, C...）"
     )
     label: str = Field(..., description="选项展示文案")
-    value: str | None = Field(
-        default=None, description="回传数值（若为空则使用 label）"
-    )
+    value: str | None = Field(default=None, description="回传数值（若为空则使用 label）")
 
 
 class CardInputConfig(BaseModel):
     """卡片自填输入框配置（平台无关）。"""
 
     name: str = Field(default="custom_option_d", description="输入框字段名")
-    placeholder: str = Field(
-        default="D 选项：自定义输入选项内容", description="输入框占位文案"
-    )
+    placeholder: str = Field(default="D 选项：自定义输入选项内容", description="输入框占位文案")
 
 
 class QuestionCardData(BaseModel):
@@ -103,9 +94,7 @@ class QuestionCardData(BaseModel):
         default_factory=list,
         description="选项列表（支持纯字符串列表或 CardOptionItem）",
     )
-    custom_input: CardInputConfig | None = Field(
-        default=None, description="自填输入框配置（可选）"
-    )
+    custom_input: CardInputConfig | None = Field(default=None, description="自填输入框配置（可选）")
     submit_text: str = Field(default="提交选择", description="提交按钮文本")
 
 

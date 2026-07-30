@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from api_common import ApiResponse, success_response
 from auth_utils import PermissionCode
 from fastapi import APIRouter, Depends, Query
@@ -18,26 +20,29 @@ from app.services.bot_service import BotService
 
 router = APIRouter()
 
+Platform = Literal["feishu", "wechat"]
+BotMode = Literal["test", "prod"]
+
 
 class CreateBotPayload(BaseModel):
     """创建 Bot 请求体。"""
 
     bot_id: str = Field(..., min_length=1, max_length=64)
     name: str = Field(..., min_length=1, max_length=128)
-    platform: str = Field(..., min_length=1, max_length=32)
+    platform: Platform = Field(...)
     app_id: str = Field(..., min_length=1, max_length=128)
     app_secret: str = Field(..., min_length=1, max_length=256)
-    mode: str = Field(default="test", max_length=16)
+    mode: BotMode = Field(default="test")
 
 
 class UpdateBotPayload(BaseModel):
-    """更新 Bot 请求体。"""
+    """更新 Bot 请求体（字段未传则不修改）。"""
 
     name: str | None = Field(default=None, min_length=1, max_length=128)
-    platform: str | None = Field(default=None, min_length=1, max_length=32)
+    platform: Platform | None = Field(default=None)
     app_id: str | None = Field(default=None, min_length=1, max_length=128)
     app_secret: str | None = Field(default=None, min_length=1, max_length=256)
-    mode: str | None = Field(default=None, max_length=16)
+    mode: BotMode | None = Field(default=None)
 
 
 @router.get(

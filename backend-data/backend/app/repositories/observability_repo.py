@@ -20,6 +20,7 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app.core.pagination import PageSlice, PageSpec, paginate_scalars
 from app.models.observability import (
     TraceEventModel,
     TracePayloadChunkModel,
@@ -27,7 +28,6 @@ from app.models.observability import (
     TraceRecordModel,
     TraceSpanModel,
 )
-from app.core.pagination import PageSlice, PageSpec, paginate_scalars
 
 PAYLOAD_CHUNK_SIZE_BYTES = 256 * 1024
 PAYLOAD_PREVIEW_CHARACTERS = 2048

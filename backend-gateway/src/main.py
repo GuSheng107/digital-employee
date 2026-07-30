@@ -16,10 +16,11 @@ from api_common import (
     InternalError,
     ResourceNotFoundError,
     success_response,
+    verify_service_api_key,
 )
 from auth_utils import PermissionCode
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -153,9 +154,7 @@ app: FastAPI = FastAPI(
     lifespan=lifespan,
     docs_url=None if os.getenv("APP_ENV") == "production" else "/docs",
     redoc_url=None if os.getenv("APP_ENV") == "production" else "/redoc",
-    openapi_url=(
-        None if os.getenv("APP_ENV") == "production" else "/openapi.json"
-    ),
+    openapi_url=(None if os.getenv("APP_ENV") == "production" else "/openapi.json"),
 )
 
 
@@ -212,9 +211,7 @@ async def validation_exception_handler(
         }
         for error in exc.errors()
     ]
-    first_message = (
-        validation_errors[0]["message"] if validation_errors else "请求参数校验失败"
-    )
+    first_message = validation_errors[0]["message"] if validation_errors else "请求参数校验失败"
     return JSONResponse(
         status_code=422,
         content={
@@ -251,11 +248,7 @@ app.add_middleware(
     allow_origins=[
         "http://127.0.0.1:5173",
         "http://localhost:5173",
-        *(
-            origin.strip()
-            for origin in os.getenv("CORS_ORIGINS", "").split(",")
-            if origin.strip()
-        ),
+        *(origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()),
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
@@ -348,24 +341,36 @@ async def delete_bot(bot_id: str) -> dict:
     success: bool = manager.remove_bot(bot_id)
     if not success:
         raise ResourceNotFoundError(message=f"Bot with id '{bot_id}' not found")
-    return success_response(
-        {"status": "success", "message": f"Bot {bot_id} has been removed"}
-    )
+    return success_response({"status": "success", "message": f"Bot {bot_id} has been removed"})
 
 
 @app.post(
     "/api/v1/admin/reload",
     response_model=ApiResponse,
-    dependencies=[Depends(require_permission(PermissionCode.BOT_MANAGE))],
 )
-async def reload_bots() -> dict:
+async def reload_bots(
+    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+) -> dict:
     """从数据库重新拉取 Bot 配置并执行热重载。
 
-    前端修改 Bot 配置后调用此端点触发 Gateway 同步。
+    该端点供 backend-auth 在 CRUD 落库成功后以服务间内部令牌触发，不转发
+    用户 token。鉴权失败时 fail-closed——必须显式配置 ``INTERNAL_ADMIN_TOKEN``
+    且请求头匹配才能通过。
+
+    Args:
+        x_internal_token: 服务间内部令牌，经 ``X-Internal-Token`` 请求头传入。
 
     Returns:
         重载结果字典。
+
+    Raises:
+        ServiceUnavailableError: ``INTERNAL_ADMIN_TOKEN`` 未配置。
+        TokenInvalidError: 请求头缺失或令牌不匹配。
     """
+    verify_service_api_key(
+        provided=x_internal_token,
+        expected=os.getenv("INTERNAL_ADMIN_TOKEN", ""),
+    )
     manager.reload_from_database()
     return success_response(
         {"status": "success", "message": "Bot configuration reloaded from database"}

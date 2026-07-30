@@ -39,7 +39,6 @@ from app.core.config import settings
 from app.core.observability import persist_trace_batch
 from app.core.redis_client import RedisClientWrapper, get_redis_client
 
-
 ROUTING_SEGMENT_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 

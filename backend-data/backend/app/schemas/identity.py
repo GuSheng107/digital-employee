@@ -6,7 +6,6 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, model_validator
 
-
 NON_NULLABLE_MENU_UPDATE_FIELDS = frozenset(
     {"parent_id", "menu_type", "title", "sort", "visible"}
 )

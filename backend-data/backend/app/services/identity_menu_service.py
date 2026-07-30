@@ -127,10 +127,7 @@ class MenuService:
         if menu is None or menu.deleted_at is not None:
             raise ResourceNotFoundError(message="菜单不存在")
 
-        if "parent_id" in updates:
-            parent_id = cast(int, updates["parent_id"])
-        else:
-            parent_id = menu.parent_id
+        parent_id = cast(int, updates["parent_id"]) if "parent_id" in updates else menu.parent_id
         if parent_id != menu.parent_id:
             # 不允许把菜单挂到自己下面
             if parent_id == menu_id:
