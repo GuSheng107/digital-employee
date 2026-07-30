@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi==0.140.7",
     "uvicorn[standard]==0.51.0",
-    "python-multipart==0.0.20",
+    "python-multipart==0.0.32",
     "python-dotenv==1.2.2",
     "loguru==0.7.3",
     "pydantic==2.13.4",

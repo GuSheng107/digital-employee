@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router';
 import Layout from './components/Layout';
 import AppInitializer from './components/app-initializer/AppInitializer';
 import RequireAuth from './components/require-auth/RequireAuth';

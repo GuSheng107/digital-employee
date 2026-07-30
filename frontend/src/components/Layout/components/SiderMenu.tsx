@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Layout, Menu } from 'antd';
 import type { MenuProps } from 'antd';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router';
 import { useUserStore } from '@/store/user-store';
 import type { MenuNode } from '@/api/auth-api';
 import logo from '@/assets/images/avatar/logo.svg';

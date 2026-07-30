@@ -17,7 +17,7 @@ import {
   MoreOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router';
 import styles from '../index.module.css';
 import { useUserStore } from '@/store/user-store';
 import type { MenuNode } from '@/api/auth-api';

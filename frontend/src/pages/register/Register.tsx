@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { Form, Input, Button, message } from 'antd';
 import {
   GiftOutlined,

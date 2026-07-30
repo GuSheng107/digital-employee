@@ -48,7 +48,7 @@ export default defineConfig(({ mode }) => {
               if (id.includes('antd')) {
                 return 'antd';
               }
-              if (id.match(/node_modules\/(react|react-dom|react-router-dom|zustand|@types\/react|@types\/react-dom)/)) {
+              if (id.match(/node_modules\/(react|react-dom|react-router|zustand|@types\/react|@types\/react-dom)/)) {
                 return 'react-vendor';
               }
               return 'vendor';

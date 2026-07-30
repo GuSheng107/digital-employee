@@ -1,5 +1,5 @@
 import { Button, Layout, Result } from 'antd';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router';
 import styles from '../index.module.css';
 import { PageLoading } from '@/components/page-loading/PageLoading';
 import { useUserStore } from '@/store/user-store';

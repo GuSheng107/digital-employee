@@ -1,5 +1,5 @@
 import { Button, Result } from 'antd';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { hasAnyPermission } from '@/constants/access-control';
 import { useUserStore } from '@/store/user-store';
 import { PageLoading } from '@/components/page-loading/PageLoading';
