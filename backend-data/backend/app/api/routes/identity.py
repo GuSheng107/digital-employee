@@ -20,6 +20,7 @@ from app.schemas.identity import (
     AccessTokenIdentityRequest,
     CompleteLoginRequest,
     ConsumeIdentityRateLimitRequest,
+    ConsumeIdentityRateLimitsRequest,
     CreateIdentityInviteCodeRequest,
     CreateIdentityMenuRequest,
     CreateIdentityRoleRequest,
@@ -33,6 +34,7 @@ from app.schemas.identity import (
     RegisterIdentityRequest,
     ResetIdentityPasswordRequest,
     ResetIdentityRateLimitRequest,
+    ResetIdentityRateLimitsRequest,
     RoleCodesRequest,
     UpdateIdentityMenuRequest,
     UpdateIdentityProfileRequest,
@@ -288,7 +290,7 @@ def get_user_menus(
     user_id: int,
     session: Session = Depends(get_core_db_session),
 ) -> dict:
-    """读取用户独立菜单。"""
+    """读取用户运行时菜单快照。"""
     return success_response(UserService(session).get_user_menus(user_id=user_id))
 
 
@@ -298,7 +300,7 @@ def assign_user_menus(
     payload: ManagedIdsRequest,
     session: Session = Depends(get_core_db_session),
 ) -> dict:
-    """覆盖用户独立菜单。"""
+    """覆盖用户运行时菜单快照。"""
     return success_response(
         UserService(session).assign_user_menus(
             user_id=user_id,
@@ -315,7 +317,7 @@ def get_user_permissions(
     user_id: int,
     session: Session = Depends(get_core_db_session),
 ) -> dict:
-    """读取用户独立权限。"""
+    """读取用户运行时权限快照。"""
     return success_response(UserService(session).get_user_permissions(user_id=user_id))
 
 
@@ -325,7 +327,7 @@ def assign_user_permissions(
     payload: ManagedIdsRequest,
     session: Session = Depends(get_core_db_session),
 ) -> dict:
-    """覆盖用户独立权限。"""
+    """覆盖用户运行时权限快照。"""
     return success_response(
         UserService(session).assign_user_permissions(
             user_id=user_id,
@@ -395,6 +397,19 @@ def consume_auth_rate_limit(
     )
 
 
+@router.post("/auth/rate-limit/consume-many", response_model=ApiResponse)
+def consume_auth_rate_limits(
+    payload: ConsumeIdentityRateLimitsRequest,
+    session: Session = Depends(get_core_db_session),
+) -> dict:
+    """在一次服务调用中消费多个认证限流桶。"""
+    return success_response(
+        IdentityAuthService(session).consume_rate_limits(
+            [item.model_dump() for item in payload.items]
+        )
+    )
+
+
 @router.post("/auth/rate-limit/reset", response_model=ApiResponse)
 def reset_auth_rate_limit(
     payload: ResetIdentityRateLimitRequest,
@@ -402,6 +417,18 @@ def reset_auth_rate_limit(
 ) -> dict:
     """成功登录后清除账号相关 Redis 限流窗口。"""
     IdentityAuthService(session).reset_rate_limit(**payload.model_dump())
+    return success_response(None)
+
+
+@router.post("/auth/rate-limit/reset-many", response_model=ApiResponse)
+def reset_auth_rate_limits(
+    payload: ResetIdentityRateLimitsRequest,
+    session: Session = Depends(get_core_db_session),
+) -> dict:
+    """在一次服务调用中清除多个认证限流桶。"""
+    IdentityAuthService(session).reset_rate_limits(
+        [item.model_dump() for item in payload.items]
+    )
     return success_response(None)
 
 

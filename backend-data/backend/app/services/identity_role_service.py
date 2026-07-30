@@ -22,6 +22,11 @@ from sqlalchemy.orm import Session
 from app.models.menu import Menu
 from app.models.permission import Permission
 from app.models.role import Role
+from app.models.user import User
+from app.services.identity_access_sync_service import (
+    IdentityAccessSyncService,
+    UserAccessExtras,
+)
 
 
 class RoleService:
@@ -161,6 +166,7 @@ class RoleService:
         if description is not None:
             role.description = description
         if menu_ids is not None:
+            affected_users = self._capture_affected_users(role)
             menus = self._load_menus(menu_ids) if menu_ids else []
             self._ensure_permissions_within_actor_scope(
                 menus=menus,
@@ -169,6 +175,7 @@ class RoleService:
             )
             role.menus = menus
             self._sync_role_permissions_from_menus(role, menus)
+            self._sync_affected_users(affected_users)
 
         self._session.commit()
 
@@ -257,6 +264,8 @@ class RoleService:
             actor_role_codes=actor_role_codes,
         )
 
+        affected_users = self._capture_affected_users(role)
+
         # 查询目标菜单
         menus: list[Menu] = []
         if menu_ids:
@@ -270,6 +279,7 @@ class RoleService:
         # 覆盖式更新
         role.menus = menus
         self._sync_role_permissions_from_menus(role, menus)
+        self._sync_affected_users(affected_users)
         self._session.commit()
 
         return {
@@ -323,6 +333,27 @@ class RoleService:
                 message=f"菜单引用了未定义权限码：{', '.join(missing_codes)}"
             )
         role.permissions = permissions
+
+    def _capture_affected_users(
+        self,
+        role: Role,
+    ) -> list[tuple[User, UserAccessExtras]]:
+        """在修改角色模板前保存关联用户的独立授权。"""
+        access_sync = IdentityAccessSyncService(self._session)
+        return [
+            (user, access_sync.capture_extras(user))
+            for user in role.users
+            if user.deleted_at is None
+        ]
+
+    def _sync_affected_users(
+        self,
+        affected_users: list[tuple[User, UserAccessExtras]],
+    ) -> None:
+        """把修改后的角色权限并集同步到关联用户。"""
+        access_sync = IdentityAccessSyncService(self._session)
+        for user, extras in affected_users:
+            access_sync.sync_from_roles(user, extras=extras)
 
     def _get_manageable_role(self, role_id: int) -> Role:
         """读取可由通用角色管理接口维护的角色。

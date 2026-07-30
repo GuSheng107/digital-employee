@@ -58,7 +58,7 @@ export default function Login(): React.ReactElement {
       return;
     }
     try {
-      await login({
+      const tokenPair = await login({
         username: values.username,
         password: values.password,
         captcha_id: challenge.captcha_id,
@@ -69,9 +69,7 @@ export default function Login(): React.ReactElement {
       } else {
         await forgetCredentialPreference();
       }
-      const mustChangePassword =
-        useUserStore.getState().userInfo?.must_change_password === true;
-      if (mustChangePassword) {
+      if (tokenPair.must_change_password) {
         message.warning('密码已由管理员重置，请先设置新的登录密码');
         navigate('/system/user/profile', { replace: true });
         return;

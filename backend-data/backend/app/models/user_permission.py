@@ -1,9 +1,8 @@
-"""用户独立权限/菜单关联表 ORM 模型。
+"""用户运行时权限与菜单快照关联表 ORM 模型。
 
-权限组（Role）作为基础授权；分配角色时会把当时的权限点和菜单同步到
-用户独立集合（user_permissions / user_menus），之后仍可单独调整。
-
-最终授权由当前角色授权与用户直接授权取并集。
+角色作为授权模板；分配或修改角色时把多个角色的并集同步到
+``user_permissions`` 与 ``user_menus``。运行时只读取用户快照，
+管理员仍可在自身权限范围内直接调整快照。
 """
 
 from __future__ import annotations
@@ -15,10 +14,7 @@ from app.core.database import Base
 
 
 class UserPermission(Base):
-    """用户-权限关联表（多对多，独立于角色）。
-
-    用户最终权限 = 当前角色权限与 user_permissions 直接权限的并集。
-    """
+    """用户运行时权限快照关联表。"""
 
     __tablename__ = "user_permissions"
 
@@ -33,10 +29,7 @@ class UserPermission(Base):
 
 
 class UserMenu(Base):
-    """用户-菜单关联表（多对多，独立于角色）。
-
-    用户最终菜单 = 当前角色菜单与 user_menus 直接菜单的并集。
-    """
+    """用户运行时菜单快照关联表。"""
 
     __tablename__ = "user_menus"
 

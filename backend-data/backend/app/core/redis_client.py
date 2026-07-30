@@ -99,6 +99,19 @@ class RedisClientWrapper:
 
     def increment_with_ttl(self, key: str, *, ttl_seconds: int) -> int:
         """在固定时间窗内原子递增计数并确保 TTL 存在。"""
+        count, _ = self.increment_with_ttl_result(
+            key,
+            ttl_seconds=ttl_seconds,
+        )
+        return count
+
+    def increment_with_ttl_result(
+        self,
+        key: str,
+        *,
+        ttl_seconds: int,
+    ) -> tuple[int, int]:
+        """原子递增固定窗口计数，并在同一事务中返回剩余 TTL。"""
         client = self._require_client()
         while True:
             with client.pipeline() as pipeline:
@@ -113,8 +126,64 @@ class RedisClientWrapper:
                         next_value,
                         ex=remaining_ttl if remaining_ttl > 0 else ttl_seconds,
                     )
-                    pipeline.execute()
-                    return next_value
+                    pipeline.ttl(key)
+                    results = pipeline.execute()
+                    return next_value, max(1, int(results[-1]))
+                except WatchError:
+                    continue
+
+    def increment_many_with_ttl_results(
+        self,
+        entries: list[tuple[str, int]],
+    ) -> list[tuple[int, int]]:
+        """在一个 WATCH 事务中递增多个固定窗口计数。"""
+        if not entries:
+            return []
+        client = self._require_client()
+        keys = [key for key, _ in entries]
+        while True:
+            with client.pipeline() as pipeline:
+                try:
+                    pipeline.watch(*keys)
+                    current_values = pipeline.mget(keys)
+                    remaining_ttls = [
+                        int(pipeline.ttl(key)) if current_value else -1
+                        for key, current_value in zip(
+                            keys,
+                            current_values,
+                            strict=True,
+                        )
+                    ]
+                    next_values = [
+                        int(current_value) + 1 if current_value else 1
+                        for current_value in current_values
+                    ]
+                    pipeline.multi()
+                    for (
+                        (key, window_seconds),
+                        next_value,
+                        remaining_ttl,
+                    ) in zip(
+                        entries,
+                        next_values,
+                        remaining_ttls,
+                        strict=True,
+                    ):
+                        pipeline.set(
+                            key,
+                            next_value,
+                            ex=(
+                                remaining_ttl
+                                if remaining_ttl > 0
+                                else window_seconds
+                            ),
+                        )
+                        pipeline.ttl(key)
+                    results = pipeline.execute()
+                    return [
+                        (next_value, max(1, int(results[index * 2 + 1])))
+                        for index, next_value in enumerate(next_values)
+                    ]
                 except WatchError:
                     continue
 

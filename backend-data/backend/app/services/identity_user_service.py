@@ -31,6 +31,7 @@ from app.models.role import Role
 from app.models.user import User
 from app.core.pagination import PageSpec, paginate_scalars
 from app.services.identity_session_service import IdentitySessionService
+from app.services.identity_access_sync_service import IdentityAccessSyncService
 from app.services.storage_service import StorageService
 
 
@@ -161,6 +162,7 @@ class UserService:
                 actor_permission_codes=actor_permission_codes,
             )
             user.roles.extend(roles)
+            IdentityAccessSyncService(self._session).sync_from_roles(user)
 
         self._session.commit()
 
@@ -256,6 +258,9 @@ class UserService:
             actor_permission_codes=actor_permission_codes,
         )
 
+        access_sync = IdentityAccessSyncService(self._session)
+        access_extras = access_sync.capture_extras(user)
+
         # 覆盖式更新角色
         user.roles = list(roles)
         assigned_role_codes = {role.code for role in roles}
@@ -268,33 +273,7 @@ class UserService:
             user.vip_level = VipLevel.NORMAL
             user.vip_expires_at = None
 
-        new_perm_ids: set[int] = set()
-        new_menu_ids: set[int] = set()
-        for role in roles:
-            for perm in role.permissions:
-                new_perm_ids.add(perm.id)
-            for menu in role.menus:
-                if menu.deleted_at is None:
-                    new_menu_ids.add(menu.id)
-
-        user.permissions = (
-            list(
-                self._session.scalars(
-                    select(Permission).where(Permission.id.in_(new_perm_ids))
-                ).all()
-            )
-            if new_perm_ids
-            else []
-        )
-        user.menus = (
-            list(
-                self._session.scalars(
-                    select(Menu).where(Menu.id.in_(new_menu_ids))
-                ).all()
-            )
-            if new_menu_ids
-            else []
-        )
+        access_sync.sync_from_roles(user, extras=access_extras)
 
         self._session.commit()
 
@@ -304,7 +283,7 @@ class UserService:
         }
 
     def get_user_menus(self, *, user_id: int) -> list[dict]:
-        """获取用户独立菜单列表（含菜单完整字段，用于前端树展示）。"""
+        """获取用户运行时菜单快照（含前端树所需字段）。"""
         user = self._session.get(User, user_id)
         if user is None or user.deleted_at is not None:
             raise ResourceNotFoundError(message="用户不存在")
@@ -334,10 +313,7 @@ class UserService:
         actor_role_codes: list[str],
         actor_permission_codes: list[str],
     ) -> dict:
-        """分配用户独立菜单（覆盖式）。
-
-        与角色菜单解耦：用户菜单为角色模板复制后的副本，可个性化增删。
-        """
+        """覆盖用户运行时菜单与对应权限快照。"""
         user = self._session.get(User, user_id)
         if user is None or user.deleted_at is not None:
             raise ResourceNotFoundError(message="用户不存在")
@@ -346,6 +322,7 @@ class UserService:
             user=user,
             actor_user_id=actor_user_id,
             actor_role_codes=actor_role_codes,
+            allow_self=True,
         )
 
         menus: list[Menu] = []
@@ -385,8 +362,7 @@ class UserService:
                 )
             )
 
-        # 用户直接菜单与直接权限必须保持一致，避免出现“菜单已勾选但接口
-        # 仍然 403”的双轨配置。角色权限仍通过角色关系动态参与最终并集。
+        # 用户菜单与用户权限保持一致；运行时鉴权只读取用户权限快照。
         user.menus = menus
         user.permissions = permissions
         self._session.commit()
@@ -400,7 +376,7 @@ class UserService:
         }
 
     def get_user_permissions(self, *, user_id: int) -> list[dict]:
-        """获取用户独立权限列表。"""
+        """获取用户运行时权限快照。"""
         user = self._session.get(User, user_id)
         if user is None or user.deleted_at is not None:
             raise ResourceNotFoundError(message="用户不存在")
@@ -425,7 +401,7 @@ class UserService:
         actor_role_codes: list[str],
         actor_permission_codes: list[str],
     ) -> dict:
-        """分配用户独立权限（覆盖式）。"""
+        """覆盖用户运行时权限快照。"""
         user = self._session.get(User, user_id)
         if user is None or user.deleted_at is not None:
             raise ResourceNotFoundError(message="用户不存在")
@@ -434,6 +410,7 @@ class UserService:
             user=user,
             actor_user_id=actor_user_id,
             actor_role_codes=actor_role_codes,
+            allow_self=True,
         )
 
         perms: list[Permission] = []
@@ -707,9 +684,10 @@ class UserService:
         user: User,
         actor_user_id: int,
         actor_role_codes: list[str],
+        allow_self: bool = False,
     ) -> None:
-        """禁止自维护，并限制普通管理员维护同级管理员。"""
-        if actor_user_id == user.id:
+        """按操作范围控制自维护，并限制普通管理员维护同级管理员。"""
+        if actor_user_id == user.id and not allow_self:
             raise PermissionDeniedError(message="不能通过管理接口修改当前登录账号")
         target_role_codes = {role.code for role in user.roles}
         if (

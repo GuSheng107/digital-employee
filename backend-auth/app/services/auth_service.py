@@ -37,19 +37,24 @@ class AuthService:
     ) -> TokenPair:
         """注册用户并签发双 token。"""
         normalized_ip = client_ip or "unknown"
-        self._consume_rate_limit(
-            bucket=AuthRateLimitBucket.REGISTER_IP,
-            identifier=normalized_ip,
-            limit=settings.register_ip_rate_limit,
-            window_seconds=settings.register_ip_rate_window_seconds,
-        )
-        self._consume_rate_limit(
-            bucket=AuthRateLimitBucket.REGISTER_IDENTITY,
-            identifier=(
-                f"{username.casefold()}:{email.casefold()}:{phone.casefold()}"
-            ),
-            limit=settings.register_identity_rate_limit,
-            window_seconds=settings.register_identity_rate_window_seconds,
+        self._consume_rate_limits(
+            [
+                (
+                    AuthRateLimitBucket.REGISTER_IP,
+                    normalized_ip,
+                    settings.register_ip_rate_limit,
+                    settings.register_ip_rate_window_seconds,
+                ),
+                (
+                    AuthRateLimitBucket.REGISTER_IDENTITY,
+                    (
+                        f"{username.casefold()}:{email.casefold()}:"
+                        f"{phone.casefold()}"
+                    ),
+                    settings.register_identity_rate_limit,
+                    settings.register_identity_rate_window_seconds,
+                ),
+            ]
         )
         self._data.verify_identity_captcha(
             captcha_id=captcha_id,
@@ -83,23 +88,27 @@ class AuthService:
         """校验凭据并落实同账号单会话策略。"""
         normalized_ip = client_ip or "unknown"
         normalized_account = username.casefold()
-        self._consume_rate_limit(
-            bucket=AuthRateLimitBucket.LOGIN_IP,
-            identifier=normalized_ip,
-            limit=settings.login_ip_rate_limit,
-            window_seconds=settings.login_ip_rate_window_seconds,
-        )
-        self._consume_rate_limit(
-            bucket=AuthRateLimitBucket.LOGIN_PAIR,
-            identifier=f"{normalized_ip}:{normalized_account}",
-            limit=settings.login_pair_rate_limit,
-            window_seconds=settings.login_pair_rate_window_seconds,
-        )
-        self._consume_rate_limit(
-            bucket=AuthRateLimitBucket.LOGIN_ACCOUNT,
-            identifier=normalized_account,
-            limit=settings.login_account_rate_limit,
-            window_seconds=settings.login_account_rate_window_seconds,
+        self._consume_rate_limits(
+            [
+                (
+                    AuthRateLimitBucket.LOGIN_IP,
+                    normalized_ip,
+                    settings.login_ip_rate_limit,
+                    settings.login_ip_rate_window_seconds,
+                ),
+                (
+                    AuthRateLimitBucket.LOGIN_PAIR,
+                    f"{normalized_ip}:{normalized_account}",
+                    settings.login_pair_rate_limit,
+                    settings.login_pair_rate_window_seconds,
+                ),
+                (
+                    AuthRateLimitBucket.LOGIN_ACCOUNT,
+                    normalized_account,
+                    settings.login_account_rate_limit,
+                    settings.login_account_rate_window_seconds,
+                ),
+            ]
         )
         self._data.verify_identity_captcha(
             captcha_id=captcha_id,
@@ -126,13 +135,14 @@ class AuthService:
             access_token=access_token,
             refresh_token=refresh_token,
         )
-        self._reset_rate_limit(
-            bucket=AuthRateLimitBucket.LOGIN_PAIR,
-            identifier=f"{normalized_ip}:{normalized_account}",
-        )
-        self._reset_rate_limit(
-            bucket=AuthRateLimitBucket.LOGIN_ACCOUNT,
-            identifier=normalized_account,
+        self._reset_rate_limits(
+            [
+                (
+                    AuthRateLimitBucket.LOGIN_PAIR,
+                    f"{normalized_ip}:{normalized_account}",
+                ),
+                (AuthRateLimitBucket.LOGIN_ACCOUNT, normalized_account),
+            ]
         )
         return self._build_token_pair(
             access_token=access_token,
@@ -248,6 +258,25 @@ class AuthService:
             window_seconds=window_seconds,
         )
 
+    def _consume_rate_limits(
+        self,
+        entries: list[tuple[AuthRateLimitBucket, str, int, int]],
+    ) -> None:
+        """在一次 backend-data 调用中消费多个认证限流桶。"""
+        self._data.consume_identity_rate_limits(
+            [
+                {
+                    "bucket": bucket.value,
+                    "identifier_hash": hashlib.sha256(
+                        identifier.encode("utf-8")
+                    ).hexdigest(),
+                    "limit": limit,
+                    "window_seconds": window_seconds,
+                }
+                for bucket, identifier, limit, window_seconds in entries
+            ]
+        )
+
     def _reset_rate_limit(
         self,
         *,
@@ -259,4 +288,21 @@ class AuthService:
         self._data.reset_identity_rate_limit(
             bucket=bucket.value,
             identifier_hash=identifier_hash,
+        )
+
+    def _reset_rate_limits(
+        self,
+        entries: list[tuple[AuthRateLimitBucket, str]],
+    ) -> None:
+        """在一次 backend-data 调用中清除多个认证限流桶。"""
+        self._data.reset_identity_rate_limits(
+            [
+                {
+                    "bucket": bucket.value,
+                    "identifier_hash": hashlib.sha256(
+                        identifier.encode("utf-8")
+                    ).hexdigest(),
+                }
+                for bucket, identifier in entries
+            ]
         )

@@ -9,6 +9,7 @@ import {
   type MenuNode,
   type LoginPayload,
   type RegisterRequest,
+  type TokenPair,
   type UserInfo,
 } from '@/api/auth-api';
 import { getRequestErrorMessage, HttpError } from '@/utils/request';
@@ -22,13 +23,15 @@ interface AuthState {
   avatar: string;
   /** 加载态（登录/获取用户信息时） */
   loading: boolean;
+  /** 登录后异步加载用户资料、菜单和权限。 */
+  profileLoading: boolean;
   /** 登录态恢复中（页面刷新时 restoreAuth 执行期间为 true，完成后置 false） */
   restoring: boolean;
-  /** 当前用户可见的菜单树（后端返回，登录后填充；空数组表示使用默认菜单） */
+  /** 当前用户可见的菜单树；空数组表示尚未加载或未授权。 */
   menus: MenuNode[];
 
-  /** 用户名密码登录，成功后存储双 token 并拉取用户信息 */
-  login: (payload: LoginPayload) => Promise<void>;
+  /** 用户名密码登录，成功后立即返回 token，并异步加载用户信息。 */
+  login: (payload: LoginPayload) => Promise<TokenPair>;
   /** 用户注册，成功后存储双 token 并拉取用户信息（自动登录） */
   register: (payload: RegisterRequest) => Promise<void>;
   /** 登出，撤销 token 并清除登录态 */
@@ -39,6 +42,8 @@ interface AuthState {
   clearAuth: () => void;
   /** 重新拉取当前用户信息（含菜单树），用于菜单/权限变更后清除前端缓存 */
   reloadMenus: () => Promise<void>;
+  /** 登录成功后异步加载用户资料、菜单和权限。 */
+  hydrateCurrentUser: () => Promise<void>;
 }
 
 /** 存储 access_token 到 localStorage */
@@ -67,6 +72,7 @@ export const useUserStore = create<AuthState>((set) => ({
   userInfo: null,
   avatar: me,
   loading: false,
+  profileLoading: false,
   // 初始 true：AppInitializer 的 restoreAuth 完成前，RequireAuth 显示加载动画而非立即跳转登录页
   restoring: true,
   menus: [],
@@ -77,16 +83,13 @@ export const useUserStore = create<AuthState>((set) => ({
       const tokenPair = await login(payload);
       persistAccessToken(tokenPair.access_token);
       persistRefreshToken(tokenPair.refresh_token);
-
-      // 登录成功后拉取用户信息
-      const info = await getCurrentUser();
       set({
         isAuthenticated: true,
-        userInfo: info,
-        avatar: getUserAvatar(info),
-        menus: info.menus ?? [],
         loading: false,
+        restoring: false,
       });
+      void useUserStore.getState().hydrateCurrentUser();
+      return tokenPair;
     } catch (error) {
       set({ loading: false });
       throw error;
@@ -108,6 +111,7 @@ export const useUserStore = create<AuthState>((set) => ({
         avatar: getUserAvatar(info),
         menus: info.menus ?? [],
         loading: false,
+        profileLoading: false,
       });
     } catch (error) {
       set({ loading: false });
@@ -128,6 +132,7 @@ export const useUserStore = create<AuthState>((set) => ({
         userInfo: null,
         avatar: me,
         menus: [],
+        profileLoading: false,
       });
     }
   },
@@ -152,10 +157,18 @@ export const useUserStore = create<AuthState>((set) => ({
         avatar: getUserAvatar(info),
         menus: info.menus ?? [],
         restoring: false,
+        profileLoading: false,
       });
     } catch {
       clearStoredTokens();
-      set({ restoring: false, isAuthenticated: false, userInfo: null, avatar: me, menus: [] });
+      set({
+        restoring: false,
+        isAuthenticated: false,
+        userInfo: null,
+        avatar: me,
+        menus: [],
+        profileLoading: false,
+      });
     }
   },
 
@@ -166,6 +179,7 @@ export const useUserStore = create<AuthState>((set) => ({
       userInfo: null,
       avatar: me,
       menus: [],
+      profileLoading: false,
     });
   },
 
@@ -177,6 +191,32 @@ export const useUserStore = create<AuthState>((set) => ({
       avatar: getUserAvatar(info),
       menus: info.menus ?? [],
     });
+  },
+
+  hydrateCurrentUser: async () => {
+    const currentState = useUserStore.getState();
+    if (currentState.profileLoading || currentState.userInfo) {
+      return;
+    }
+    set({ profileLoading: true });
+    try {
+      const info = await getCurrentUser();
+      set({
+        userInfo: info,
+        avatar: getUserAvatar(info),
+        menus: info.menus ?? [],
+        profileLoading: false,
+      });
+    } catch {
+      clearStoredTokens();
+      set({
+        isAuthenticated: false,
+        userInfo: null,
+        avatar: me,
+        menus: [],
+        profileLoading: false,
+      });
+    }
   },
 }));
 

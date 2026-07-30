@@ -165,6 +165,17 @@ class DataClient:
             },
         )
 
+    def consume_identity_rate_limits(
+        self,
+        items: list[dict[str, str | int]],
+    ) -> list[dict[str, Any]]:
+        """通过一次 backend-data 调用消费多个认证限流桶。"""
+        return self._request_list(
+            "POST",
+            "/api/v1/identity/auth/rate-limit/consume-many",
+            json={"items": items},
+        )
+
     def list_users(self, *, page: int, page_size: int) -> dict[str, Any]:
         """分页读取可管理用户。"""
         return self._request_dict(
@@ -725,6 +736,17 @@ class DataClient:
                 "bucket": bucket,
                 "identifier_hash": identifier_hash,
             },
+        )
+
+    def reset_identity_rate_limits(
+        self,
+        items: list[dict[str, str]],
+    ) -> None:
+        """通过一次 backend-data 调用清除多个认证限流桶。"""
+        self._request(
+            "POST",
+            "/api/v1/identity/auth/rate-limit/reset-many",
+            json={"items": items},
         )
 
     def create_identity_captcha(self) -> dict[str, Any]:

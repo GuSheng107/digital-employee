@@ -26,7 +26,7 @@ export default function RequirePermission({
       <Result
         status="403"
         title="无权访问"
-        subTitle="当前账号未被授予该页面对应的接口权限。"
+        subTitle="当前账号无权访问此页面。"
         extra={(
           <Button type="primary" onClick={() => navigate('/', { replace: true })}>
             返回工作台

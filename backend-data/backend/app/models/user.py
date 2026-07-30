@@ -61,7 +61,7 @@ class User(Base):
         back_populates="users",
         lazy="selectin",
     )
-    # 用户独立权限/菜单（权限组模板复制后的副本，可个性化调整）
+    # 用户运行时权限/菜单快照（由角色模板同步，也可直接调整）
     permissions: Mapped[list[Permission]] = relationship(
         "Permission",
         secondary="user_permissions",

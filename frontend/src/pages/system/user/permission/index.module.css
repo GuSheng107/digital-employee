@@ -16,8 +16,8 @@
 
 .panel :global(.ant-card-body) {
   height: 100%;
-  overflow: auto;
-  scrollbar-gutter: stable;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .userTable :global(.ant-table-thead > tr > th),
@@ -39,11 +39,6 @@
 .roleSection {
   padding-top: 16px;
   border-top: 1px solid var(--ant-color-border);
-}
-
-.hintAlert {
-  margin-top: 16px;
-  margin-bottom: 16px;
 }
 
 .userPermSection {

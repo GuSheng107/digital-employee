@@ -1,10 +1,20 @@
 import { useEffect, useMemo } from 'react';
-import { Layout, Dropdown, Avatar, Breadcrumb, Flex, message } from 'antd';
+import {
+  Avatar,
+  Breadcrumb,
+  Button,
+  Dropdown,
+  Flex,
+  Layout,
+  Tabs,
+  message,
+} from 'antd';
+import type { TabsProps } from 'antd';
 import {
   DownOutlined,
-  CloseOutlined,
   FileTextOutlined,
   LogoutOutlined,
+  MoreOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -54,6 +64,7 @@ export default function HeaderBar(): React.ReactElement {
   const navigate = useNavigate();
   const location = useLocation();
   const userInfo = useUserStore((state) => state.userInfo);
+  const profileLoading = useUserStore((state) => state.profileLoading);
   const avatar = useUserStore((state) => state.avatar);
   const logout = useUserStore((state) => state.logout);
   const menus = useUserStore((state) => state.menus);
@@ -62,11 +73,16 @@ export default function HeaderBar(): React.ReactElement {
   );
   const visitSystemPath = useSystemNavigationStore((state) => state.visitPath);
   const closeSystemPath = useSystemNavigationStore((state) => state.closePath);
+  const closeOtherSystemPaths = useSystemNavigationStore(
+    (state) => state.closeOtherPaths,
+  );
   const clearVisitedSystemPaths = useSystemNavigationStore(
     (state) => state.clearVisitedPaths,
   );
 
-  const displayName = userInfo?.nickname || userInfo?.username || '未登录';
+  const displayName = userInfo?.nickname
+    || userInfo?.username
+    || (profileLoading ? '加载中' : '未登录');
   const breadcrumbItems = useMemo(
     () => [
       { title: '数字员工' },
@@ -82,8 +98,25 @@ export default function HeaderBar(): React.ReactElement {
   const visitedSystemPages = useMemo(
     () => visitedSystemPaths
       .map((path) => systemPageByPath.get(path))
-      .filter((page): page is MenuNode => page !== undefined),
+      .filter(
+        (page): page is MenuNode & { path: string } => (
+          page !== undefined && page.path !== null
+        ),
+      ),
     [systemPageByPath, visitedSystemPaths],
+  );
+  const systemTabItems = useMemo<TabsProps['items']>(
+    () => visitedSystemPages.map((page) => ({
+      key: page.path,
+      label: (
+        <span className={styles.systemTabLabel}>
+          <FileTextOutlined />
+          <span>{page.title}</span>
+        </span>
+      ),
+      closable: true,
+    })),
+    [visitedSystemPages],
   );
 
   useEffect(() => {
@@ -115,6 +148,34 @@ export default function HeaderBar(): React.ReactElement {
       navigate(remainingPaths.at(-1) ?? WORKBENCH_HOME_PATH);
     }
   };
+  const handleSystemTabEdit: NonNullable<TabsProps['onEdit']> = (
+    targetKey,
+    action,
+  ): void => {
+    if (action === 'remove' && typeof targetKey === 'string') {
+      handleCloseSystemPage(targetKey);
+    }
+  };
+  const handleSystemTabAction = ({ key }: { key: string }): void => {
+    if (key === 'close-current') {
+      handleCloseSystemPage(location.pathname);
+      return;
+    }
+    if (key === 'close-others') {
+      closeOtherSystemPaths(location.pathname);
+      return;
+    }
+    if (key === 'close-all') {
+      clearVisitedSystemPaths();
+      navigate(WORKBENCH_HOME_PATH);
+    }
+  };
+  const systemTabActionItems = [
+    { key: 'close-current', label: '关闭当前' },
+    { key: 'close-others', label: '关闭其他' },
+    { type: 'divider' as const },
+    { key: 'close-all', label: '关闭全部' },
+  ];
 
   return (
     <>
@@ -136,35 +197,33 @@ export default function HeaderBar(): React.ReactElement {
       {location.pathname.startsWith(SYSTEM_ROUTE_PREFIX)
       && visitedSystemPages.length > 0 ? (
         <nav className={styles.systemTabs} aria-label="系统设置页面导航">
-          {visitedSystemPages.map((page) => (
-            <div
-              key={page.path}
-              className={
-                page.path === location.pathname
-                  ? `${styles.systemTab} ${styles.systemTabActive}`
-                  : styles.systemTab
-              }
-            >
-              <button
-                type="button"
-                className={styles.systemTabLink}
-                onClick={() => navigate(page.path ?? WORKBENCH_HOME_PATH)}
-              >
-                <FileTextOutlined />
-                <span>{page.title}</span>
-              </button>
-              {page.path ? (
-                <button
-                  type="button"
-                  className={styles.systemTabClose}
-                  aria-label={`关闭${page.title}`}
-                  onClick={() => handleCloseSystemPage(page.path as string)}
+          <Tabs
+            className={styles.systemTabsControl}
+            activeKey={location.pathname}
+            type="editable-card"
+            hideAdd
+            items={systemTabItems}
+            onChange={(path) => navigate(path)}
+            onEdit={handleSystemTabEdit}
+            tabBarExtraContent={{
+              right: (
+                <Dropdown
+                  menu={{
+                    items: systemTabActionItems,
+                    onClick: handleSystemTabAction,
+                  }}
+                  placement="bottomRight"
                 >
-                  <CloseOutlined />
-                </button>
-              ) : null}
-            </div>
-          ))}
+                  <Button
+                    type="text"
+                    className={styles.systemTabActions}
+                    icon={<MoreOutlined />}
+                    aria-label="页签操作"
+                  />
+                </Dropdown>
+              ),
+            }}
+          />
         </nav>
       ) : null}
     </>
