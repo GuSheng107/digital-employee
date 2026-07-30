@@ -40,10 +40,12 @@ backend-auth
 硬边界：
 
 - 数据库、Redis、MinIO、RabbitMQ 的驱动、连接和执行只允许出现在
-  `backend-data`。
+`backend-data`。
 - 其他服务只能通过 `backend-share/data-client` 使用数据与基础设施能力。
 - 其他服务只能通过 `backend-share/auth-utils` 获取用户上下文和执行权限校验。
 - 禁止跨服务导入对方的实现目录。
+
+
 
 ## 目录结构
 
@@ -85,7 +87,8 @@ digital-employee/
 | npm                              | 随 Node 安装                                             | 前端依赖                                                |
 | Docker Compose                   | 可选                                                    | 仅本地兜底时启动 RabbitMQ / MinIO（`make infra-up`）          |
 
-> 用 Node 18/20 安装前端依赖时，Vite 8 / Rolldown 的可选原生包常被静默跳过，随后 `npm run build` 会报 `@rolldown/binding-*` 缺失。请先 `node -v` 确认为 `22.14.x`。
+
+
 
 ## 快速启动（开箱即用）
 
@@ -95,6 +98,8 @@ digital-employee/
 因此「开箱即用」的完整顺序是：**装好工具 → 配好基础设施入口 → 再跑一键启动**。
 
 ### 1. 准备基础设施（二选一）
+
+
 
 #### 方式 A：连团队 Nacos（推荐）
 
@@ -112,7 +117,9 @@ NACOS_NAMESPACE=prod
 
 - 配置 `dataId` 默认为 `${NACOS_NAMESPACE}.yaml`（即 `prod.yaml`），`DEFAULT_GROUP`。
 - 基础设施真实地址与凭证由 Nacos 下发，不在仓库文档中记录。
-- 更细的约定见下文「配置中心（Nacos）」与 [CONTRIBUTING.md](CONTRIBUTING.md)。
+- 更细的约定见下文「配置中心（Nacos）」。
+
+
 
 #### 方式 B：纯本地兜底
 
@@ -123,9 +130,11 @@ make infra-up
 # 或：docker compose up -d
 ```
 
-2. 在 `backend-data/backend/.env` 填齐本地回退项（`CORE_DB_*`、`REDIS_*`、`MINIO_*`、`RABBITMQ_URL` 等）。
-   注意：根目录 `docker-compose.yml` **只包含** RabbitMQ 与 MinIO，**不包含** Postgres / Redis；端口也以你的 `.env` 为准（MinIO 默认映射到主机 `19000`）。
-3. 若不走 Nacos，可将各服务 `.env` 中的 `NACOS_SERVER_ADDR=` 留空，避免无意义的拉取尝试。
+1. 在 `backend-data/backend/.env` 填齐本地回退项（`CORE_DB_*`、`REDIS_*`、`MINIO_*`、`RABBITMQ_URL` 等）。
+  注意：根目录 `docker-compose.yml` **只包含** RabbitMQ 与 MinIO，**不包含** Postgres / Redis；端口也以你的 `.env` 为准（MinIO 默认映射到主机 `19000`）。
+2. 若不走 Nacos，可将各服务 `.env` 中的 `NACOS_SERVER_ADDR=` 留空，避免无意义的拉取尝试。
+
+
 
 ### 2. 一键启动应用
 
@@ -148,6 +157,8 @@ scripts\backend-auth\start.bat
 scripts\backend-gateway\start.bat
 scripts\frontend\start-web.bat
 ```
+
+
 
 #### Linux / macOS
 
@@ -179,30 +190,22 @@ node -v   # 应为 v22.14.x
 
 成功后可访问：
 
-| 服务 | 地址 |
-| --- | --- |
-| Frontend preview | <http://127.0.0.1:5173> |
-| backend-auth | <http://127.0.0.1:8020/api/v1/health> |
-| backend-data | <http://127.0.0.1:8010/api/v1/health> |
-| backend-gateway | <http://127.0.0.1:8864/api/v1/health> |
 
-体验账号：`test` / 密码：`test`
+| 服务               | 地址                                                                         |
+| ---------------- | -------------------------------------------------------------------------- |
+| Frontend preview | [http://127.0.0.1:5173](http://127.0.0.1:5173)                             |
+| backend-auth     | [http://127.0.0.1:8020/api/v1/health](http://127.0.0.1:8020/api/v1/health) |
+| backend-data     | [http://127.0.0.1:8010/api/v1/health](http://127.0.0.1:8010/api/v1/health) |
+| backend-gateway  | [http://127.0.0.1:8864/api/v1/health](http://127.0.0.1:8864/api/v1/health) |
 
-> 启动脚本需要 `uv` 在 PATH 中。Windows 安装 uv：`pip install uv`；其他平台见 [uv 官方文档](https://docs.astral.sh/uv/)。
->
+
+体验账号：`youke` / 密码：`youkezhanghao@2026`
+
 > `start-all` 会把服务放到独立进程会话中，脚本退出后 **Ctrl+C 无法停止服务**。停止请执行：
-> `python scripts/kill-port.py`（或指定 `8010 8020 8864 5173`）。
+> `python scripts/kill-port.py`（或指定 `8010 8020 8864 5173`）。                                              |
 
-### 3. 常见启动失败
 
-| 现象 | 常见原因 | 处理 |
-| --- | --- | --- |
-| `Backend Data dependencies` / RabbitMQ / Redis 验收失败 | 未连上 Nacos，且本机基础设施未起或 `.env` 密码为空 | 按上文补齐 Nacos，或本地起依赖并填 `.env` |
-| `uv sync --locked` 失败 | `uv.lock` 与 `pyproject.toml` 不一致 | 在对应后端目录执行 `uv lock` 后再启动；若是别人改坏的锁文件，应提 PR 修复而不是长期本地绕过 |
-| `@rolldown/binding-*` 缺失 / Vite 要求 Node 20.19+ | Node 版本不对，或半残 `node_modules` | 切换到 Node `22.14.x` 后删除 `frontend/node_modules` 再 `npm ci`（`start-all` 只在目录不存在时安装） |
-| 单独脚本启动后 auth/gateway 调 data 401 | 服务间 API Key 未对齐 | 优先用 `start-all`；或手动让 `BACKEND_DATA_API_KEY` 等于 `backend-data` 的 `API_KEY` |
-| 未找到 `uv` / `npm` | 工具未安装或不在 PATH | 先满足「环境要求」再启动 |
-| Ctrl+C 停不掉服务 | 子进程已脱离终端会话 | 使用 `python scripts/kill-port.py` |
+
 
 ### 手动启动单个服务
 
@@ -235,6 +238,8 @@ npm run build
 npm run preview -- --host 127.0.0.1 --port 5173
 ```
 
+
+
 ## 配置中心（Nacos）
 
 `backend-data` 可通过 `backend-share/nacos-client` 拉取基础设施配置，
@@ -243,6 +248,8 @@ npm run preview -- --host 127.0.0.1 --port 5173
 - Nacos 凭证（`NACOS_*` 系列环境变量）只从环境变量读取，不入库不入 Nacos，避免循环依赖。
 - 配置 `dataId` 默认为 `${NACOS_NAMESPACE}.yaml`（即 `prod.yaml` / `dev.yaml`），`DEFAULT_GROUP`。
 - Nacos 不可达时静默降级到本地 `.env`，仅打日志，不阻塞启动。
+
+
 
 ## Makefile
 
@@ -271,6 +278,8 @@ cd ..\frontend
 npm run lint
 npm run build
 ```
+
+
 
 ## 贡献
 
