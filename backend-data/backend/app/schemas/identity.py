@@ -70,11 +70,31 @@ class ConsumeIdentityRateLimitRequest(BaseModel):
     window_seconds: int = Field(..., ge=1, le=86400)
 
 
+class ConsumeIdentityRateLimitsRequest(BaseModel):
+    """批量消费认证接口的固定窗口限流计数。"""
+
+    items: list[ConsumeIdentityRateLimitRequest] = Field(
+        ...,
+        min_length=1,
+        max_length=10,
+    )
+
+
 class ResetIdentityRateLimitRequest(BaseModel):
     """清除登录成功后的账号维度限流桶。"""
 
     bucket: str = Field(..., pattern=r"^[a-z0-9_-]+$", max_length=32)
     identifier_hash: str = Field(..., pattern=r"^[a-f0-9]{64}$")
+
+
+class ResetIdentityRateLimitsRequest(BaseModel):
+    """批量清除认证接口的限流桶。"""
+
+    items: list[ResetIdentityRateLimitRequest] = Field(
+        ...,
+        min_length=1,
+        max_length=10,
+    )
 
 
 class VerifyIdentityCaptchaRequest(BaseModel):

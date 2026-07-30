@@ -16,6 +16,8 @@ from app.core.redis_client import RedisClientWrapper, get_redis_client
 CAPTCHA_WIDTH = 168
 CAPTCHA_HEIGHT = 52
 CAPTCHA_FONT_SIZE = 27
+CAPTCHA_TEXT_MAX_WIDTH = 142
+CAPTCHA_LONG_EXPRESSION_LENGTH = 10
 CAPTCHA_NOISE_LINE_COUNT = 7
 CAPTCHA_NOISE_DOT_COUNT = 22
 CAPTCHA_OPERATORS = ("+", "-", "×")
@@ -114,6 +116,12 @@ class IdentityCaptchaService:
             for _ in range(CAPTCHA_NOISE_DOT_COUNT)
         )
         rotation = self._random.randint(-4, 4)
+        fit_attributes = (
+            f' textLength="{CAPTCHA_TEXT_MAX_WIDTH}" '
+            'lengthAdjust="spacingAndGlyphs"'
+            if len(expression) > CAPTCHA_LONG_EXPRESSION_LENGTH
+            else ""
+        )
         svg = (
             f'<svg xmlns="http://www.w3.org/2000/svg" width="{CAPTCHA_WIDTH}" '
             f'height="{CAPTCHA_HEIGHT}" viewBox="0 0 {CAPTCHA_WIDTH} '
@@ -127,7 +135,7 @@ class IdentityCaptchaService:
             f'<text x="{CAPTCHA_WIDTH / 2}" y="34" text-anchor="middle" '
             f'transform="rotate({rotation} {CAPTCHA_WIDTH / 2} 26)" '
             f'font-family="Consolas,monospace" font-size="{CAPTCHA_FONT_SIZE}" '
-            'font-weight="700" letter-spacing="2" fill="#172554">'
+            f'font-weight="700" letter-spacing="2" fill="#172554"{fit_attributes}>'
             f"{expression}</text></svg>"
         )
         encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")

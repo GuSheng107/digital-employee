@@ -1,5 +1,6 @@
 .container {
-  min-height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   display: flex;
   background: #070a0f;
   overflow: hidden;
@@ -608,6 +609,8 @@
   background: rgba(15, 23, 42, 0.6);
   backdrop-filter: blur(20px);
   border-left: 1px solid rgba(148, 163, 184, 0.1);
+  min-height: 0;
+  box-sizing: border-box;
 }
 
 .formCard {

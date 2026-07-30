@@ -42,7 +42,10 @@ ADMIN_ROLE_CODES = frozenset({ROLE_CODE_SUPER_ADMIN, ROLE_CODE_MANAGER})
 FULL_ACCESS_ROLE_CODES = frozenset({ROLE_CODE_SUPER_ADMIN})
 PROTECTED_ROLE_CODES = frozenset({ROLE_CODE_SUPER_ADMIN})
 PRIVILEGED_ROLE_CODES = frozenset({ROLE_CODE_SUPER_ADMIN, ROLE_CODE_MANAGER})
-BUSINESS_VIP_LEVELS = tuple(level for level in VipLevel if VipLevel.VIP1 <= level <= VipLevel.VIP9)
+RESERVED_ROLE_CODES = frozenset({ROLE_CODE_SUPER_ADMIN, ROLE_CODE_MANAGER})
+BUSINESS_VIP_LEVELS = tuple(
+    level for level in VipLevel if VipLevel.VIP1 <= level <= VipLevel.VIP9
+)
 
 INVITE_CODE_MIN_LENGTH = 4
 INVITE_CODE_MAX_LENGTH = 32
@@ -95,10 +98,6 @@ def detect_avatar_content_type(content: bytes) -> str | None:
         return "image/png"
     if content.startswith((b"GIF87a", b"GIF89a")):
         return "image/gif"
-    if (
-        len(content) >= 12
-        and content.startswith(b"RIFF")
-        and content[8:12] == b"WEBP"
-    ):
+    if len(content) >= 12 and content.startswith(b"RIFF") and content[8:12] == b"WEBP":
         return "image/webp"
     return None

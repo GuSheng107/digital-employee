@@ -66,88 +66,94 @@
 }
 
 .systemTabs {
-  display: flex;
   height: 40px;
   flex: 0 0 40px;
-  align-items: end;
-  gap: 4px;
-  padding: 0 16px;
-  overflow-x: auto;
+  min-width: 0;
+  overflow: hidden;
   background: var(--ant-color-bg-container);
   border-bottom: 1px solid var(--ant-color-border-secondary);
-  scrollbar-width: thin;
 }
 
-.systemTab {
-  display: inline-flex;
-  height: 32px;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  padding: 0 5px 0 0;
-  border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: 6px 6px 0 0;
-  color: var(--ant-color-text-secondary);
-  background: transparent;
-  transition:
-    color 0.16s ease,
-    background 0.16s ease,
-    border-color 0.16s ease;
-}
-
-.systemTabLink,
-.systemTabClose {
-  display: inline-flex;
+.systemTabsControl {
   height: 100%;
-  align-items: center;
-  border: 0;
-  color: inherit;
-  background: transparent;
-  font: inherit;
-  cursor: pointer;
+  min-width: 0;
 }
 
-.systemTabLink {
-  gap: 6px;
-  padding: 0 8px 0 13px;
+.systemTabsControl :global(.ant-tabs-nav) {
+  height: 40px;
+  margin: 0;
+  padding-left: 12px;
 }
 
-.systemTabClose {
-  width: 24px;
-  justify-content: center;
-  padding: 0;
-  border-radius: 4px;
+.systemTabsControl :global(.ant-tabs-nav::before) {
+  border-bottom: 0;
+}
+
+/*
+ * editable-card 页签仅作为路由导航条使用。以下覆盖用于移除 Ant Design
+ * 卡片边框并保持固定 40px 导航高度，需以组件内联优先级对应的 !important
+ * 覆盖，避免主题升级后重新出现双层边框。
+ */
+.systemTabsControl :global(.ant-tabs-tab) {
+  height: 32px;
+  margin-top: 8px !important;
+  padding: 0 10px !important;
+  border-color: transparent !important;
+  border-bottom: 0 !important;
+  border-radius: 5px 5px 0 0 !important;
+  background: transparent !important;
+  font-size: 13px;
+}
+
+.systemTabsControl :global(.ant-tabs-tab:hover) {
+  color: var(--ant-color-primary);
+  background: var(--ant-color-fill-alter) !important;
+}
+
+.systemTabsControl :global(.ant-tabs-tab-active) {
+  color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg) !important;
+  border-color: var(--ant-color-primary-border) !important;
+}
+
+.systemTabsControl :global(.ant-tabs-tab-remove) {
+  margin-left: 8px;
+  color: var(--ant-color-text-tertiary);
   font-size: 10px;
 }
 
-.systemTabClose:hover {
+.systemTabsControl :global(.ant-tabs-tab-remove:hover) {
   color: var(--ant-color-error);
-  background: var(--ant-color-error-bg);
 }
 
-.systemTab:hover {
-  color: var(--ant-color-primary);
-  background: var(--ant-color-fill-alter);
+.systemTabsControl :global(.ant-tabs-nav-more) {
+  height: 40px;
+  padding: 0 12px;
 }
 
-.systemTabActive {
-  position: relative;
-  color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-  border-color: var(--ant-color-primary-border);
-  font-weight: 600;
+.systemTabsControl :global(.ant-tabs-content-holder) {
+  display: none;
 }
 
-.systemTabActive::after {
-  position: absolute;
-  right: 10px;
-  bottom: -1px;
-  left: 10px;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--ant-color-primary);
-  content: "";
+.systemTabLabel {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.systemTabLabel span:last-child {
+  max-width: 112px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.systemTabActions {
+  width: 40px;
+  height: 39px;
+  border-left: 1px solid var(--ant-color-border-secondary);
+  border-radius: 0;
 }
 
 .userDropdown {

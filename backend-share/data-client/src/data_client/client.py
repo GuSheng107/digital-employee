@@ -10,7 +10,7 @@ import threading
 import gzip
 import json
 from datetime import datetime
-from typing import Any
+from typing import Any, TypedDict
 
 import httpx
 from api_common import ApiException, ServiceUnavailableError
@@ -18,6 +18,22 @@ from observability import propagation_headers
 
 DEFAULT_BACKEND_DATA_BASE_URL = "http://127.0.0.1:8010"
 DEFAULT_TIMEOUT_SECONDS = 30.0
+
+
+class IdentityRateLimitItem(TypedDict):
+    """认证限流桶消费参数。"""
+
+    bucket: str
+    identifier_hash: str
+    limit: int
+    window_seconds: int
+
+
+class IdentityRateLimitResetItem(TypedDict):
+    """认证限流桶重置参数。"""
+
+    bucket: str
+    identifier_hash: str
 
 
 class DataClient:
@@ -30,7 +46,9 @@ class DataClient:
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
         configured_url = (
-            base_url or os.environ.get("BACKEND_DATA_BASE_URL") or DEFAULT_BACKEND_DATA_BASE_URL
+            base_url
+            or os.environ.get("BACKEND_DATA_BASE_URL")
+            or DEFAULT_BACKEND_DATA_BASE_URL
         )
         self._base_url = configured_url.rstrip("/")
         self._api_key = api_key or os.environ.get("BACKEND_DATA_API_KEY", "")
@@ -165,6 +183,17 @@ class DataClient:
             },
         )
 
+    def consume_identity_rate_limits(
+        self,
+        items: list[IdentityRateLimitItem],
+    ) -> list[dict[str, Any]]:
+        """通过一次 backend-data 调用消费多个认证限流桶。"""
+        return self._request_list(
+            "POST",
+            "/api/v1/identity/auth/rate-limit/consume-many",
+            json={"items": items},
+        )
+
     def list_users(self, *, page: int, page_size: int) -> dict[str, Any]:
         """分页读取可管理用户。"""
         return self._request_dict(
@@ -205,7 +234,9 @@ class DataClient:
                 "actor_permission_codes": actor_permission_codes,
                 "is_vip": is_vip,
                 "vip_level": vip_level,
-                "vip_expires_at": (vip_expires_at.isoformat() if vip_expires_at else None),
+                "vip_expires_at": (
+                    vip_expires_at.isoformat() if vip_expires_at else None
+                ),
             },
         )
 
@@ -302,7 +333,9 @@ class DataClient:
             json={
                 "is_vip": is_vip,
                 "vip_level": vip_level,
-                "vip_expires_at": (vip_expires_at.isoformat() if vip_expires_at else None),
+                "vip_expires_at": (
+                    vip_expires_at.isoformat() if vip_expires_at else None
+                ),
                 "actor_user_id": actor_user_id,
                 "actor_role_codes": actor_role_codes,
             },
@@ -727,6 +760,17 @@ class DataClient:
             },
         )
 
+    def reset_identity_rate_limits(
+        self,
+        items: list[IdentityRateLimitResetItem],
+    ) -> None:
+        """通过一次 backend-data 调用清除多个认证限流桶。"""
+        self._request(
+            "POST",
+            "/api/v1/identity/auth/rate-limit/reset-many",
+            json={"items": items},
+        )
+
     def create_identity_captcha(self) -> dict[str, Any]:
         """要求 backend-data 生成并保存一次性算术验证码。"""
         return self._request_dict(
@@ -792,8 +836,12 @@ class DataClient:
         **kwargs: Any,
     ) -> list[dict[str, Any]]:
         value = self._request(method, path, **kwargs)
-        if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
-            raise ServiceUnavailableError(message="backend-data response contract mismatch")
+        if not isinstance(value, list) or not all(
+            isinstance(item, dict) for item in value
+        ):
+            raise ServiceUnavailableError(
+                message="backend-data response contract mismatch"
+            )
         return value
 
     def _request(
@@ -869,7 +917,9 @@ class DataClient:
                 detail=f"HTTP {response.status_code}",
             ) from exc
         if not isinstance(body, dict):
-            raise ServiceUnavailableError(message="backend-data response contract mismatch")
+            raise ServiceUnavailableError(
+                message="backend-data response contract mismatch"
+            )
         if body.get("success") is not True or response.status_code >= 400:
             cls._raise_response_error(response, body=body)
         return body.get("data")
@@ -906,7 +956,9 @@ class DataClient:
     @staticmethod
     def _ensure_dict(value: Any) -> dict[str, Any]:
         if not isinstance(value, dict):
-            raise ServiceUnavailableError(message="backend-data response contract mismatch")
+            raise ServiceUnavailableError(
+                message="backend-data response contract mismatch"
+            )
         return value
 
 
