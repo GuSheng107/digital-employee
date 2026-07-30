@@ -72,7 +72,10 @@ class MessageHub:
             if not bot_instance:
                 return
 
-            mode = getattr(bot_instance, "mode", "test")
+            # mode 由 BaseBot.__init__ 从 config 读取，所有平台子类均继承此属性。
+            # 不再用 getattr 回落默认值——历史 FeishuBot 漏写 self.mode 导致 prod
+            # 模式静默失效的根因即在此回落逻辑。
+            mode = bot_instance.mode
             if mode == "test":
                 asyncio.create_task(self._mock_agent_process(msg))
             elif mode == "prod":

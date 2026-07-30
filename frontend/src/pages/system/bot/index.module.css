@@ -1,0 +1,30 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px;
+  background-color: #fff;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.tableWrapper {
+  flex: 1;
+  overflow: hidden;
+}
+
+.platformTag {
+  font-weight: 500;
+}
+
+.secretText {
+  font-family: monospace;
+  color: #8c8c8c;
+}

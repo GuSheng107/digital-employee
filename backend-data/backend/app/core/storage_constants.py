@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 AVATAR_OBJECT_PREFIX = "avatars"
 STORAGE_ROUTE_PREFIX = "/storage"
 AVATAR_ROUTE_PREFIX = "/avatars"

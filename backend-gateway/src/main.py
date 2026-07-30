@@ -15,11 +15,13 @@ from api_common import (
     ErrorCode,
     InternalError,
     ResourceNotFoundError,
+    ServiceUnavailableError,
     success_response,
+    verify_service_api_key,
 )
 from auth_utils import PermissionCode
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -60,7 +62,7 @@ def _load_service_configuration() -> None:
 _load_service_configuration()
 
 # 初始化全局 BotManager 实例
-manager: BotManager = BotManager(config_path="config/bot.json")
+manager: BotManager = BotManager()
 
 
 async def _outbound_relay_loop() -> None:
@@ -127,9 +129,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             exc,
         )
 
-    # 2. 加载 Bot 配置并注入主事件循环
+    # 2. 从数据库加载 Bot 配置并注入主事件循环
     main_loop = asyncio.get_running_loop()
-    manager.load_from_file()
+    manager.load_from_database()
     manager.inject_main_loop_to_all(main_loop)
 
     # 3. 启动消息租约轮询和 Watchdog
@@ -153,9 +155,7 @@ app: FastAPI = FastAPI(
     lifespan=lifespan,
     docs_url=None if os.getenv("APP_ENV") == "production" else "/docs",
     redoc_url=None if os.getenv("APP_ENV") == "production" else "/redoc",
-    openapi_url=(
-        None if os.getenv("APP_ENV") == "production" else "/openapi.json"
-    ),
+    openapi_url=(None if os.getenv("APP_ENV") == "production" else "/openapi.json"),
 )
 
 
@@ -212,9 +212,7 @@ async def validation_exception_handler(
         }
         for error in exc.errors()
     ]
-    first_message = (
-        validation_errors[0]["message"] if validation_errors else "请求参数校验失败"
-    )
+    first_message = validation_errors[0]["message"] if validation_errors else "请求参数校验失败"
     return JSONResponse(
         status_code=422,
         content={
@@ -251,11 +249,7 @@ app.add_middleware(
     allow_origins=[
         "http://127.0.0.1:5173",
         "http://localhost:5173",
-        *(
-            origin.strip()
-            for origin in os.getenv("CORS_ORIGINS", "").split(",")
-            if origin.strip()
-        ),
+        *(origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()),
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
@@ -348,8 +342,45 @@ async def delete_bot(bot_id: str) -> dict:
     success: bool = manager.remove_bot(bot_id)
     if not success:
         raise ResourceNotFoundError(message=f"Bot with id '{bot_id}' not found")
+    return success_response({"status": "success", "message": f"Bot {bot_id} has been removed"})
+
+
+@app.post(
+    "/api/v1/admin/reload",
+    response_model=ApiResponse,
+)
+async def reload_bots(
+    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+) -> dict:
+    """从数据库重新拉取 Bot 配置并执行热重载。
+
+    该端点供 backend-auth 在 CRUD 落库成功后以服务间内部令牌触发，不转发
+    用户 token。鉴权失败时 fail-closed——必须显式配置 ``INTERNAL_ADMIN_TOKEN``
+    且请求头匹配才能通过。
+
+    Args:
+        x_internal_token: 服务间内部令牌，经 ``X-Internal-Token`` 请求头传入。
+
+    Returns:
+        重载结果字典。
+
+    Raises:
+        ServiceUnavailableError: ``INTERNAL_ADMIN_TOKEN`` 未配置。
+        TokenInvalidError: 请求头缺失或令牌不匹配。
+    """
+    verify_service_api_key(
+        provided=x_internal_token,
+        expected=os.getenv("INTERNAL_ADMIN_TOKEN", ""),
+    )
+    try:
+        manager.reload_from_database()
+    except Exception:
+        logger.exception("[ADMIN] Bot 配置重载失败")
+        raise ServiceUnavailableError(
+            message="Bot 配置重载失败，请稍后重试或检查日志"
+        )
     return success_response(
-        {"status": "success", "message": f"Bot {bot_id} has been removed"}
+        {"status": "success", "message": "Bot configuration reloaded from database"}
     )
 
 

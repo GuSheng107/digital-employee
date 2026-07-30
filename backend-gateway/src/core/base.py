@@ -1,13 +1,23 @@
-# -*- coding: utf-8 -*-
 """Bot 抽象基类定义。
 
 定义所有平台 Bot 实例的生命周期接口，为二期多平台扩展预留抽象层。
 """
 
 import abc
-import time
 import threading
+import time
 from typing import Any
+
+# Watchdog 连续重启计数上限：超过后标记为 dead 不再自动重启，需人工干预。
+MAX_CONSECUTIVE_RESTARTS = 5
+
+# Bot 稳定运行达到该阈值后，重启计数清零（视为偶发崩溃而非持续故障）。
+UPTIME_RESET_THRESHOLD_SECONDS = 300.0
+
+# 指数退避参数：每次重启后下一次重启需等待 backoff_initial * 2^count 秒，
+# 上限为 backoff_max。
+BACKOFF_INITIAL_SECONDS = 1.0
+BACKOFF_MAX_SECONDS = 60.0
 
 
 class BaseBot(abc.ABC):
@@ -18,6 +28,7 @@ class BaseBot(abc.ABC):
     Attributes:
         bot_id: Bot 实例唯一标识。
         config: Bot 配置字典。
+        mode: 运行模式（``test`` 内存模拟 / ``prod`` MQ 投递）。
     """
 
     def __init__(self, *, bot_id: str, config: dict[str, Any]) -> None:
@@ -25,7 +36,7 @@ class BaseBot(abc.ABC):
 
         Args:
             bot_id: Bot 实例唯一标识。
-            config: Bot 配置字典。
+            config: Bot 配置字典，必须包含 app_id/app_secret，可选 mode。
         """
         self.bot_id: str = bot_id
         self.config: dict[str, Any] = config
@@ -33,6 +44,13 @@ class BaseBot(abc.ABC):
         self._is_running: bool = False
         self._start_time: float | None = None
         self._last_error: str | None = None
+        # 运行模式收敛到基类：避免子类遗漏导致 hub 回落到默认 test 模式。
+        self.mode: str = config.get("mode", "test")
+
+        # Watchdog 退避状态：_restart_count 记录连续崩溃重启次数，
+        # _last_restart_ts 记录最近一次重启时间戳，用于计算退避等待。
+        self._restart_count: int = 0
+        self._last_restart_ts: float | None = None
 
     @property
     def is_running(self) -> bool:
@@ -105,13 +123,68 @@ class BaseBot(abc.ABC):
         self._thread = None
         self._start_time = None
 
+    def record_restart(self) -> None:
+        """记录一次 Watchdog 触发的重启，递增连续重启计数并刷新时间戳。"""
+        self._restart_count += 1
+        self._last_restart_ts = time.time()
+
+    def reset_restart_count_if_healthy(self) -> None:
+        """当 Bot 稳定运行超过阈值后清零重启计数。
+
+        在每次 Watchdog 扫描时调用：若 Bot 仍健康运行且 uptime 已超阈值，
+        视为偶发崩溃已恢复，计数清零，下次崩溃按初始退避重新计数。
+        """
+        if self._restart_count == 0:
+            return
+        uptime = self.uptime_seconds
+        if uptime is not None and uptime >= UPTIME_RESET_THRESHOLD_SECONDS:
+            self._restart_count = 0
+
+    def should_retry(self) -> bool:
+        """判断 Watchdog 是否还应继续重启该 Bot。
+
+        Returns:
+            True 表示连续重启次数未超上限，可继续尝试；False 表示已达上限，
+            标记为 dead，需人工干预。
+        """
+        return self._restart_count < MAX_CONSECUTIVE_RESTARTS
+
+    def restart_backoff_seconds(self) -> float:
+        """计算当前重启计数下的退避等待秒数。
+
+        Returns:
+            退避秒数（指数增长，上限 BACKOFF_MAX_SECONDS）。
+        """
+        return min(
+            BACKOFF_INITIAL_SECONDS * (2**self._restart_count),
+            BACKOFF_MAX_SECONDS,
+        )
+
+    def is_within_restart_backoff(self, now: float | None = None) -> bool:
+        """判断当前时间是否仍处于上次重启的退避窗口内。
+
+        Args:
+            now: 当前时间戳，None 时取 time.time()。
+
+        Returns:
+            True 表示尚未到下一次重启时间，应跳过本次重启。
+        """
+        if self._last_restart_ts is None:
+            return False
+        current = now if now is not None else time.time()
+        return current - self._last_restart_ts < self.restart_backoff_seconds()
+
     def _safe_run(self) -> None:
-        """线程安全的运行包装器，捕获异常并记录。"""
+        """线程安全的运行包装器，捕获异常并记录。
+
+        注意：异常路径下**不**重置 ``_is_running``——保留 True 标记 + 死线程
+        即为僵尸状态，由 Watchdog 检测并重启。``_is_running=False`` 仅由
+        ``stop()`` 设置，用于区分"用户主动停止"与"运行中崩溃"。
+        """
         try:
             self._run()
         except Exception as exc:
             self._last_error = str(exc)
-            self._is_running = False
 
     @abc.abstractmethod
     def _run(self) -> None:

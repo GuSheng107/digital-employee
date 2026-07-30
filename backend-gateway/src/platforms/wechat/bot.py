@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """企业微信 Bot 实例。
 
 基于 wecom_aibot_sdk 提供的 WSClient 维护长连接并处理所有的底层事件，
@@ -6,7 +5,9 @@
 """
 
 import asyncio
+from contextlib import suppress
 from typing import Any
+
 from wecom_aibot_sdk import WSClient
 
 from src.core.base import BaseBot
@@ -26,7 +27,6 @@ class WeChatBot(BaseBot):
         super().__init__(bot_id=bot_id, config=config)
         self.app_id: str = config["app_id"]
         self.app_secret: str = config["app_secret"]
-        self.mode: str = config.get("mode", "test")
 
         # 实例化专属适配器
         self.adapter: WeChatAdapter = WeChatAdapter(self)
@@ -55,19 +55,11 @@ class WeChatBot(BaseBot):
     def _on_stop(self) -> None:
         """停止 WebSocket 连接维持，并关闭关联子线程的事件循环。"""
         self._is_running = False
-        if (
-            self._loop is not None
-            and self._loop.is_running()
-            and self.client is not None
-        ):
+        if self._loop is not None and self._loop.is_running() and self.client is not None:
             # 跨线程投递断开连接的任务
-            future = asyncio.run_coroutine_threadsafe(
-                self.client.disconnect(), self._loop
-            )
-            try:
+            future = asyncio.run_coroutine_threadsafe(self.client.disconnect(), self._loop)
+            with suppress(Exception):
                 future.result(timeout=3.0)
-            except Exception:
-                pass
 
             try:
                 if self._loop.is_running():

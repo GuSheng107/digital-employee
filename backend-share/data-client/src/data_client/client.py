@@ -13,11 +13,49 @@ from datetime import datetime
 from typing import Any, TypedDict
 
 import httpx
-from api_common import ApiException, ServiceUnavailableError
+from api_common import (
+    ApiException,
+    ConflictError,
+    DependencyUnavailableError,
+    DuplicateResourceError,
+    ErrorCode,
+    InvalidCredentialsError,
+    PermissionDeniedError,
+    RateLimitExceededError,
+    ResourceNotFoundError,
+    ServiceUnavailableError,
+    SessionReplacedError,
+    TokenExpiredError,
+    TokenInvalidError,
+    UserDisabledError,
+    ValidationError,
+)
 from observability import propagation_headers
 
 DEFAULT_BACKEND_DATA_BASE_URL = "http://127.0.0.1:8010"
 DEFAULT_TIMEOUT_SECONDS = 30.0
+
+# 业务错误码 → 异常子类映射。backend-data 抛出的具体异常经响应信封序列化后
+# 只保留 code 字段；DataClient 据此重建对应子类，使调用方可按异常类型分支
+# 处理（如迁移脚本捕获 DuplicateResourceError 做跳过而非视为失败）。
+_CODE_TO_EXCEPTION: dict[str, type[ApiException]] = {
+    cls.code: cls
+    for cls in (
+        ValidationError,
+        InvalidCredentialsError,
+        UserDisabledError,
+        ResourceNotFoundError,
+        DuplicateResourceError,
+        ConflictError,
+        TokenExpiredError,
+        TokenInvalidError,
+        SessionReplacedError,
+        PermissionDeniedError,
+        RateLimitExceededError,
+        DependencyUnavailableError,
+        ServiceUnavailableError,
+    )
+}
 
 
 class IdentityRateLimitItem(TypedDict):
@@ -817,6 +855,59 @@ class DataClient:
             await self._async_client.aclose()
             self._async_client = None
 
+    # ── Bot 管理 ──────────────────────────────────
+
+    def list_bots(self, *, page: int, page_size: int) -> dict[str, Any]:
+        """分页查询 Bot 列表。"""
+        return self._request_dict(
+            "GET",
+            "/api/v1/bots",
+            params={"page": page, "page_size": page_size},
+        )
+
+    def list_active_bots(self) -> list[dict[str, Any]]:
+        """查询全部活跃 Bot（含 app_secret 明文）。"""
+        return self._request_list("GET", "/api/v1/bots/active")
+
+    def create_bot(
+        self,
+        *,
+        bot_id: str,
+        name: str,
+        platform: str,
+        app_id: str,
+        app_secret: str,
+        mode: str = "test",
+    ) -> dict[str, Any]:
+        """创建 Bot。"""
+        return self._request_dict(
+            "POST",
+            "/api/v1/bots",
+            json={
+                "bot_id": bot_id,
+                "name": name,
+                "platform": platform,
+                "app_id": app_id,
+                "app_secret": app_secret,
+                "mode": mode,
+            },
+        )
+
+    def update_bot(self, *, bot_id: str, **fields: Any) -> dict[str, Any]:
+        """更新 Bot 配置。"""
+        return self._request_dict(
+            "PUT",
+            f"/api/v1/bots/{bot_id}",
+            json=fields,
+        )
+
+    def delete_bot(self, bot_id: str) -> dict[str, Any]:
+        """软删除 Bot。"""
+        return self._request_dict(
+            "DELETE",
+            f"/api/v1/bots/{bot_id}",
+        )
+
     def close(self) -> None:
         """关闭复用的同步 HTTP 连接池。"""
         self._sync_client.close()
@@ -942,7 +1033,12 @@ class DataClient:
         data = body.get("data")
         code = data.get("code") if isinstance(data, dict) else None
         detail = data.get("detail") if isinstance(data, dict) else None
-        raise ApiException(
+        exc_cls = (
+            _CODE_TO_EXCEPTION.get(code, ApiException)
+            if isinstance(code, str)
+            else ApiException
+        )
+        raise exc_cls(
             code=code if isinstance(code, str) else None,
             message=(
                 body.get("message")

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import require_service_or_permission, verify_api_key
 from app.api.routes import (
+    bot,
     cache,
     data_items,
     health,
@@ -13,7 +14,6 @@ from app.api.routes import (
     system_config,
 )
 from app.core.storage_constants import STORAGE_ROUTE_PREFIX
-
 
 api_router = APIRouter()
 # 基础健康检查端点对外豁免，便于 K8s/负载均衡探活；
@@ -73,5 +73,11 @@ api_router.include_router(
     infrastructure.router,
     prefix="/infrastructure",
     tags=["infrastructure-internal"],
+    dependencies=[Depends(verify_api_key)],
+)
+api_router.include_router(
+    bot.router,
+    prefix="/bots",
+    tags=["bots"],
     dependencies=[Depends(verify_api_key)],
 )

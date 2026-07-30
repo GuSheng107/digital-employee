@@ -4,17 +4,16 @@ from api_common import (
     ValidationError,
     success_response,
 )
+from auth_utils import AVATAR_MAX_SIZE_BYTES
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile
 from minio.error import S3Error
 
+from app.core.config import settings
 from app.core.storage_constants import (
     AVATAR_ROUTE_PREFIX,
     IMMUTABLE_ASSET_CACHE_CONTROL,
 )
-from app.core.config import settings
-from auth_utils import AVATAR_MAX_SIZE_BYTES
 from app.services.storage_service import StorageService
-
 
 router = APIRouter()
 public_router = APIRouter()
