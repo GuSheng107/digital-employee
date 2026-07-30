@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import require_service_or_permission, verify_api_key
 from app.api.routes import (
+    bot,
     cache,
     data_items,
     health,
@@ -73,5 +74,11 @@ api_router.include_router(
     infrastructure.router,
     prefix="/infrastructure",
     tags=["infrastructure-internal"],
+    dependencies=[Depends(verify_api_key)],
+)
+api_router.include_router(
+    bot.router,
+    prefix="/bots",
+    tags=["bots"],
     dependencies=[Depends(verify_api_key)],
 )

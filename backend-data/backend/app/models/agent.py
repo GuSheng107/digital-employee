@@ -16,9 +16,6 @@ from sqlalchemy.sql import func
 
 from app.core.database import Base
 
-if TYPE_CHECKING:
-    from app.models.bot import Bot
-
 
 class Agent(Base):
     """Agent 定义表。
@@ -46,13 +43,6 @@ class Agent(Base):
         onupdate=func.now(),
     )
     deleted_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
-
-    bots: Mapped[list[Bot]] = relationship(
-        "Bot",
-        secondary="bot_agents",
-        back_populates="agents",
-        lazy="selectin",
-    )
 
     def __repr__(self) -> str:
         return f"<Agent id={self.id} agent_id={self.agent_id!r}>"

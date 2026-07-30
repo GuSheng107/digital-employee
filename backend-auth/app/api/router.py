@@ -10,6 +10,7 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     auth,
+    bots,
     health,
     invite_codes,
     menus,
@@ -30,3 +31,4 @@ api_router.include_router(
     prefix="/permissions",
     tags=["permissions"],
 )
+api_router.include_router(bots.router, prefix="/bots", tags=["bots"])

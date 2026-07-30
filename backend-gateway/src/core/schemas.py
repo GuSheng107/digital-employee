@@ -22,12 +22,6 @@ class BotConfig(BaseModel):
     )
 
 
-class BotConfigFile(BaseModel):
-    """bot.json 配置文件顶层结构。"""
-
-    bots: list[BotConfig] = Field(default_factory=list, description="Bot 配置列表")
-
-
 class BotConfigRequest(BaseModel):
     """通过 Admin API 动态注入的 Bot 配置请求体。"""
 

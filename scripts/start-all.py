@@ -203,26 +203,21 @@ def _build_service_specs() -> list[ServiceSpec]:
     auth_env_file = _ensure_env_file(auth_dir)
     gateway_env_file = _ensure_env_file(gateway_dir)
     frontend_env_file = _ensure_env_file(frontend_dir)
-    _ensure_file_from_template(
-        gateway_dir / "config" / "bot.json",
-        gateway_dir / "config" / "bot.template.json",
-    )
     for project_directory in (data_dir, auth_dir, gateway_dir):
         _sync_python_project(uv, project_directory)
-    if not (frontend_dir / "node_modules").exists():
-        install_command = (
-            (npm, "ci")
-            if (frontend_dir / "package-lock.json").exists()
-            else (npm, "install")
-        )
-        LOGGER.info("Frontend 依赖不存在，正在安装锁定依赖...")
-        install_result = subprocess.run(
-            install_command,
-            cwd=frontend_dir,
-            check=False,
-        )
-        if install_result.returncode != 0:
-            raise RuntimeError("Frontend 依赖安装失败")
+    LOGGER.info("正在检查并同步 Frontend 依赖...")
+    install_command = (
+        (npm, "ci")
+        if not (frontend_dir / "node_modules").exists() and (frontend_dir / "package-lock.json").exists()
+        else (npm, "install")
+    )
+    install_result = subprocess.run(
+        install_command,
+        cwd=frontend_dir,
+        check=False,
+    )
+    if install_result.returncode != 0:
+        raise RuntimeError("Frontend 依赖安装失败")
     LOGGER.info("正在构建 Frontend production 产物...")
     build_result = subprocess.run(
         (npm, "run", "build"),

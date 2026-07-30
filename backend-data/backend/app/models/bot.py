@@ -2,7 +2,7 @@
 
 对应 docs/schema.sql 中的 bots、bot_call_permissions、user_bots 表。
 Bot 通过 parent_bot_id 构成树形（类似部门关系），跨部门补充授权走
-bot_call_permissions。app_secret 不入库，仅存 Nacos 引用 key。
+bot_call_permissions。app_secret 明文存库，依赖数据库访问控制保障安全。
 """
 
 from __future__ import annotations
@@ -12,13 +12,10 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import BigInteger, ForeignKey, SmallInteger, String
 from sqlalchemy.dialects.postgresql import TIMESTAMP
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
 from app.core.database import Base
-
-if TYPE_CHECKING:
-    from app.models.agent import Agent
 
 
 class Bot(Base):
@@ -26,7 +23,7 @@ class Bot(Base):
 
     - ``bot_id``：业务唯一标识，gateway 用
     - ``parent_bot_id``：树形结构表达部门隶属
-    - ``app_secret_ref``：app_secret 不存 PG，存 Nacos，此处存引用 key
+    - ``app_secret``：平台应用密钥（明文存储）
     - ``mode``：test / prod
     """
 
@@ -37,7 +34,7 @@ class Bot(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     platform: Mapped[str] = mapped_column(String(32), nullable=False)
     app_id: Mapped[str | None] = mapped_column(String(128))
-    app_secret_ref: Mapped[str | None] = mapped_column(String(128))
+    app_secret: Mapped[str | None] = mapped_column(String(256))
     parent_bot_id: Mapped[int | None] = mapped_column(
         ForeignKey("bots.id", ondelete="SET NULL")
     )
@@ -54,13 +51,6 @@ class Bot(Base):
         onupdate=func.now(),
     )
     deleted_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
-
-    agents: Mapped[list[Agent]] = relationship(
-        "Agent",
-        secondary="bot_agents",
-        back_populates="bots",
-        lazy="selectin",
-    )
 
     def __repr__(self) -> str:
         return f"<Bot id={self.id} bot_id={self.bot_id!r}>"

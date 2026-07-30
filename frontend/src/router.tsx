@@ -8,6 +8,7 @@ import Login from './pages/login/Login';
 import { PageLoading } from './components/page-loading/PageLoading';
 import { PERMISSION_CODE } from './constants/access-control';
 import {
+  BotManagement,
   DataPlatformDashboard,
   DataPlatformDataItems,
   DataPlatformSystemConfig,
@@ -119,6 +120,13 @@ export const router = createBrowserRouter([
         element: withPermission(
           <LogQuery />,
           [PERMISSION_CODE.OBSERVABILITY_LOG_VIEW],
+        ),
+      },
+      {
+        path: 'system/bot',
+        element: withPermission(
+          <BotManagement />,
+          [PERMISSION_CODE.BOT_MANAGE],
         ),
       },
     ],

@@ -60,7 +60,7 @@ def _load_service_configuration() -> None:
 _load_service_configuration()
 
 # 初始化全局 BotManager 实例
-manager: BotManager = BotManager(config_path="config/bot.json")
+manager: BotManager = BotManager()
 
 
 async def _outbound_relay_loop() -> None:
@@ -127,9 +127,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             exc,
         )
 
-    # 2. 加载 Bot 配置并注入主事件循环
+    # 2. 从数据库加载 Bot 配置并注入主事件循环
     main_loop = asyncio.get_running_loop()
-    manager.load_from_file()
+    manager.load_from_database()
     manager.inject_main_loop_to_all(main_loop)
 
     # 3. 启动消息租约轮询和 Watchdog
@@ -350,6 +350,25 @@ async def delete_bot(bot_id: str) -> dict:
         raise ResourceNotFoundError(message=f"Bot with id '{bot_id}' not found")
     return success_response(
         {"status": "success", "message": f"Bot {bot_id} has been removed"}
+    )
+
+
+@app.post(
+    "/api/v1/admin/reload",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permission(PermissionCode.BOT_MANAGE))],
+)
+async def reload_bots() -> dict:
+    """从数据库重新拉取 Bot 配置并执行热重载。
+
+    前端修改 Bot 配置后调用此端点触发 Gateway 同步。
+
+    Returns:
+        重载结果字典。
+    """
+    manager.reload_from_database()
+    return success_response(
+        {"status": "success", "message": "Bot configuration reloaded from database"}
     )
 
 

@@ -817,6 +817,59 @@ class DataClient:
             await self._async_client.aclose()
             self._async_client = None
 
+    # ── Bot 管理 ──────────────────────────────────
+
+    def list_bots(self, *, page: int, page_size: int) -> dict[str, Any]:
+        """分页查询 Bot 列表。"""
+        return self._request_dict(
+            "GET",
+            "/api/v1/bots",
+            params={"page": page, "page_size": page_size},
+        )
+
+    def list_active_bots(self) -> list[dict[str, Any]]:
+        """查询全部活跃 Bot（含 app_secret 明文）。"""
+        return self._request_list("GET", "/api/v1/bots/active")
+
+    def create_bot(
+        self,
+        *,
+        bot_id: str,
+        name: str,
+        platform: str,
+        app_id: str,
+        app_secret: str,
+        mode: str = "test",
+    ) -> dict[str, Any]:
+        """创建 Bot。"""
+        return self._request_dict(
+            "POST",
+            "/api/v1/bots",
+            json={
+                "bot_id": bot_id,
+                "name": name,
+                "platform": platform,
+                "app_id": app_id,
+                "app_secret": app_secret,
+                "mode": mode,
+            },
+        )
+
+    def update_bot(self, *, bot_id: str, **fields: Any) -> dict[str, Any]:
+        """更新 Bot 配置。"""
+        return self._request_dict(
+            "PUT",
+            f"/api/v1/bots/{bot_id}",
+            json=fields,
+        )
+
+    def delete_bot(self, bot_id: str) -> dict[str, Any]:
+        """软删除 Bot。"""
+        return self._request_dict(
+            "DELETE",
+            f"/api/v1/bots/{bot_id}",
+        )
+
     def close(self) -> None:
         """关闭复用的同步 HTTP 连接池。"""
         self._sync_client.close()

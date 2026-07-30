@@ -12,27 +12,21 @@ from pathlib import Path
 from typing import Any
 from pydantic import ValidationError
 
+from loguru import logger
 from src.core.base import BaseBot
-from src.core.schemas import BotConfig, BotConfigFile, BotStatusResponse
+from src.core.schemas import BotConfig, BotStatusResponse
 from src.core.hub import hub
 from src.platforms.feishu.bot import FeishuBot
 from src.platforms.wechat.bot import WeChatBot
 
+from data_client import get_data_client
+
 
 class BotManager:
-    """Bot 实例生命周期与配置管理器。
+    """Bot 实例生命周期与配置管理器。"""
 
-    Attributes:
-        config_path: 本地静态配置文件路径。
-    """
-
-    def __init__(self, *, config_path: str = "config/bot.json") -> None:
-        """初始化 BotManager。
-
-        Args:
-            config_path: 静态配置文件路径。
-        """
-        self.config_path: Path = Path(config_path)
+    def __init__(self) -> None:
+        """初始化 BotManager。"""
         self.bots: dict[str, BaseBot] = {}
         # 保护 bots 字典与操作的线程锁
         self._lock: threading.Lock = threading.Lock()
@@ -48,27 +42,63 @@ class BotManager:
         # 注册 Bot 查找器给全局消息中枢，化解循环导包
         hub.register_bot_provider(self.get_bot)
 
-    def load_from_file(self) -> None:
-        """从本地静态文件加载 Bot 配置并初始化启动。"""
-        if not self.config_path.exists():
+    def load_from_database(self) -> None:
+        """从 backend-data 数据库拉取活跃 Bot 配置并初始化启动。"""
+        try:
+            active_bots = get_data_client().list_active_bots()
+        except Exception as exc:
+            logger.error("[BOT-MANAGER] 从数据库拉取机器人配置失败: {}", exc)
             return
 
-        try:
-            with open(self.config_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            # 使用 Pydantic 校验配置文件
-            config_file = BotConfigFile.model_validate(data)
-
-            for bot_cfg in config_file.bots:
+        for bot_dict in active_bots:
+            try:
+                bot_cfg = BotConfig(
+                    bot_id=bot_dict["bot_id"],
+                    platform=bot_dict.get("platform", "feishu"),
+                    app_id=bot_dict.get("app_id", ""),
+                    app_secret=bot_dict.get("app_secret", ""),
+                    mode=bot_dict.get("mode", "test"),
+                )
                 self.add_or_update_bot(bot_cfg)
+            except (KeyError, ValidationError) as exc:
+                logger.warning("[BOT-MANAGER] 机器配置转换失败 ({}): {}", bot_dict.get("bot_id"), exc)
 
-        except (json.JSONDecodeError, ValidationError):
-            pass
-        except OSError:
-            pass
+    def reload_from_database(self) -> None:
+        """从 backend-data 重新拉取配置，与内存中的对比执行增/删/改。
+
+        前端修改 Bot 配置后调用此方法触发热重载。
+        """
+        try:
+            active_bots = get_data_client().list_active_bots()
         except Exception:
-            pass
+            return
+
+        # 构建最新配置快照
+        new_config_map: dict[str, dict[str, Any]] = {}
+        for bot_dict in active_bots:
+            bid = bot_dict.get("bot_id")
+            if bid:
+                new_config_map[bid] = bot_dict
+
+        # 移除数据库中已不存在的 Bot
+        current_bot_ids = list(self.bots.keys())
+        for bid in current_bot_ids:
+            if bid not in new_config_map:
+                self.remove_bot(bid)
+
+        # 添加或更新数据库中的 Bot
+        for bid, bot_dict in new_config_map.items():
+            try:
+                bot_cfg = BotConfig(
+                    bot_id=bid,
+                    platform=bot_dict.get("platform", "feishu"),
+                    app_id=bot_dict.get("app_id", ""),
+                    app_secret=bot_dict.get("app_secret", ""),
+                    mode=bot_dict.get("mode", "test"),
+                )
+                self.add_or_update_bot(bot_cfg)
+            except (KeyError, ValidationError):
+                pass
 
     def inject_main_loop_to_all(self, loop: asyncio.AbstractEventLoop) -> None:
         """将 FastAPI 主事件循环注入给所有已加载的 Bot 实例。
