@@ -16,6 +16,16 @@
     # result = {"object_name": "...", "file_url": "..."}
 """
 
-from data_client.client import DataClient, get_data_client
+from data_client.client import (
+    DataClient,
+    IdentityRateLimitItem,
+    IdentityRateLimitResetItem,
+    get_data_client,
+)
 
-__all__ = ["DataClient", "get_data_client"]
+__all__ = [
+    "DataClient",
+    "IdentityRateLimitItem",
+    "IdentityRateLimitResetItem",
+    "get_data_client",
+]

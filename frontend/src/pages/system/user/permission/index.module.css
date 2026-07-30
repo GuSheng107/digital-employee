@@ -16,13 +16,20 @@
 
 .panel :global(.ant-card-body) {
   height: 100%;
-  overflow: auto;
-  scrollbar-gutter: stable;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .userTable :global(.ant-table-thead > tr > th),
 .userTable :global(.ant-table-tbody > tr > td) {
   text-align: center;
+}
+
+.userTable :global(.ant-table-thead > tr > th) {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--ant-color-bg-container);
 }
 
 .panelTitle {
@@ -39,11 +46,6 @@
 .roleSection {
   padding-top: 16px;
   border-top: 1px solid var(--ant-color-border);
-}
-
-.hintAlert {
-  margin-top: 16px;
-  margin-bottom: 16px;
 }
 
 .userPermSection {

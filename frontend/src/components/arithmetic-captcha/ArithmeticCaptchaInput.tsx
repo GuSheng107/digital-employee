@@ -33,7 +33,15 @@ export default function ArithmeticCaptchaInput({
         autoComplete="off"
         maxLength={3}
       />
-      <div className={styles.imageFrame} aria-live="polite">
+      <button
+        type="button"
+        className={styles.imageFrame}
+        aria-label="点击更换验证码"
+        aria-live="polite"
+        title="点击更换验证码"
+        disabled={loading}
+        onClick={onRefresh}
+      >
         {loading ? (
           <Skeleton.Input active block className={styles.skeleton} />
         ) : challenge ? (
@@ -46,7 +54,7 @@ export default function ArithmeticCaptchaInput({
         ) : (
           <span className={styles.error}>{error ?? '加载失败'}</span>
         )}
-      </div>
+      </button>
       <Tooltip title="换一张">
         <Button
           type="text"

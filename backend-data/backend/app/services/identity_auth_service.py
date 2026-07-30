@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TypedDict
 
 from api_common import (
     DuplicateResourceError,
@@ -24,15 +25,35 @@ from auth_utils import (
     VipLevel,
     get_vip_display,
 )
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.redis_client import RateLimitCounterEntry
 from app.models.menu import Menu
-from app.models.role import Role
+from app.models.permission import Permission
+from app.models.role import Role, UserRole
 from app.models.user import User
+from app.models.user_permission import UserMenu, UserPermission
+from app.services.identity_access_sync_service import IdentityAccessSyncService
 from app.services.identity_invite_code_service import InviteCodeService
 from app.services.identity_session_service import IdentitySessionService
+
+
+class RateLimitConsumeItem(TypedDict):
+    """认证限流桶消费参数。"""
+
+    bucket: str
+    identifier_hash: str
+    limit: int
+    window_seconds: int
+
+
+class RateLimitResetItem(TypedDict):
+    """认证限流桶重置参数。"""
+
+    bucket: str
+    identifier_hash: str
 
 
 class IdentityAuthService:
@@ -79,6 +100,7 @@ class IdentityAuthService:
         self._session.add(user)
         self._session.flush()
         user.roles.append(user_role)
+        IdentityAccessSyncService(self._session).sync_from_roles(user)
 
         invite_codes = InviteCodeService()
         invite_codes.consume(invite_code)
@@ -100,14 +122,24 @@ class IdentityAuthService:
 
     def get_credentials(self, username: str) -> dict | None:
         """返回可信服务内部使用的密码哈希与账号状态。"""
-        user = self._fetch_user_by_username(username)
-        if user is None:
+        credentials = self._session.execute(
+            select(
+                User.id,
+                User.username,
+                User.password_hash,
+                User.status,
+            ).where(
+                User.username == username,
+                User.deleted_at.is_(None),
+            )
+        ).one_or_none()
+        if credentials is None:
             return None
         return {
-            "id": user.id,
-            "username": user.username,
-            "password_hash": user.password_hash,
-            "status": user.status,
+            "id": credentials.id,
+            "username": credentials.username,
+            "password_hash": credentials.password_hash,
+            "status": credentials.status,
         }
 
     def complete_login(
@@ -119,13 +151,27 @@ class IdentityAuthService:
         refresh_token: str,
     ) -> dict:
         """更新登录审计、撤销旧会话并写入新会话。"""
-        user = self._get_active_user(user_id)
-        user.last_login_at = datetime.now(UTC)
+        values: dict[str, object] = {"last_login_at": datetime.now(UTC)}
         if client_ip:
-            user.last_login_ip = client_ip
+            values["last_login_ip"] = client_ip
+        updated_user = self._session.execute(
+            update(User)
+            .where(
+                User.id == user_id,
+                User.deleted_at.is_(None),
+            )
+            .values(**values)
+            .returning(User.id, User.status)
+        ).one_or_none()
+        if updated_user is None:
+            self._session.rollback()
+            raise TokenInvalidError(message="用户不存在或已删除")
+        if updated_user.status != 1:
+            self._session.rollback()
+            raise UserDisabledError(message="用户已被禁用")
         self._session.commit()
         return self._sessions.replace_token_pair(
-            user_id=user.id,
+            user_id=updated_user.id,
             access_token=access_token,
             refresh_token=refresh_token,
         )
@@ -171,11 +217,10 @@ class IdentityAuthService:
     ) -> dict[str, int]:
         """在 backend-data 的 Redis 中消费认证限流计数。"""
         rate_limit_key = f"auth:rate-limit:{bucket}:{identifier_hash}"
-        count = self._sessions.increment_rate_limit(
+        count, retry_after_seconds = self._sessions.increment_rate_limit_with_ttl(
             key=rate_limit_key,
             window_seconds=window_seconds,
         )
-        retry_after_seconds = self._sessions.get_rate_limit_ttl(rate_limit_key)
         if count > limit:
             raise RateLimitExceededError(
                 message=f"请求过于频繁，请在 {retry_after_seconds} 秒后重试",
@@ -192,6 +237,59 @@ class IdentityAuthService:
             "retry_after_seconds": retry_after_seconds,
         }
 
+    def consume_rate_limits(
+        self,
+        items: list[RateLimitConsumeItem],
+    ) -> list[dict[str, int]]:
+        """在一次内部 HTTP 与 Redis 事务中消费多个限流桶。"""
+        normalized_items = [
+            {
+                "key": (
+                    "auth:rate-limit:" f"{item['bucket']}:{item['identifier_hash']}"
+                ),
+                "limit": int(item["limit"]),
+                "window_seconds": int(item["window_seconds"]),
+            }
+            for item in items
+        ]
+        results = self._sessions.increment_rate_limits_with_ttl(
+            [
+                RateLimitCounterEntry(
+                    key=str(item["key"]),
+                    window_seconds=int(item["window_seconds"]),
+                    limit=int(item["limit"]),
+                )
+                for item in normalized_items
+            ]
+        )
+        responses: list[dict[str, int]] = []
+        for item, result in zip(
+            normalized_items,
+            results,
+        ):
+            limit = int(item["limit"])
+            window_seconds = int(item["window_seconds"])
+            if result.count > limit:
+                raise RateLimitExceededError(
+                    message=(
+                        "请求过于频繁，请在 " f"{result.retry_after_seconds} 秒后重试"
+                    ),
+                    detail={
+                        "retry_after_seconds": result.retry_after_seconds,
+                        "limit": limit,
+                        "window_seconds": window_seconds,
+                    },
+                )
+            responses.append(
+                {
+                    "count": result.count,
+                    "limit": limit,
+                    "window_seconds": window_seconds,
+                    "retry_after_seconds": result.retry_after_seconds,
+                }
+            )
+        return responses
+
     def reset_rate_limit(
         self,
         *,
@@ -199,8 +297,15 @@ class IdentityAuthService:
         identifier_hash: str,
     ) -> None:
         """成功登录后清除账号维度限流桶。"""
-        self._sessions.reset_rate_limit(
-            f"auth:rate-limit:{bucket}:{identifier_hash}"
+        self._sessions.reset_rate_limit(f"auth:rate-limit:{bucket}:{identifier_hash}")
+
+    def reset_rate_limits(self, items: list[RateLimitResetItem]) -> None:
+        """在一次 Redis 调用中清除多个限流桶。"""
+        self._sessions.reset_rate_limits(
+            [
+                f"auth:rate-limit:{item['bucket']}:{item['identifier_hash']}"
+                for item in items
+            ]
         )
 
     def get_current_user_context(
@@ -217,15 +322,52 @@ class IdentityAuthService:
                     message="账号已在其他设备登录，当前会话已失效"
                 )
             raise TokenInvalidError(message="access_token 无效或已过期")
-        user = self._get_active_user(user_id)
-        role_codes = [role.code for role in user.roles]
+        user = self._session.execute(
+            select(
+                User.id,
+                User.username,
+                User.nickname,
+                User.email,
+                User.phone,
+                User.avatar_url,
+                User.is_vip,
+                User.vip_level,
+                User.vip_expires_at,
+                User.status,
+            ).where(
+                User.id == user_id,
+                User.deleted_at.is_(None),
+            )
+        ).one_or_none()
+        if user is None:
+            raise TokenInvalidError(message="用户不存在或已删除")
+        if user.status != 1:
+            raise UserDisabledError(message="用户已被禁用")
+
+        role_codes = list(
+            self._session.scalars(
+                select(Role.code)
+                .join(UserRole, UserRole.role_id == Role.id)
+                .where(
+                    UserRole.user_id == user_id,
+                    Role.deleted_at.is_(None),
+                )
+                .order_by(Role.id)
+            )
+        )
         permission_codes = sorted(
-            {permission.code for role in user.roles for permission in role.permissions}
-            | {permission.code for permission in user.permissions}
+            self._session.scalars(
+                select(Permission.code)
+                .join(
+                    UserPermission,
+                    UserPermission.permission_id == Permission.id,
+                )
+                .where(UserPermission.user_id == user_id)
+            )
         )
         menu_set = (
             self._load_effective_menus(
-                user=user,
+                user_id=user_id,
                 role_codes=role_codes,
                 permission_codes=permission_codes,
             )
@@ -237,7 +379,11 @@ class IdentityAuthService:
             permission_codes = []
             if include_menus:
                 menu_set = self._password_change_menu_subset(menu_set)
-        effective_is_vip, effective_vip_level = self._effective_vip(user)
+        effective_is_vip, effective_vip_level = self._effective_vip_values(
+            is_vip=user.is_vip,
+            vip_level=user.vip_level,
+            vip_expires_at=user.vip_expires_at,
+        )
         return {
             "id": user.id,
             "username": user.username,
@@ -254,64 +400,94 @@ class IdentityAuthService:
             "status": user.status,
             "roles": role_codes,
             "permissions": permission_codes,
-            "menus": [self._menu_to_dict(menu) for menu in menu_set.values()],
+            "menus": list(menu_set.values()),
             "must_change_password": must_change_password,
         }
 
     def _load_effective_menus(
         self,
         *,
-        user: User,
+        user_id: int,
         role_codes: list[str],
         permission_codes: list[str],
-    ) -> dict[int, Menu]:
-        """计算角色菜单与用户独立菜单的有效并集。"""
+    ) -> dict[int, dict[str, int | str | bool | None]]:
+        """按用户运行时快照筛选可见菜单。"""
+        statement = select(
+            Menu.id,
+            Menu.parent_id,
+            Menu.menu_type,
+            Menu.title,
+            Menu.path,
+            Menu.component,
+            Menu.icon,
+            Menu.permission,
+            Menu.sort,
+            Menu.visible,
+        ).where(
+            Menu.deleted_at.is_(None),
+            Menu.menu_type != MenuType.ACTION,
+            Menu.visible.is_(True),
+        )
         if FULL_ACCESS_ROLE_CODES.intersection(role_codes):
-            menus = self._session.scalars(
-                select(Menu).where(
-                    Menu.deleted_at.is_(None),
-                    Menu.menu_type != MenuType.ACTION,
-                    Menu.visible.is_(True),
+            menu_rows = self._session.execute(
+                statement.order_by(Menu.sort, Menu.id)
+            ).mappings()
+        else:
+            statement = (
+                statement.join(UserMenu, UserMenu.menu_id == Menu.id)
+                .where(
+                    UserMenu.user_id == user_id,
+                    or_(
+                        Menu.permission.is_(None),
+                        Menu.permission.in_(permission_codes),
+                    ),
                 )
-            ).all()
-            return {menu.id: menu for menu in menus}
-
-        effective_permissions = set(permission_codes)
-        candidates = {menu.id: menu for role in user.roles for menu in role.menus}
-        candidates.update({menu.id: menu for menu in user.menus})
-        result: dict[int, Menu] = {}
-        for menu in candidates.values():
-            has_permission = (
-                menu.permission is None or menu.permission in effective_permissions
+                .order_by(Menu.sort, Menu.id)
             )
-            if (
-                menu.deleted_at is None
-                and menu.menu_type != MenuType.ACTION
-                and menu.visible
-                and has_permission
-            ):
-                result[menu.id] = menu
-        return result
+            menu_rows = self._session.execute(statement).mappings()
+        return {
+            int(menu["id"]): {
+                "id": int(menu["id"]),
+                "parent_id": int(menu["parent_id"]),
+                "menu_type": int(menu["menu_type"]),
+                "title": str(menu["title"]),
+                "path": str(menu["path"]) if menu["path"] is not None else None,
+                "component": (
+                    str(menu["component"]) if menu["component"] is not None else None
+                ),
+                "icon": str(menu["icon"]) if menu["icon"] is not None else None,
+                "permission": (
+                    str(menu["permission"]) if menu["permission"] is not None else None
+                ),
+                "sort": int(menu["sort"]),
+                "visible": bool(menu["visible"]),
+            }
+            for menu in menu_rows
+        }
 
     @staticmethod
     def _password_change_menu_subset(
-        menus: dict[int, Menu],
-    ) -> dict[int, Menu]:
+        menus: dict[int, dict[str, int | str | bool | None]],
+    ) -> dict[int, dict[str, int | str | bool | None]]:
         """强制改密期间只保留个人信息页及其父目录。"""
         profile_menu = next(
-            (menu for menu in menus.values() if menu.path == USER_PROFILE_ROUTE_PATH),
+            (
+                menu
+                for menu in menus.values()
+                if menu["path"] == USER_PROFILE_ROUTE_PATH
+            ),
             None,
         )
         if profile_menu is None:
             return {}
-        allowed_ids = {profile_menu.id}
-        parent_id = profile_menu.parent_id
+        allowed_ids = {int(profile_menu["id"])}
+        parent_id = int(profile_menu["parent_id"])
         while parent_id and parent_id not in allowed_ids:
             parent = menus.get(parent_id)
             if parent is None:
                 break
-            allowed_ids.add(parent.id)
-            parent_id = parent.parent_id
+            allowed_ids.add(int(parent["id"]))
+            parent_id = int(parent["parent_id"])
         return {
             menu_id: menu for menu_id, menu in menus.items() if menu_id in allowed_ids
         }
@@ -340,31 +516,22 @@ class IdentityAuthService:
             )
         ).scalar_one_or_none()
 
-    def _effective_vip(self, user: User) -> tuple[bool, int]:
+    @staticmethod
+    def _effective_vip_values(
+        *,
+        is_vip: bool,
+        vip_level: int,
+        vip_expires_at: datetime | None,
+    ) -> tuple[bool, int]:
         """按过期时间计算登录上下文中的有效 VIP。"""
-        level = int(user.vip_level or VipLevel.NORMAL)
+        level = int(vip_level or VipLevel.NORMAL)
         if level in {VipLevel.MANAGER, VipLevel.SUPER_ADMIN}:
             return True, level
-        if not user.is_vip or user.vip_expires_at is None:
+        if not is_vip or vip_expires_at is None:
             return False, int(VipLevel.NORMAL)
-        expires_at = user.vip_expires_at
+        expires_at = vip_expires_at
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=UTC)
         if expires_at <= datetime.now(UTC):
             return False, int(VipLevel.NORMAL)
         return True, level
-
-    @staticmethod
-    def _menu_to_dict(menu: Menu) -> dict:
-        return {
-            "id": menu.id,
-            "parent_id": menu.parent_id,
-            "menu_type": menu.menu_type,
-            "title": menu.title,
-            "path": menu.path,
-            "component": menu.component,
-            "icon": menu.icon,
-            "permission": menu.permission,
-            "sort": menu.sort,
-            "visible": menu.visible,
-        }

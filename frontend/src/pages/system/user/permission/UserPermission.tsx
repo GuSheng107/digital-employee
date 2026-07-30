@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Button,
   Card,
   Checkbox,
@@ -39,7 +38,10 @@ import {
   type UpdateRolePayload,
 } from '@/api/role-api';
 import { fetchMenus, type MenuItem } from '@/api/menu-api';
-import { ROLE_CODE } from '@/constants/access-control';
+import {
+  RESERVED_ROLE_CODES,
+  ROLE_CODE,
+} from '@/constants/access-control';
 import { useUserStore } from '@/store/user-store';
 import { getRequestErrorMessage } from '@/utils/request';
 import SystemPage from '@/components/system-page/SystemPage';
@@ -100,6 +102,7 @@ interface RoleFormValues {
 
 export default function UserPermission(): React.ReactElement {
   const currentUserRoles = useUserStore((state) => state.userInfo?.roles ?? []);
+  const currentUserId = useUserStore((state) => state.userInfo?.id ?? null);
   const canManageManager = currentUserRoles.includes(ROLE_CODE.SUPER_ADMIN);
 
   // ── 左栏：用户角色分配 ──
@@ -114,13 +117,14 @@ export default function UserPermission(): React.ReactElement {
   const [userRoleCodes, setUserRoleCodes] = useState<string[]>([]);
   const [userRolesSaving, setUserRolesSaving] = useState<boolean>(false);
 
-  // ── 用户独立菜单（选中用户后加载，可个性化调整） ──
+  // ── 用户菜单权限 ──
   const [userMenuIds, setUserMenuIds] = useState<number[]>([]);
   const [userMenusLoading, setUserMenusLoading] = useState<boolean>(false);
   const [userMenusSaving, setUserMenusSaving] = useState<boolean>(false);
 
   // ── 右栏：角色管理 + 菜单分配 ──
   const [roles, setRoles] = useState<RoleItem[]>([]);
+  const [roleCatalog, setRoleCatalog] = useState<RoleItem[]>([]);
   const [rolesLoading, setRolesLoading] = useState<boolean>(true);
   const [allMenus, setAllMenus] = useState<MenuItem[]>([]);
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
@@ -136,6 +140,11 @@ export default function UserPermission(): React.ReactElement {
   const menuTreeData = useMemo<TreeDataNode[]>(
     () => convertMenusToTreeData(allMenus),
     [allMenus],
+  );
+
+  const roleNameByCode = useMemo(
+    () => new Map(roleCatalog.map((role) => [role.code, role.name])),
+    [roleCatalog],
   );
 
   const selectedRole = useMemo<RoleItem | null>(
@@ -163,6 +172,7 @@ export default function UserPermission(): React.ReactElement {
     try {
       const response = await fetchRoles();
       const manageableRoles = getManageableRoles(response, canManageManager);
+      setRoleCatalog(response);
       setRoles(manageableRoles);
       setSelectedRoleId((currentRoleId) => {
         if (
@@ -181,12 +191,12 @@ export default function UserPermission(): React.ReactElement {
     }
   }
 
-  /** 加载用户独立菜单（选中用户后调用） */
+  /** 加载用户菜单权限。 */
   async function loadUserMenus(userId: number): Promise<void> {
     setUserMenusLoading(true);
     try {
       const menusResp = await fetchUserMenus(userId);
-      setUserMenuIds(menusResp.map((m) => m.id));
+      setUserMenuIds(menusResp.map((menu) => menu.id));
     } catch (error) {
       message.error(getErrorMessage(error));
     } finally {
@@ -208,6 +218,7 @@ export default function UserPermission(): React.ReactElement {
         setUsersTotal(userResponse.total);
         setUsersPage(userResponse.page);
         setUsersPageSize(userResponse.page_size);
+        setRoleCatalog(roleResponse);
         setRoles(getManageableRoles(roleResponse, canManageManager));
         setAllMenus(menuResponse);
       })
@@ -238,13 +249,13 @@ export default function UserPermission(): React.ReactElement {
     setUserRolesSaving(true);
     return assignUserRoles(selectedUser.id, userRoleCodes)
       .then(() => {
-        message.success('用户角色保存成功，角色权限与菜单已同步到该用户');
+        message.success('用户角色已保存');
         const updatedRoles = [...userRoleCodes];
         setUsers((prev) =>
           prev.map((u) => (u.id === selectedUser.id ? { ...u, roles: updatedRoles } : u)),
         );
         setSelectedUser((prev) => (prev ? { ...prev, roles: updatedRoles } : prev));
-        // 角色变更后，重新加载用户直接菜单快照。
+        // 角色变更会重新生成用户权限快照，因此同步刷新菜单权限。
         return loadUserMenus(selectedUser.id);
       })
       .catch((error: unknown) => {
@@ -297,7 +308,7 @@ export default function UserPermission(): React.ReactElement {
     setUserMenusSaving(true);
     return assignUserMenus(selectedUser.id, userMenuIds)
       .then(() => {
-        message.success('用户菜单保存成功');
+        message.success('用户菜单权限已保存');
       })
       .catch((error: unknown) => {
         message.error(getErrorMessage(error));
@@ -390,7 +401,7 @@ export default function UserPermission(): React.ReactElement {
           ) : (
             value.map((code) => (
               <Tag key={code} color="blue">
-                {code}
+                {roleNameByCode.get(code) ?? code}
               </Tag>
             ))
           )}
@@ -418,7 +429,6 @@ export default function UserPermission(): React.ReactElement {
               total: usersTotal,
               onChange: (page, pageSize) => void loadUsers(page, pageSize),
             })}
-            scroll={{ y: 220 }}
             rowSelection={{
               type: 'radio',
               selectedRowKeys: selectedUser ? [selectedUser.id] : [],
@@ -443,6 +453,7 @@ export default function UserPermission(): React.ReactElement {
                   type="primary"
                   size="small"
                   loading={userRolesSaving}
+                  disabled={selectedUser.id === currentUserId}
                   onClick={() => void handleSaveUserRoles()}
                 >
                   保存角色
@@ -455,6 +466,7 @@ export default function UserPermission(): React.ReactElement {
               ) : (
                 <Checkbox.Group
                   value={userRoleCodes}
+                  disabled={selectedUser.id === currentUserId}
                   onChange={(values) => {
                     setUserRoleCodes(
                       values.filter((v): v is string => typeof v === 'string'),
@@ -472,17 +484,10 @@ export default function UserPermission(): React.ReactElement {
               )}
             </div>
 
-            <Alert
-              type="info"
-              showIcon
-              className={styles.hintAlert}
-              message="角色提供基础权限；下方用户直接菜单用于个性化补充，并会同步对应接口权限。"
-            />
-
-            {/* 用户独立菜单 */}
+            {/* 用户菜单权限 */}
             <div className={styles.userPermSection}>
               <div className={styles.sectionHeader}>
-                <Text strong>用户独立菜单</Text>
+                <Text strong>用户菜单权限</Text>
                 <Button
                   type="primary"
                   size="small"
@@ -643,6 +648,18 @@ export default function UserPermission(): React.ReactElement {
               { required: true, message: '请输入角色代码' },
               { min: 2, max: 64, message: '角色代码长度需在 2-64 之间' },
               { pattern: /^[a-zA-Z][a-zA-Z0-9_]*$/, message: '仅支持字母开头，字母/数字/下划线' },
+              {
+                validator: (_, value: string | undefined) => {
+                  if (
+                    editingRole !== null
+                    || !value
+                    || !RESERVED_ROLE_CODES.has(value)
+                  ) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error('该角色代码由系统保留'));
+                },
+              },
             ]}
           >
             <Input placeholder="如 editor" disabled={editingRole !== null} />

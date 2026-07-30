@@ -10,7 +10,11 @@ from datetime import datetime
 from typing import Any
 
 from api_common import InvalidCredentialsError, PermissionDeniedError
-from auth_utils import ROLE_CODE_MANAGER, ROLE_CODE_SUPER_ADMIN
+from auth_utils import (
+    PROTECTED_ROLE_CODES,
+    ROLE_CODE_MANAGER,
+    ROLE_CODE_SUPER_ADMIN,
+)
 from data_client import DataClient, get_data_client
 
 from app.core.security import hash_password, verify_password
@@ -184,7 +188,9 @@ class UserService:
         role_codes: list[str],
         actor_role_codes: list[str],
     ) -> None:
-        """限制管理员角色只能由超级管理员授予。"""
+        """禁止分配超级管理员，并限制管理员角色的授予范围。"""
+        if PROTECTED_ROLE_CODES.intersection(role_codes):
+            raise PermissionDeniedError(message="超级管理员角色不可分配")
         if (
             ROLE_CODE_MANAGER in role_codes
             and ROLE_CODE_SUPER_ADMIN not in actor_role_codes

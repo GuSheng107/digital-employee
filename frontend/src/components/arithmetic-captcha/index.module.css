@@ -1,6 +1,8 @@
 .control {
   display: grid;
-  grid-template-columns: minmax(96px, 1fr) 168px 36px;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(96px, 1fr) minmax(132px, 168px) 36px;
   gap: 8px;
   align-items: center;
 }
@@ -27,20 +29,34 @@
 
 .imageFrame {
   display: flex;
-  width: 168px;
+  width: 100%;
+  min-width: 0;
   height: 52px;
+  padding: 0;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 8px;
   background: #f8fafc;
+  cursor: pointer;
+}
+
+.imageFrame:focus-visible {
+  outline: 2px solid #818cf8;
+  outline-offset: 2px;
+}
+
+.imageFrame:disabled {
+  cursor: wait;
 }
 
 .image {
   display: block;
-  width: 168px;
+  width: 100%;
+  min-width: 0;
   height: 52px;
+  object-fit: contain;
   user-select: none;
 }
 
@@ -75,12 +91,7 @@
 
 @media (max-width: 520px) {
   .control {
-    grid-template-columns: 1fr 148px 32px;
+    grid-template-columns: minmax(0, 1fr) minmax(128px, 148px) 32px;
     gap: 6px;
-  }
-
-  .imageFrame,
-  .image {
-    width: 148px;
   }
 }

@@ -9,6 +9,7 @@ import {
   type MenuNode,
   type LoginPayload,
   type RegisterRequest,
+  type TokenPair,
   type UserInfo,
 } from '@/api/auth-api';
 import { getRequestErrorMessage, HttpError } from '@/utils/request';
@@ -22,13 +23,17 @@ interface AuthState {
   avatar: string;
   /** 加载态（登录/获取用户信息时） */
   loading: boolean;
+  /** 登录后异步加载用户资料、菜单和权限。 */
+  profileLoading: boolean;
+  /** 用户资料异步加载失败时的可恢复错误。 */
+  profileError: string | null;
   /** 登录态恢复中（页面刷新时 restoreAuth 执行期间为 true，完成后置 false） */
   restoring: boolean;
-  /** 当前用户可见的菜单树（后端返回，登录后填充；空数组表示使用默认菜单） */
+  /** 当前用户可见的菜单树；空数组表示尚未加载或未授权。 */
   menus: MenuNode[];
 
-  /** 用户名密码登录，成功后存储双 token 并拉取用户信息 */
-  login: (payload: LoginPayload) => Promise<void>;
+  /** 用户名密码登录，成功后立即返回 token，并异步加载用户信息。 */
+  login: (payload: LoginPayload) => Promise<TokenPair>;
   /** 用户注册，成功后存储双 token 并拉取用户信息（自动登录） */
   register: (payload: RegisterRequest) => Promise<void>;
   /** 登出，撤销 token 并清除登录态 */
@@ -39,6 +44,8 @@ interface AuthState {
   clearAuth: () => void;
   /** 重新拉取当前用户信息（含菜单树），用于菜单/权限变更后清除前端缓存 */
   reloadMenus: () => Promise<void>;
+  /** 登录成功后异步加载用户资料、菜单和权限。 */
+  hydrateCurrentUser: () => Promise<void>;
 }
 
 /** 存储 access_token 到 localStorage */
@@ -62,11 +69,33 @@ function getUserAvatar(info: UserInfo): string {
   return resolveAvatarUrl(info.avatar_url) ?? me;
 }
 
+let currentUserRequest: Promise<UserInfo> | null = null;
+
+/** 合并并发的 /auth/me 请求，避免初始化与菜单刷新重复加载同一上下文。 */
+function fetchCurrentUserOnce(): Promise<UserInfo> {
+  if (currentUserRequest) {
+    return currentUserRequest;
+  }
+  currentUserRequest = getCurrentUser().finally(() => {
+    currentUserRequest = null;
+  });
+  return currentUserRequest;
+}
+
+function isAuthenticationFailure(error: unknown): boolean {
+  return (
+    !localStorage.getItem('access_token')
+    || (error instanceof HttpError && error.status === 401)
+  );
+}
+
 export const useUserStore = create<AuthState>((set) => ({
   isAuthenticated: false,
   userInfo: null,
   avatar: me,
   loading: false,
+  profileLoading: false,
+  profileError: null,
   // 初始 true：AppInitializer 的 restoreAuth 完成前，RequireAuth 显示加载动画而非立即跳转登录页
   restoring: true,
   menus: [],
@@ -77,16 +106,14 @@ export const useUserStore = create<AuthState>((set) => ({
       const tokenPair = await login(payload);
       persistAccessToken(tokenPair.access_token);
       persistRefreshToken(tokenPair.refresh_token);
-
-      // 登录成功后拉取用户信息
-      const info = await getCurrentUser();
       set({
         isAuthenticated: true,
-        userInfo: info,
-        avatar: getUserAvatar(info),
-        menus: info.menus ?? [],
         loading: false,
+        restoring: false,
+        profileError: null,
       });
+      void useUserStore.getState().hydrateCurrentUser();
+      return tokenPair;
     } catch (error) {
       set({ loading: false });
       throw error;
@@ -101,13 +128,15 @@ export const useUserStore = create<AuthState>((set) => ({
       persistRefreshToken(tokenPair.refresh_token);
 
       // 注册成功后自动登录：拉取用户信息
-      const info = await getCurrentUser();
+      const info = await fetchCurrentUserOnce();
       set({
         isAuthenticated: true,
         userInfo: info,
         avatar: getUserAvatar(info),
         menus: info.menus ?? [],
         loading: false,
+        profileLoading: false,
+        profileError: null,
       });
     } catch (error) {
       set({ loading: false });
@@ -128,6 +157,8 @@ export const useUserStore = create<AuthState>((set) => ({
         userInfo: null,
         avatar: me,
         menus: [],
+        profileLoading: false,
+        profileError: null,
       });
     }
   },
@@ -144,18 +175,46 @@ export const useUserStore = create<AuthState>((set) => ({
       set({ restoring: false });
       return;
     }
+    set({
+      isAuthenticated: true,
+      restoring: false,
+      profileLoading: true,
+      profileError: null,
+    });
     try {
-      const info = await getCurrentUser();
+      const info = await fetchCurrentUserOnce();
       set({
         isAuthenticated: true,
         userInfo: info,
         avatar: getUserAvatar(info),
         menus: info.menus ?? [],
         restoring: false,
+        profileLoading: false,
+        profileError: null,
       });
-    } catch {
-      clearStoredTokens();
-      set({ restoring: false, isAuthenticated: false, userInfo: null, avatar: me, menus: [] });
+    } catch (error) {
+      if (isAuthenticationFailure(error)) {
+        clearStoredTokens();
+        set({
+          restoring: false,
+          isAuthenticated: false,
+          userInfo: null,
+          avatar: me,
+          menus: [],
+          profileLoading: false,
+          profileError: null,
+        });
+        return;
+      }
+      set({
+        restoring: false,
+        isAuthenticated: true,
+        profileLoading: false,
+        profileError: getRequestErrorMessage(
+          error,
+          '用户信息加载失败，请稍后重试',
+        ),
+      });
     }
   },
 
@@ -166,17 +225,65 @@ export const useUserStore = create<AuthState>((set) => ({
       userInfo: null,
       avatar: me,
       menus: [],
+      profileLoading: false,
+      profileError: null,
     });
   },
 
   reloadMenus: async () => {
     // 菜单/权限变更后，重新拉取 /auth/me 刷新本地缓存的菜单树与权限码
-    const info = await getCurrentUser();
-    set({
-      userInfo: info,
-      avatar: getUserAvatar(info),
-      menus: info.menus ?? [],
-    });
+    set({ profileLoading: true, profileError: null });
+    try {
+      const info = await fetchCurrentUserOnce();
+      set({
+        userInfo: info,
+        avatar: getUserAvatar(info),
+        menus: info.menus ?? [],
+        profileLoading: false,
+        profileError: null,
+      });
+    } catch (error) {
+      set({ profileLoading: false });
+      throw error;
+    }
+  },
+
+  hydrateCurrentUser: async () => {
+    const currentState = useUserStore.getState();
+    if (currentState.profileLoading || currentState.userInfo) {
+      return;
+    }
+    set({ profileLoading: true, profileError: null });
+    try {
+      const info = await fetchCurrentUserOnce();
+      set({
+        userInfo: info,
+        avatar: getUserAvatar(info),
+        menus: info.menus ?? [],
+        profileLoading: false,
+        profileError: null,
+      });
+    } catch (error) {
+      if (isAuthenticationFailure(error)) {
+        clearStoredTokens();
+        set({
+          isAuthenticated: false,
+          userInfo: null,
+          avatar: me,
+          menus: [],
+          profileLoading: false,
+          profileError: null,
+        });
+        return;
+      }
+      set({
+        profileLoading: false,
+        profileError: getRequestErrorMessage(
+          error,
+          '用户信息加载失败，请稍后重试',
+        ),
+      });
+    }
   },
 }));
 

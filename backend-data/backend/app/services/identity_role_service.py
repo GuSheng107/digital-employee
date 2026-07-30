@@ -13,15 +13,17 @@ from api_common import (
 )
 from auth_utils import (
     PROTECTED_ROLE_CODES,
+    RESERVED_ROLE_CODES,
     ROLE_CODE_MANAGER,
     ROLE_CODE_SUPER_ADMIN,
 )
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.menu import Menu
 from app.models.permission import Permission
-from app.models.role import Role
+from app.models.role import Role, UserRole
+from app.models.user import User
 
 
 class RoleService:
@@ -89,7 +91,7 @@ class RoleService:
         Raises:
             DuplicateResourceError: 角色代码已存在。
         """
-        if code in PROTECTED_ROLE_CODES:
+        if code in RESERVED_ROLE_CODES:
             raise PermissionDeniedError(message="该角色代码由系统保留")
         existing = self._session.scalars(
             select(Role).where(Role.code == code, Role.deleted_at.is_(None))
@@ -207,13 +209,21 @@ class RoleService:
         if role.is_builtin:
             raise PermissionDeniedError(message="内置角色不可删除")
 
-        # 检查是否仍有关联用户
-        if role.users:
-            user_count = len([u for u in role.users if u.deleted_at is None])
-            if user_count > 0:
-                raise ConflictError(
-                    message=f"角色仍关联 {user_count} 个用户，请先解除关联后再删除"
+        user_count = int(
+            self._session.scalar(
+                select(func.count(UserRole.user_id))
+                .join(User, User.id == UserRole.user_id)
+                .where(
+                    UserRole.role_id == role.id,
+                    User.deleted_at.is_(None),
                 )
+            )
+            or 0
+        )
+        if user_count > 0:
+            raise ConflictError(
+                message=f"角色仍关联 {user_count} 个用户，请先解除关联后再删除"
+            )
 
         # 软删除：清除关联菜单后标记删除
         role.menus = []
@@ -361,9 +371,7 @@ class RoleService:
         if ROLE_CODE_SUPER_ADMIN in actor_role_codes:
             return
         permission_codes = {
-            menu.permission
-            for menu in menus
-            if menu.permission is not None
+            menu.permission for menu in menus if menu.permission is not None
         }
         unauthorized_codes = sorted(permission_codes - set(actor_permission_codes))
         if unauthorized_codes:

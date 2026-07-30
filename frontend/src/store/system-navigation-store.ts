@@ -1,9 +1,11 @@
 import { create } from 'zustand';
+import { MAX_SYSTEM_TAB_COUNT } from '@/constants/navigation';
 
 interface SystemNavigationState {
   visitedPaths: string[];
   visitPath: (path: string) => void;
   closePath: (path: string) => void;
+  closeOtherPaths: (path: string) => void;
   clearVisitedPaths: () => void;
 }
 
@@ -13,12 +15,21 @@ export const useSystemNavigationStore = create<SystemNavigationState>((set) => (
   visitPath: (path) => set((state) => (
     state.visitedPaths.includes(path)
       ? state
-      : { visitedPaths: [...state.visitedPaths, path] }
+      : {
+        visitedPaths: [...state.visitedPaths, path].slice(
+          -MAX_SYSTEM_TAB_COUNT,
+        ),
+      }
   )),
   closePath: (path) => set((state) => ({
     visitedPaths: state.visitedPaths.filter((visitedPath) => (
       visitedPath !== path
     )),
   })),
+  closeOtherPaths: (path) => set((state) => (
+    state.visitedPaths.includes(path)
+      ? { visitedPaths: [path] }
+      : state
+  )),
   clearVisitedPaths: () => set({ visitedPaths: [] }),
 }));
