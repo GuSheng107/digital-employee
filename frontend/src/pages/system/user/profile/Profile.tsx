@@ -45,7 +45,7 @@ interface ProfileFormValues {
   nickname: string;
   email: string;
   phone: string;
-  /** 修改密码时填入，留空表示不修改 */
+  /** 修改密码时填入 */
   password?: string;
   /** 当前密码，仅修改密码时必填 */
   currentPassword?: string;
@@ -272,7 +272,7 @@ export default function Profile(): React.ReactElement {
               extra={
                 userInfo.must_change_password
                   ? '必须设置新密码后才能继续使用系统'
-                  : '留空表示不修改密码'
+                  : undefined
               }
               rules={[
                 {
@@ -285,7 +285,7 @@ export default function Profile(): React.ReactElement {
                 },
               ]}
             >
-              <Input.Password placeholder="留空不修改，填写则更新密码" autoComplete="new-password" />
+              <Input.Password placeholder="请输入新密码" autoComplete="new-password" />
             </Form.Item>
             <Form.Item
               label="确认密码"
@@ -311,9 +311,11 @@ export default function Profile(): React.ReactElement {
               <Input.Password placeholder="请再次输入新密码" autoComplete="new-password" />
             </Form.Item>
             <Form.Item>
-              <Button type="primary" htmlType="submit" loading={submitting}>
-                保存修改
-              </Button>
+              <div className={styles.submitContainer}>
+                <Button type="primary" htmlType="submit" loading={submitting} block>
+                  保存修改
+                </Button>
+              </div>
             </Form.Item>
           </Form>
         </div>

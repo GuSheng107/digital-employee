@@ -26,7 +26,13 @@ export default function TraceNodeDetail({
   const callStatus = resolveSpanCallStatus(span, events);
   return (
     <div>
-      <Descriptions size="small" column={2} bordered>
+      <Descriptions
+        size="small"
+        column={1}
+        bordered
+        labelStyle={{ width: 120, whiteSpace: 'nowrap' }}
+        contentStyle={{ wordBreak: 'break-all' }}
+      >
         <Descriptions.Item label="服务">
           {TRACE_SERVICE_LABELS[span.service] ?? span.service}
         </Descriptions.Item>
@@ -35,7 +41,7 @@ export default function TraceNodeDetail({
             {CALL_STATUS_LABELS[callStatus]}
           </Tag>
         </Descriptions.Item>
-        <Descriptions.Item label="Span ID" span={2}>
+        <Descriptions.Item label="Span ID">
           {span.span_id}
         </Descriptions.Item>
         <Descriptions.Item label="操作">{span.operation}</Descriptions.Item>
@@ -45,7 +51,7 @@ export default function TraceNodeDetail({
           {spanEvents.map((event) => event.name).join('、') || '-'}
         </Descriptions.Item>
         {span.error_message && (
-          <Descriptions.Item label="异常" span={2}>
+          <Descriptions.Item label="异常">
             {span.error_message}
           </Descriptions.Item>
         )}

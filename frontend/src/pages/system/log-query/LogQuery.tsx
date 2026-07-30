@@ -149,7 +149,7 @@ export default function LogQuery(): React.ReactElement {
 
       <Drawer
         title={detail ? `链路详情 · ${detail.trace.trace_id}` : '链路详情'}
-        width="min(1120px, 92vw)"
+        width="min(1400px, 96vw)"
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
       >

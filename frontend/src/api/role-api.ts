@@ -31,7 +31,7 @@ export function createRole(payload: CreateRolePayload): Promise<RoleItem> {
 }
 
 export function updateRole(roleId: number, payload: UpdateRolePayload): Promise<RoleItem> {
-  return backendAuthRequest.put<RoleItem>(`/roles/${roleId}`, payload);
+  return backendAuthRequest.post<RoleItem>(`/roles/${roleId}`, payload);
 }
 
 export function deleteRole(roleId: number): Promise<{ role_id: number; deleted: boolean }> {
@@ -43,5 +43,5 @@ export function fetchRoleMenus(roleId: number): Promise<unknown[]> {
 }
 
 export function assignRoleMenus(roleId: number, menuIds: number[]): Promise<{ role_id: number; menu_ids: number[] }> {
-  return backendAuthRequest.put(`/roles/${roleId}/menus`, { menu_ids: menuIds });
+  return backendAuthRequest.post(`/roles/${roleId}/menus`, { menu_ids: menuIds });
 }

@@ -55,7 +55,7 @@ def create_role(
     return success_response(result)
 
 
-@router.put(
+@router.post(
     "/{role_id}",
     response_model=ApiResponse,
 )
@@ -111,7 +111,7 @@ def get_role_menus(
     return success_response(service.get_role_menus(role_id=role_id))
 
 
-@router.put(
+@router.post(
     "/{role_id}/menus",
     response_model=ApiResponse,
 )

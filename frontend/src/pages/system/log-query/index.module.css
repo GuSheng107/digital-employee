@@ -64,7 +64,7 @@
 
 .traceLayout {
   display: grid;
-  grid-template-columns: minmax(360px, 0.9fr) minmax(460px, 1.1fr);
+  grid-template-columns: minmax(200px, 0.35fr) minmax(760px, 1.65fr);
   gap: 18px;
   min-height: 560px;
 }
@@ -79,21 +79,11 @@
 }
 
 :global(.trace-tree-title) {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
+  display: inline-block;
   max-width: 100%;
-}
-
-:global(.trace-tree-title > span:nth-child(2)) {
-  max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-:global(.trace-tree-title small) {
-  color: #64748b;
 }
 
 :global(.trace-payload pre) {

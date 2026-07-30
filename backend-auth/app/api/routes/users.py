@@ -80,7 +80,7 @@ def create_user(
     return success_response(result)
 
 
-@router.put("/me", response_model=ApiResponse)
+@router.post("/me", response_model=ApiResponse)
 def update_profile(
     payload: UpdateProfileRequest,
     current_user: UserInfo = Depends(get_current_user),
@@ -148,7 +148,7 @@ def upload_avatar(
     return success_response(result)
 
 
-@router.put(
+@router.post(
     "/{user_id}/roles",
     response_model=ApiResponse,
 )
@@ -174,7 +174,7 @@ def assign_roles(
     return success_response(result)
 
 
-@router.put(
+@router.post(
     "/{user_id}/password",
     response_model=ApiResponse,
 )
@@ -196,7 +196,7 @@ def reset_user_password(
     return success_response(result)
 
 
-@router.put(
+@router.post(
     "/{user_id}/vip",
     response_model=ApiResponse,
 )
@@ -220,7 +220,7 @@ def update_user_vip(
     )
 
 
-@router.put(
+@router.post(
     "/{user_id}/status",
     response_model=ApiResponse,
 )
@@ -275,7 +275,7 @@ def get_user_menus(
     return success_response(service.get_user_menus(user_id=user_id))
 
 
-@router.put(
+@router.post(
     "/{user_id}/menus",
     response_model=ApiResponse,
 )
@@ -314,7 +314,7 @@ def get_user_permissions(
     return success_response(service.get_user_permissions(user_id=user_id))
 
 
-@router.put(
+@router.post(
     "/{user_id}/permissions",
     response_model=ApiResponse,
 )

@@ -252,7 +252,7 @@ app.add_middleware(
         *(origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()),
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 app.add_middleware(

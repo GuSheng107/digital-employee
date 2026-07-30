@@ -50,7 +50,7 @@ def create_bot(payload: CreateBotRequest) -> dict:
     return success_response(result)
 
 
-@router.put("/{bot_id}", response_model=ApiResponse)
+@router.post("/{bot_id}", response_model=ApiResponse)
 def update_bot(bot_id: str, payload: UpdateBotRequest) -> dict:
     """更新 Bot 配置（字段未传则不修改）。"""
     service = BotService()

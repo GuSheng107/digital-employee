@@ -7,6 +7,7 @@ import json
 from collections.abc import Awaitable, Callable, Iterable
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import parse_qs
 from uuid import UUID, uuid4
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -299,6 +300,24 @@ class TraceMiddleware:
                     content_type=request_content_type or "application/octet-stream",
                     content=decode_body(request_body, request_content_type),
                     size_bytes=len(request_body),
+                    created_at=started_at,
+                )
+            )
+        elif query_string:
+            # GET 等无请求体请求，将查询参数当作请求体记录
+            query_dict = {
+                k: v[0] if len(v) == 1 else v
+                for k, v in parse_qs(query_string).items()
+            }
+            payloads.append(
+                TracePayload(
+                    trace_id=trace_id,
+                    span_id=span_id,
+                    service=self.service,
+                    payload_type=TracePayloadType.HTTP_REQUEST_BODY,
+                    content_type="application/json",
+                    content=query_dict,
+                    size_bytes=len(query_string.encode("utf-8")),
                     created_at=started_at,
                 )
             )

@@ -32,3 +32,21 @@ class InviteCodeService:
     def list_page(self, *, page: int, page_size: int) -> dict[str, Any]:
         """分页列出邀请码。"""
         return self._data.list_invite_codes(page=page, page_size=page_size)
+
+    def update(
+        self,
+        *,
+        code: str,
+        remaining: int,
+        expires_in_hours: int,
+    ) -> dict[str, Any]:
+        """更新邀请码的剩余次数与过期时间。"""
+        return self._data.update_invite_code(
+            code=code,
+            remaining=remaining,
+            expires_in_hours=expires_in_hours,
+        )
+
+    def delete(self, *, code: str) -> dict[str, Any]:
+        """删除邀请码。"""
+        return self._data.delete_invite_code(code=code)

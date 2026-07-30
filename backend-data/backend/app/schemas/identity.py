@@ -276,3 +276,10 @@ class CreateIdentityInviteCodeRequest(BaseModel):
     expires_in_hours: int = Field(default=168, ge=1, le=720)
     created_by: int = Field(..., ge=1)
     custom_code: str | None = Field(default=None, min_length=4, max_length=32)
+
+
+class UpdateIdentityInviteCodeRequest(BaseModel):
+    """更新邀请码（仅可修改剩余次数与过期时间）。"""
+
+    remaining: int = Field(..., ge=1, le=100)
+    expires_in_hours: int = Field(..., ge=1, le=720)

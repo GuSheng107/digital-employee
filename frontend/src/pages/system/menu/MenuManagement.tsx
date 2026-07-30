@@ -179,16 +179,6 @@ export default function MenuManagement(): React.ReactElement {
   /** 表格数据：仅根节点进入 dataSource，子节点通过 children 嵌套 */
   const tableData = useMemo(() => buildTableData(menus), [menus]);
 
-  const menuSummary = useMemo(
-    () => ({
-      total: menus.length,
-      directories: menus.filter((menu) => menu.menu_type === 1).length,
-      pages: menus.filter((menu) => menu.menu_type === 2).length,
-      permissions: menus.filter((menu) => Boolean(menu.permission)).length,
-    }),
-    [menus],
-  );
-
   /** 父菜单树选项：包含「顶级」选项 */
   const parentTreeData = useMemo<TreeNode[]>(() => {
     const tree = buildTree(menus);
@@ -551,29 +541,6 @@ export default function MenuManagement(): React.ReactElement {
       )}
     >
       <div className={styles.container}>
-
-      <div className={styles.summaryGrid}>
-        <div className={styles.summaryItem}>
-          <span className={styles.summaryLabel}>全部节点</span>
-          <strong className={styles.summaryValue}>{menuSummary.total}</strong>
-        </div>
-        <div className={styles.summaryItem}>
-          <span className={styles.summaryLabel}>目录层级</span>
-          <strong className={styles.summaryValue}>
-            {menuSummary.directories}
-          </strong>
-        </div>
-        <div className={styles.summaryItem}>
-          <span className={styles.summaryLabel}>页面菜单</span>
-          <strong className={styles.summaryValue}>{menuSummary.pages}</strong>
-        </div>
-        <div className={styles.summaryItem}>
-          <span className={styles.summaryLabel}>权限绑定</span>
-          <strong className={styles.summaryValue}>
-            {menuSummary.permissions}
-          </strong>
-        </div>
-      </div>
 
       <div className={styles.tableWrapper}>
         <Table<MenuTreeNode>

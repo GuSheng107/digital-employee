@@ -46,7 +46,7 @@ def get_data_item(
     return success_response(DataItemRead.model_validate(item).model_dump(mode="json"))
 
 
-@router.put("/{item_id}", response_model=ApiResponse)
+@router.post("/{item_id}", response_model=ApiResponse)
 def update_data_item(
     item_id: UUID,
     payload: DataItemUpdate,

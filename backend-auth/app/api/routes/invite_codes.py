@@ -1,9 +1,11 @@
 """邀请码管理路由（需要 invite_code:manage 权限）。
 
-- POST /invite-codes：创建邀请码。
-- GET  /invite-codes：列出所有邀请码。
+- POST   /invite-codes：创建邀请码。
+- GET    /invite-codes：列出所有邀请码。
+- POST   /invite-codes/{code}：更新邀请码次数与过期时间。
+- DELETE /invite-codes/{code}：删除邀请码。
 
-两个端点都通过 access_token 鉴权（不挂载 API Key），并要求当前用户
+所有端点都通过 access_token 鉴权（不挂载 API Key），并要求当前用户
 持有 ``invite_code:manage`` 权限码（admin 角色自动放行）。
 """
 
@@ -15,7 +17,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import require_permission
 from app.schemas.auth import UserInfo
-from app.schemas.invite_code import CreateInviteCodeRequest
+from app.schemas.invite_code import CreateInviteCodeRequest, UpdateInviteCodeRequest
 from app.services.invite_code_service import InviteCodeService
 
 router = APIRouter()
@@ -49,3 +51,36 @@ def list_invite_codes(
     """分页列出邀请码，需要 invite_code:manage 权限。"""
     service = InviteCodeService()
     return success_response(service.list_page(page=page, page_size=page_size))
+
+
+@router.post(
+    "/{code}",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permission(PermissionCode.INVITE_CODE_MANAGE))],
+)
+def update_invite_code(
+    code: str,
+    payload: UpdateInviteCodeRequest,
+) -> dict:
+    """更新邀请码的剩余次数与过期时间，需要 invite_code:manage 权限。"""
+    service = InviteCodeService()
+    return success_response(
+        service.update(
+            code=code,
+            remaining=payload.remaining,
+            expires_in_hours=payload.expires_in_hours,
+        )
+    )
+
+
+@router.delete(
+    "/{code}",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permission(PermissionCode.INVITE_CODE_MANAGE))],
+)
+def delete_invite_code(
+    code: str,
+) -> dict:
+    """删除邀请码，需要 invite_code:manage 权限。"""
+    service = InviteCodeService()
+    return success_response(service.delete(code=code))

@@ -14,10 +14,13 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import {
   createInviteCode,
+  deleteInviteCode,
   fetchInviteCodes,
+  updateInviteCode,
   type CreateInviteCodePayload,
   type CreateInviteCodeResult,
   type InviteCodeItem,
+  type UpdateInviteCodePayload,
 } from '@/api/invite-code-api';
 import { getRequestErrorMessage } from '@/utils/request';
 import {
@@ -35,6 +38,11 @@ const { Text } = Typography;
 
 interface CreateInviteCodeFormValues {
   customCode?: string;
+  remaining: number;
+  expiresInHours: number;
+}
+
+interface EditInviteCodeFormValues {
   remaining: number;
   expiresInHours: number;
 }
@@ -62,6 +70,10 @@ export default function InviteCode(): React.ReactElement {
   const [createOpen, setCreateOpen] = useState<boolean>(false);
   const [createSubmitting, setCreateSubmitting] = useState<boolean>(false);
   const [createForm] = Form.useForm<CreateInviteCodeFormValues>();
+
+  const [editRecord, setEditRecord] = useState<InviteCodeItem | null>(null);
+  const [editSubmitting, setEditSubmitting] = useState<boolean>(false);
+  const [editForm] = Form.useForm<EditInviteCodeFormValues>();
 
   const [createdResult, setCreatedResult] = useState<CreateInviteCodeResult | null>(null);
 
@@ -132,6 +144,57 @@ export default function InviteCode(): React.ReactElement {
     }
   }
 
+  function openEditModal(record: InviteCodeItem): void {
+    const now = Date.now() / 1000;
+    const expiresInHours = Math.max(
+      1,
+      Math.ceil((record.expires_at - now) / 3600),
+    );
+    editForm.setFieldsValue({
+      remaining: record.remaining,
+      expiresInHours,
+    });
+    setEditRecord(record);
+  }
+
+  async function handleEditSubmit(values: EditInviteCodeFormValues): Promise<void> {
+    if (!editRecord) return;
+    setEditSubmitting(true);
+    try {
+      const payload: UpdateInviteCodePayload = {
+        remaining: values.remaining,
+        expires_in_hours: values.expiresInHours,
+      };
+      await updateInviteCode(editRecord.code, payload);
+      message.success('邀请码更新成功');
+      setEditRecord(null);
+      await loadInviteCodes();
+    } catch (error) {
+      message.error(getErrorMessage(error));
+    } finally {
+      setEditSubmitting(false);
+    }
+  }
+
+  async function handleDeleteCode(record: InviteCodeItem): Promise<void> {
+    Modal.confirm({
+      title: '确认删除',
+      content: `确定删除邀请码 ${record.code} 吗？删除后不可恢复。`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      async onOk() {
+        try {
+          await deleteInviteCode(record.code);
+          message.success('邀请码已删除');
+          await loadInviteCodes();
+        } catch (error) {
+          message.error(getErrorMessage(error));
+        }
+      },
+    });
+  }
+
   const columns: ColumnsType<InviteCodeItem> = [
     {
       title: '邀请码',
@@ -161,9 +224,10 @@ export default function InviteCode(): React.ReactElement {
     },
     {
       title: '创建人',
-      dataIndex: 'created_by',
-      width: 100,
-      render: (value: number) => `用户 ${value}`,
+      dataIndex: 'created_by_nickname',
+      width: 140,
+      render: (value: string | undefined, record: InviteCodeItem) =>
+        value || `用户 ${record.created_by}`,
     },
     {
       title: '创建时间',
@@ -175,17 +239,34 @@ export default function InviteCode(): React.ReactElement {
       title: '操作',
       key: 'action',
       fixed: 'right',
-      width: 100,
+      width: 180,
       align: 'center',
       render: (_, record) => (
-        <Button
-          type="link"
-          size="small"
-          className={styles.copyBtn}
-          onClick={() => void handleCopyCode(record.code)}
-        >
-          复制
-        </Button>
+        <Space size="small">
+          <Button
+            type="link"
+            size="small"
+            className={styles.copyBtn}
+            onClick={() => void handleCopyCode(record.code)}
+          >
+            复制
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            onClick={() => openEditModal(record)}
+          >
+            编辑
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            danger
+            onClick={() => void handleDeleteCode(record)}
+          >
+            删除
+          </Button>
+        </Space>
       ),
     },
   ];
@@ -211,7 +292,7 @@ export default function InviteCode(): React.ReactElement {
             dataSource={inviteCodes}
             loading={loading}
             sticky
-            scroll={{ x: 1060, y: 'calc(100vh - 250px)' }}
+            scroll={{ x: 1100, y: 'calc(100vh - 250px)' }}
             pagination={createTablePagination({
               current: page,
               pageSize,
@@ -269,6 +350,47 @@ export default function InviteCode(): React.ReactElement {
             name="expiresInHours"
             rules={[{ required: true, message: '请输入过期时间' }]}
             extra="默认 168 小时（7 天），最大 720 小时（30 天）"
+          >
+            <InputNumber min={1} max={720} precision={0} style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        open={editRecord !== null}
+        title={`编辑邀请码：${editRecord?.code ?? ''}`}
+        width={480}
+        onCancel={() => setEditRecord(null)}
+        onOk={() => editForm.submit()}
+        confirmLoading={editSubmitting}
+        okText="保存"
+        cancelText="取消"
+      >
+        <Form<EditInviteCodeFormValues>
+          form={editForm}
+          layout="vertical"
+          onFinish={handleEditSubmit}
+        >
+          <Form.Item
+            label="邀请码"
+          >
+            <Input
+              value={editRecord?.code ?? ''}
+              disabled
+            />
+          </Form.Item>
+          <Form.Item
+            label="可用次数"
+            name="remaining"
+            rules={[{ required: true, message: '请输入可用次数' }]}
+          >
+            <InputNumber min={1} max={100} precision={0} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item
+            label="过期时间（小时）"
+            name="expiresInHours"
+            rules={[{ required: true, message: '请输入过期时间' }]}
+            extra="重新设置后从当前时间开始计算有效期"
           >
             <InputNumber min={1} max={720} precision={0} style={{ width: '100%' }} />
           </Form.Item>

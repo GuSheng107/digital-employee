@@ -51,7 +51,7 @@ export function createBot(payload: CreateBotPayload): Promise<BotItem> {
 
 /** 更新 Bot 配置 */
 export function updateBot(botId: string, payload: UpdateBotPayload): Promise<BotItem> {
-  return backendAuthRequest.put<BotItem>(`/bots/${botId}`, payload);
+  return backendAuthRequest.post<BotItem>(`/bots/${botId}`, payload);
 }
 
 /** 软删除 Bot */

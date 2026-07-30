@@ -78,7 +78,7 @@ def create_bot(payload: CreateBotPayload) -> dict:
     return success_response(result)
 
 
-@router.put(
+@router.post(
     "/{bot_id}",
     response_model=ApiResponse,
     dependencies=[Depends(require_permission(PermissionCode.BOT_MANAGE))],
