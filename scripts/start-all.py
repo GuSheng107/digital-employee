@@ -24,7 +24,9 @@ HEALTH_ATTEMPTS = 40
 HEALTH_INTERVAL_SECONDS = 0.5
 HEALTH_TIMEOUT_SECONDS = 2.0
 SERVICE_API_KEY_ENV_NAME = "API_KEY"
-SERVICE_API_KEY_BYTES = 48
+APP_SECRET_KEY_ENV_NAME = "APP_SECRET_KEY"
+INTERNAL_ADMIN_TOKEN_ENV_NAME = "INTERNAL_ADMIN_TOKEN"
+SECRET_BYTES = 48
 PRODUCTION_ENVIRONMENT = {
     "APP_ENV": "production",
     "NACOS_NAMESPACE": "prod",
@@ -147,7 +149,7 @@ def _ensure_service_api_key(env_path: Path) -> str:
     if service_api_key:
         return service_api_key
 
-    service_api_key = secrets.token_urlsafe(SERVICE_API_KEY_BYTES)
+    service_api_key = secrets.token_urlsafe(SECRET_BYTES)
     _persist_env_value(
         env_path,
         SERVICE_API_KEY_ENV_NAME,
@@ -155,6 +157,40 @@ def _ensure_service_api_key(env_path: Path) -> str:
     )
     LOGGER.info("已为 backend-data 生成并持久化服务间 API Key")
     return service_api_key
+
+
+def _ensure_app_secret_key(env_path: Path) -> str:
+    """读取或生成 app_secret 加密主密钥并持久化到 backend-data .env。"""
+    key = _read_env_file(env_path).get(APP_SECRET_KEY_ENV_NAME, "").strip()
+    if key:
+        return key
+    key = secrets.token_urlsafe(SECRET_BYTES)
+    _persist_env_value(env_path, APP_SECRET_KEY_ENV_NAME, key)
+    LOGGER.info("已为 backend-data 生成并持久化 APP_SECRET_KEY")
+    return key
+
+
+def _ensure_internal_admin_token(auth_env_path: Path, gateway_env_path: Path) -> str:
+    """读取或生成服务间内部令牌，并同步到 auth 与 gateway 的 .env。
+
+    auth 为 reload 的调用方，以 auth .env 中的值为优先；若 auth 为空则读
+    gateway；两者都为空时生成新令牌。随后确保两份 .env 持有相同值。
+    """
+    auth_token = _read_env_file(auth_env_path).get(
+        INTERNAL_ADMIN_TOKEN_ENV_NAME, "",
+    ).strip()
+    gateway_token = _read_env_file(gateway_env_path).get(
+        INTERNAL_ADMIN_TOKEN_ENV_NAME, "",
+    ).strip()
+    token = auth_token or gateway_token
+    if not token:
+        token = secrets.token_urlsafe(SECRET_BYTES)
+        LOGGER.info("已生成并持久化服务间内部令牌 INTERNAL_ADMIN_TOKEN")
+    if auth_token != token:
+        _persist_env_value(auth_env_path, INTERNAL_ADMIN_TOKEN_ENV_NAME, token)
+    if gateway_token != token:
+        _persist_env_value(gateway_env_path, INTERNAL_ADMIN_TOKEN_ENV_NAME, token)
+    return token
 
 
 def _resolve_command(name: str, *, windows_name: str | None = None) -> str:
@@ -206,18 +242,21 @@ def _build_service_specs() -> list[ServiceSpec]:
     for project_directory in (data_dir, auth_dir, gateway_dir):
         _sync_python_project(uv, project_directory)
     LOGGER.info("正在检查并同步 Frontend 依赖...")
-    install_command = (
-        (npm, "ci")
-        if not (frontend_dir / "node_modules").exists() and (frontend_dir / "package-lock.json").exists()
-        else (npm, "install")
-    )
-    install_result = subprocess.run(
-        install_command,
-        cwd=frontend_dir,
-        check=False,
-    )
-    if install_result.returncode != 0:
-        raise RuntimeError("Frontend 依赖安装失败")
+    if (frontend_dir / "node_modules").exists():
+        LOGGER.info("Frontend node_modules 已存在，跳过依赖安装")
+    else:
+        install_command = (
+            (npm, "ci")
+            if (frontend_dir / "package-lock.json").exists()
+            else (npm, "install")
+        )
+        install_result = subprocess.run(
+            install_command,
+            cwd=frontend_dir,
+            check=False,
+        )
+        if install_result.returncode != 0:
+            raise RuntimeError("Frontend 依赖安装失败")
     LOGGER.info("正在构建 Frontend production 产物...")
     build_result = subprocess.run(
         (npm, "run", "build"),
@@ -231,6 +270,8 @@ def _build_service_specs() -> list[ServiceSpec]:
     if build_result.returncode != 0:
         raise RuntimeError("Frontend production 构建失败")
     service_api_key = _ensure_service_api_key(data_env_file)
+    _ensure_app_secret_key(data_env_file)
+    _ensure_internal_admin_token(auth_env_file, gateway_env_file)
     data_client_overrides = {"BACKEND_DATA_API_KEY": service_api_key}
 
     return [

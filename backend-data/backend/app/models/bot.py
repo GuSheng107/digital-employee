@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, ForeignKey, Index, Integer, SmallInteger, String, text
+from sqlalchemy import BigInteger, ForeignKey, Index, Integer, SmallInteger, String, Text, text
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -49,7 +49,7 @@ class Bot(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     platform: Mapped[str] = mapped_column(String(32), nullable=False)
     app_id: Mapped[str | None] = mapped_column(String(128))
-    app_secret: Mapped[str | None] = mapped_column(String(256))
+    app_secret: Mapped[str | None] = mapped_column(Text)
     parent_bot_id: Mapped[int | None] = mapped_column(
         ForeignKey("bots.id", ondelete="SET NULL")
     )

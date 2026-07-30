@@ -13,11 +13,49 @@ from datetime import datetime
 from typing import Any, TypedDict
 
 import httpx
-from api_common import ApiException, ServiceUnavailableError
+from api_common import (
+    ApiException,
+    ConflictError,
+    DependencyUnavailableError,
+    DuplicateResourceError,
+    ErrorCode,
+    InvalidCredentialsError,
+    PermissionDeniedError,
+    RateLimitExceededError,
+    ResourceNotFoundError,
+    ServiceUnavailableError,
+    SessionReplacedError,
+    TokenExpiredError,
+    TokenInvalidError,
+    UserDisabledError,
+    ValidationError,
+)
 from observability import propagation_headers
 
 DEFAULT_BACKEND_DATA_BASE_URL = "http://127.0.0.1:8010"
 DEFAULT_TIMEOUT_SECONDS = 30.0
+
+# 业务错误码 → 异常子类映射。backend-data 抛出的具体异常经响应信封序列化后
+# 只保留 code 字段；DataClient 据此重建对应子类，使调用方可按异常类型分支
+# 处理（如迁移脚本捕获 DuplicateResourceError 做跳过而非视为失败）。
+_CODE_TO_EXCEPTION: dict[str, type[ApiException]] = {
+    cls.code: cls
+    for cls in (
+        ValidationError,
+        InvalidCredentialsError,
+        UserDisabledError,
+        ResourceNotFoundError,
+        DuplicateResourceError,
+        ConflictError,
+        TokenExpiredError,
+        TokenInvalidError,
+        SessionReplacedError,
+        PermissionDeniedError,
+        RateLimitExceededError,
+        DependencyUnavailableError,
+        ServiceUnavailableError,
+    )
+}
 
 
 class IdentityRateLimitItem(TypedDict):
@@ -995,7 +1033,12 @@ class DataClient:
         data = body.get("data")
         code = data.get("code") if isinstance(data, dict) else None
         detail = data.get("detail") if isinstance(data, dict) else None
-        raise ApiException(
+        exc_cls = (
+            _CODE_TO_EXCEPTION.get(code, ApiException)
+            if isinstance(code, str)
+            else ApiException
+        )
+        raise exc_cls(
             code=code if isinstance(code, str) else None,
             message=(
                 body.get("message")

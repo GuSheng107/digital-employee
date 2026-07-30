@@ -15,6 +15,7 @@ from api_common import (
     ErrorCode,
     InternalError,
     ResourceNotFoundError,
+    ServiceUnavailableError,
     success_response,
     verify_service_api_key,
 )
@@ -371,7 +372,13 @@ async def reload_bots(
         provided=x_internal_token,
         expected=os.getenv("INTERNAL_ADMIN_TOKEN", ""),
     )
-    manager.reload_from_database()
+    try:
+        manager.reload_from_database()
+    except Exception:
+        logger.exception("[ADMIN] Bot 配置重载失败")
+        raise ServiceUnavailableError(
+            message="Bot 配置重载失败，请稍后重试或检查日志"
+        )
     return success_response(
         {"status": "success", "message": "Bot configuration reloaded from database"}
     )

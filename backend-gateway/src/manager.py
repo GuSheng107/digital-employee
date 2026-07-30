@@ -66,11 +66,17 @@ class BotManager:
         """从 backend-data 重新拉取配置，与内存中的对比执行增/删/改。
 
         前端修改 Bot 配置后调用此方法触发热重载。
+
+        Raises:
+            Exception: 从 backend-data 拉取配置失败时向上抛出，由调用方
+                （/admin/reload 端点）决定如何响应。单条 Bot 配置转换错误
+                不会中断整体重载——仅跳过该条并记录告警。
         """
         try:
             active_bots = get_data_client().list_active_bots()
-        except Exception:
-            return
+        except Exception as exc:
+            logger.error("[BOT-MANAGER] 从数据库拉取机器人配置失败: {}", exc)
+            raise
 
         # 构建最新配置快照
         new_config_map: dict[str, dict[str, Any]] = {}
