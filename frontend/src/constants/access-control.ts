@@ -30,6 +30,12 @@ export const ROLE_CODE: Readonly<RoleCodeMap> = Object.freeze({
   SUPER_ADMIN: 'super_admin',
 });
 
+/** 系统身份占用的角色代码；普通角色创建接口不可复用。 */
+export const RESERVED_ROLE_CODES: ReadonlySet<string> = new Set([
+  ROLE_CODE.SUPER_ADMIN,
+  ROLE_CODE.MANAGER,
+]);
+
 export const VIP_LEVEL: Readonly<VipLevelMap> = Object.freeze({
   NORMAL: 0,
   MANAGER: 66,

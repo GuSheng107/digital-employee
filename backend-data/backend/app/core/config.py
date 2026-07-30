@@ -105,6 +105,7 @@ class Settings(BaseSettings):
     redis_username: str = ""
     redis_password: str = Field(default="", repr=False)
     redis_ssl: bool = False
+    redis_watch_max_retries: int = Field(default=20, ge=1, le=100)
     token_redis_prefix: str = "auth"
     access_token_ttl_seconds: int = 1800
     refresh_token_ttl_seconds: int = 604800

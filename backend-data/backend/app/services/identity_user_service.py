@@ -154,9 +154,7 @@ class UserService:
             roles = self._load_roles(requested_role_codes)
             self._ensure_permissions_within_actor_scope(
                 permission_codes={
-                    permission.code
-                    for role in roles
-                    for permission in role.permissions
+                    permission.code for role in roles for permission in role.permissions
                 },
                 actor_role_codes=actor_role_codes,
                 actor_permission_codes=actor_permission_codes,
@@ -250,16 +248,11 @@ class UserService:
         roles = self._load_roles(set(role_codes)) if role_codes else []
         self._ensure_permissions_within_actor_scope(
             permission_codes={
-                permission.code
-                for role in roles
-                for permission in role.permissions
+                permission.code for role in roles for permission in role.permissions
             },
             actor_role_codes=actor_role_codes,
             actor_permission_codes=actor_permission_codes,
         )
-
-        access_sync = IdentityAccessSyncService(self._session)
-        access_extras = access_sync.capture_extras(user)
 
         # 覆盖式更新角色
         user.roles = list(roles)
@@ -273,7 +266,7 @@ class UserService:
             user.vip_level = VipLevel.NORMAL
             user.vip_expires_at = None
 
-        access_sync.sync_from_roles(user, extras=access_extras)
+        IdentityAccessSyncService(self._session).sync_from_roles(user)
 
         self._session.commit()
 

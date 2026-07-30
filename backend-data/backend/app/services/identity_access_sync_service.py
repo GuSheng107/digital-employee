@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,67 +10,26 @@ from app.models.permission import Permission
 from app.models.user import User
 
 
-@dataclass(frozen=True)
-class UserAccessExtras:
-    """用户在角色模板之外单独获得的权限与菜单。"""
-
-    menu_ids: frozenset[int]
-    permission_ids: frozenset[int]
-
-
 class IdentityAccessSyncService:
-    """维护角色模板与用户运行时权限快照的一致性。"""
+    """在角色授权时生成用户运行时权限快照。"""
 
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    @staticmethod
-    def capture_extras(user: User) -> UserAccessExtras:
-        """在角色变更前提取用户的独立授权。"""
-        role_menu_ids = {
-            menu.id
-            for role in user.roles
-            for menu in role.menus
-            if menu.deleted_at is None
-        }
-        role_permission_ids = {
-            permission.id
-            for role in user.roles
-            for permission in role.permissions
-        }
-        return UserAccessExtras(
-            menu_ids=frozenset(
-                menu.id
-                for menu in user.menus
-                if menu.deleted_at is None and menu.id not in role_menu_ids
-            ),
-            permission_ids=frozenset(
-                permission.id
-                for permission in user.permissions
-                if permission.id not in role_permission_ids
-            ),
-        )
-
     def sync_from_roles(
         self,
         user: User,
-        *,
-        extras: UserAccessExtras | None = None,
     ) -> None:
-        """把用户多个角色的权限并集写入用户权限快照。"""
-        preserved = extras or UserAccessExtras(
-            menu_ids=frozenset(),
-            permission_ids=frozenset(),
-        )
-        menu_ids = set(preserved.menu_ids)
-        permission_ids = set(preserved.permission_ids)
+        """用用户多个角色的权限并集覆盖运行时权限快照。
+
+        角色只在授权动作发生时作为模板使用。授权完成后，运行时鉴权只读取
+        用户快照；直接调整的菜单或权限也不会因角色模板后续变化而被改写。
+        """
+        menu_ids: set[int] = set()
+        permission_ids: set[int] = set()
         for role in user.roles:
-            menu_ids.update(
-                menu.id for menu in role.menus if menu.deleted_at is None
-            )
-            permission_ids.update(
-                permission.id for permission in role.permissions
-            )
+            menu_ids.update(menu.id for menu in role.menus if menu.deleted_at is None)
+            permission_ids.update(permission.id for permission in role.permissions)
 
         user.menus = (
             list(

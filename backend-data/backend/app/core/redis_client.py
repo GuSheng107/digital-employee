@@ -3,13 +3,32 @@ from __future__ import annotations
 import json
 import secrets
 import time
+from dataclasses import dataclass
 from threading import Lock
 from typing import Any
 
+from api_common import DependencyUnavailableError
 from redis import Redis
 from redis.exceptions import ResponseError, WatchError
 
 from app.core.config import settings
+
+
+@dataclass(frozen=True)
+class RateLimitCounterEntry:
+    """描述一个按优先级消费的固定窗口限流桶。"""
+
+    key: str
+    window_seconds: int
+    limit: int
+
+
+@dataclass(frozen=True)
+class RateLimitCounterResult:
+    """记录限流桶消费后的计数与剩余窗口。"""
+
+    count: int
+    retry_after_seconds: int
 
 
 class RedisClientWrapper:
@@ -113,7 +132,7 @@ class RedisClientWrapper:
     ) -> tuple[int, int]:
         """原子递增固定窗口计数，并在同一事务中返回剩余 TTL。"""
         client = self._require_client()
-        while True:
+        for _ in range(settings.redis_watch_max_retries):
             with client.pipeline() as pipeline:
                 try:
                     pipeline.watch(key)
@@ -131,61 +150,89 @@ class RedisClientWrapper:
                     return next_value, max(1, int(results[-1]))
                 except WatchError:
                     continue
+        raise DependencyUnavailableError(
+            message="Redis 限流事务竞争过于激烈，请稍后重试"
+        )
 
     def increment_many_with_ttl_results(
         self,
-        entries: list[tuple[str, int]],
-    ) -> list[tuple[int, int]]:
-        """在一个 WATCH 事务中递增多个固定窗口计数。"""
+        entries: list[RateLimitCounterEntry],
+    ) -> list[RateLimitCounterResult]:
+        """按优先级在一个 WATCH 事务中递增多个固定窗口计数。
+
+        输入顺序即限流优先级。某个桶达到上限时，只消费到该桶为止，避免
+        IP 桶已拒绝请求后继续污染账号等低优先级桶。
+        """
         if not entries:
             return []
         client = self._require_client()
-        keys = [key for key, _ in entries]
-        while True:
+        keys = [entry.key for entry in entries]
+        for _ in range(settings.redis_watch_max_retries):
             with client.pipeline() as pipeline:
                 try:
                     pipeline.watch(*keys)
                     current_values = pipeline.mget(keys)
-                    remaining_ttls = [
-                        int(pipeline.ttl(key)) if current_value else -1
-                        for key, current_value in zip(
-                            keys,
-                            current_values,
-                            strict=True,
-                        )
-                    ]
                     next_values = [
                         int(current_value) + 1 if current_value else 1
                         for current_value in current_values
                     ]
+                    evaluated_count = len(entries)
+                    for index, (entry, next_value) in enumerate(
+                        zip(entries, next_values, strict=True)
+                    ):
+                        if next_value > entry.limit:
+                            evaluated_count = index + 1
+                            break
+
+                    evaluated_entries = entries[:evaluated_count]
+                    evaluated_values = next_values[:evaluated_count]
+                    evaluated_current_values = current_values[:evaluated_count]
+                    with client.pipeline(transaction=False) as ttl_pipeline:
+                        for entry, current_value in zip(
+                            evaluated_entries,
+                            evaluated_current_values,
+                            strict=True,
+                        ):
+                            if current_value:
+                                ttl_pipeline.ttl(entry.key)
+                        loaded_ttls = iter(ttl_pipeline.execute())
+                    remaining_ttls = [
+                        int(next(loaded_ttls)) if current_value else -1
+                        for current_value in evaluated_current_values
+                    ]
                     pipeline.multi()
-                    for (
-                        (key, window_seconds),
-                        next_value,
-                        remaining_ttl,
-                    ) in zip(
-                        entries,
-                        next_values,
+                    for entry, next_value, remaining_ttl in zip(
+                        evaluated_entries,
+                        evaluated_values,
                         remaining_ttls,
                         strict=True,
                     ):
                         pipeline.set(
-                            key,
+                            entry.key,
                             next_value,
                             ex=(
                                 remaining_ttl
                                 if remaining_ttl > 0
-                                else window_seconds
+                                else entry.window_seconds
                             ),
                         )
-                        pipeline.ttl(key)
+                        pipeline.ttl(entry.key)
                     results = pipeline.execute()
                     return [
-                        (next_value, max(1, int(results[index * 2 + 1])))
-                        for index, next_value in enumerate(next_values)
+                        RateLimitCounterResult(
+                            count=next_value,
+                            retry_after_seconds=max(
+                                1,
+                                int(results[index * 2 + 1]),
+                            ),
+                        )
+                        for index, next_value in enumerate(evaluated_values)
                     ]
                 except WatchError:
                     continue
+        raise DependencyUnavailableError(
+            message="Redis 限流事务竞争过于激烈，请稍后重试"
+        )
 
     def scan_keys(self, pattern: str) -> list[str]:
         """使用 SCAN 增量读取匹配 key，避免 KEYS 阻塞 Redis。"""
@@ -607,9 +654,7 @@ class RedisClientWrapper:
                     client.zrem(processing_key, receipt_id)
                     raise RuntimeError("Redis relay ready queue changed unexpectedly")
 
-                delivery_attempt = int(
-                    client.hincrby(attempts_key, receipt_id, 1)
-                )
+                delivery_attempt = int(client.hincrby(attempts_key, receipt_id, 1))
                 raw = str(raw_value)
                 if delivery_attempt > max_delivery_attempts:
                     client.zrem(processing_key, receipt_id)
@@ -670,9 +715,8 @@ class RedisClientWrapper:
         lock_key = self._relay_lock_key(ready_key)
         lock_token = self._acquire_lock(client, lock_key)
         try:
-            if (
-                client.zscore(processing_key, receipt_id) is None
-                or not client.exists(message_key)
+            if client.zscore(processing_key, receipt_id) is None or not client.exists(
+                message_key
             ):
                 return False
             client.zrem(processing_key, receipt_id)

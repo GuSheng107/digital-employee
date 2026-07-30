@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TypedDict
 
 from api_common import (
     DuplicateResourceError,
@@ -28,6 +29,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.redis_client import RateLimitCounterEntry
 from app.models.menu import Menu
 from app.models.permission import Permission
 from app.models.role import Role, UserRole
@@ -36,6 +38,22 @@ from app.models.user_permission import UserMenu, UserPermission
 from app.services.identity_access_sync_service import IdentityAccessSyncService
 from app.services.identity_invite_code_service import InviteCodeService
 from app.services.identity_session_service import IdentitySessionService
+
+
+class RateLimitConsumeItem(TypedDict):
+    """认证限流桶消费参数。"""
+
+    bucket: str
+    identifier_hash: str
+    limit: int
+    window_seconds: int
+
+
+class RateLimitResetItem(TypedDict):
+    """认证限流桶重置参数。"""
+
+    bucket: str
+    identifier_hash: str
 
 
 class IdentityAuthService:
@@ -221,14 +239,13 @@ class IdentityAuthService:
 
     def consume_rate_limits(
         self,
-        items: list[dict[str, str | int]],
+        items: list[RateLimitConsumeItem],
     ) -> list[dict[str, int]]:
         """在一次内部 HTTP 与 Redis 事务中消费多个限流桶。"""
         normalized_items = [
             {
                 "key": (
-                    "auth:rate-limit:"
-                    f"{item['bucket']}:{item['identifier_hash']}"
+                    "auth:rate-limit:" f"{item['bucket']}:{item['identifier_hash']}"
                 ),
                 "limit": int(item["limit"]),
                 "window_seconds": int(item["window_seconds"]),
@@ -237,36 +254,38 @@ class IdentityAuthService:
         ]
         results = self._sessions.increment_rate_limits_with_ttl(
             [
-                (str(item["key"]), int(item["window_seconds"]))
+                RateLimitCounterEntry(
+                    key=str(item["key"]),
+                    window_seconds=int(item["window_seconds"]),
+                    limit=int(item["limit"]),
+                )
                 for item in normalized_items
             ]
         )
         responses: list[dict[str, int]] = []
-        for item, (count, retry_after_seconds) in zip(
+        for item, result in zip(
             normalized_items,
             results,
-            strict=True,
         ):
             limit = int(item["limit"])
             window_seconds = int(item["window_seconds"])
-            if count > limit:
+            if result.count > limit:
                 raise RateLimitExceededError(
                     message=(
-                        "请求过于频繁，请在 "
-                        f"{retry_after_seconds} 秒后重试"
+                        "请求过于频繁，请在 " f"{result.retry_after_seconds} 秒后重试"
                     ),
                     detail={
-                        "retry_after_seconds": retry_after_seconds,
+                        "retry_after_seconds": result.retry_after_seconds,
                         "limit": limit,
                         "window_seconds": window_seconds,
                     },
                 )
             responses.append(
                 {
-                    "count": count,
+                    "count": result.count,
                     "limit": limit,
                     "window_seconds": window_seconds,
-                    "retry_after_seconds": retry_after_seconds,
+                    "retry_after_seconds": result.retry_after_seconds,
                 }
             )
         return responses
@@ -278,11 +297,9 @@ class IdentityAuthService:
         identifier_hash: str,
     ) -> None:
         """成功登录后清除账号维度限流桶。"""
-        self._sessions.reset_rate_limit(
-            f"auth:rate-limit:{bucket}:{identifier_hash}"
-        )
+        self._sessions.reset_rate_limit(f"auth:rate-limit:{bucket}:{identifier_hash}")
 
-    def reset_rate_limits(self, items: list[dict[str, str]]) -> None:
+    def reset_rate_limits(self, items: list[RateLimitResetItem]) -> None:
         """在一次 Redis 调用中清除多个限流桶。"""
         self._sessions.reset_rate_limits(
             [
@@ -436,15 +453,11 @@ class IdentityAuthService:
                 "title": str(menu["title"]),
                 "path": str(menu["path"]) if menu["path"] is not None else None,
                 "component": (
-                    str(menu["component"])
-                    if menu["component"] is not None
-                    else None
+                    str(menu["component"]) if menu["component"] is not None else None
                 ),
                 "icon": str(menu["icon"]) if menu["icon"] is not None else None,
                 "permission": (
-                    str(menu["permission"])
-                    if menu["permission"] is not None
-                    else None
+                    str(menu["permission"]) if menu["permission"] is not None else None
                 ),
                 "sort": int(menu["sort"]),
                 "visible": bool(menu["visible"]),

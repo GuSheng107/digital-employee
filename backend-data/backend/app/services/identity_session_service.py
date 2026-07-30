@@ -8,7 +8,11 @@ from __future__ import annotations
 from api_common import TokenInvalidError
 
 from app.core.config import settings
-from app.core.redis_client import get_redis_client
+from app.core.redis_client import (
+    RateLimitCounterEntry,
+    RateLimitCounterResult,
+    get_redis_client,
+)
 
 
 class IdentitySessionService:
@@ -181,9 +185,9 @@ class IdentitySessionService:
 
     def increment_rate_limits_with_ttl(
         self,
-        entries: list[tuple[str, int]],
-    ) -> list[tuple[int, int]]:
-        """在一个 Redis 事务中消费多个限流桶。"""
+        entries: list[RateLimitCounterEntry],
+    ) -> list[RateLimitCounterResult]:
+        """按优先级在一个 Redis 事务中消费多个限流桶。"""
         return self._redis.increment_many_with_ttl_results(entries)
 
     def get_rate_limit_ttl(self, key: str) -> int:
@@ -196,6 +200,8 @@ class IdentitySessionService:
 
     def reset_rate_limits(self, keys: list[str]) -> None:
         """在一次 Redis 调用中清除多个限流桶。"""
+        if not keys:
+            return
         self._redis.delete(*keys)
 
     def _read_token(self, kind: str, token: str) -> int | None:
@@ -206,13 +212,9 @@ class IdentitySessionService:
             user_id = int(raw)
         except (TypeError, ValueError):
             return None
-        current_pair = self._redis.read_user_token_pair(
-            self._user_tokens_key(user_id)
-        )
+        current_pair = self._redis.read_user_token_pair(self._user_tokens_key(user_id))
         expected_token = (
-            current_pair.get(f"{kind}_token")
-            if current_pair is not None
-            else None
+            current_pair.get(f"{kind}_token") if current_pair is not None else None
         )
         return user_id if expected_token == token else None
 

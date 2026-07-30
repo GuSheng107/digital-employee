@@ -9,7 +9,12 @@ from __future__ import annotations
 import hashlib
 
 from api_common import InvalidCredentialsError, UserDisabledError
-from data_client import DataClient, get_data_client
+from data_client import (
+    DataClient,
+    IdentityRateLimitItem,
+    IdentityRateLimitResetItem,
+    get_data_client,
+)
 
 from app.core.config import settings
 from app.core.rate_limit import AuthRateLimitBucket
@@ -47,10 +52,7 @@ class AuthService:
                 ),
                 (
                     AuthRateLimitBucket.REGISTER_IDENTITY,
-                    (
-                        f"{username.casefold()}:{email.casefold()}:"
-                        f"{phone.casefold()}"
-                    ),
+                    (f"{username.casefold()}:{email.casefold()}:" f"{phone.casefold()}"),
                     settings.register_identity_rate_limit,
                     settings.register_identity_rate_window_seconds,
                 ),
@@ -158,9 +160,7 @@ class AuthService:
             limit=settings.captcha_ip_rate_limit,
             window_seconds=settings.captcha_ip_rate_window_seconds,
         )
-        return CaptchaChallenge.model_validate(
-            self._data.create_identity_captcha()
-        )
+        return CaptchaChallenge.model_validate(self._data.create_identity_captcha())
 
     def refresh(self, refresh_token: str) -> TokenPair:
         """一次性轮换 refresh/access token。"""
@@ -263,19 +263,16 @@ class AuthService:
         entries: list[tuple[AuthRateLimitBucket, str, int, int]],
     ) -> None:
         """在一次 backend-data 调用中消费多个认证限流桶。"""
-        self._data.consume_identity_rate_limits(
-            [
-                {
-                    "bucket": bucket.value,
-                    "identifier_hash": hashlib.sha256(
-                        identifier.encode("utf-8")
-                    ).hexdigest(),
-                    "limit": limit,
-                    "window_seconds": window_seconds,
-                }
-                for bucket, identifier, limit, window_seconds in entries
-            ]
-        )
+        rate_limit_items: list[IdentityRateLimitItem] = [
+            {
+                "bucket": bucket.value,
+                "identifier_hash": hashlib.sha256(identifier.encode("utf-8")).hexdigest(),
+                "limit": limit,
+                "window_seconds": window_seconds,
+            }
+            for bucket, identifier, limit, window_seconds in entries
+        ]
+        self._data.consume_identity_rate_limits(rate_limit_items)
 
     def _reset_rate_limit(
         self,
@@ -295,14 +292,11 @@ class AuthService:
         entries: list[tuple[AuthRateLimitBucket, str]],
     ) -> None:
         """在一次 backend-data 调用中清除多个认证限流桶。"""
-        self._data.reset_identity_rate_limits(
-            [
-                {
-                    "bucket": bucket.value,
-                    "identifier_hash": hashlib.sha256(
-                        identifier.encode("utf-8")
-                    ).hexdigest(),
-                }
-                for bucket, identifier in entries
-            ]
-        )
+        reset_items: list[IdentityRateLimitResetItem] = [
+            {
+                "bucket": bucket.value,
+                "identifier_hash": hashlib.sha256(identifier.encode("utf-8")).hexdigest(),
+            }
+            for bucket, identifier in entries
+        ]
+        self._data.reset_identity_rate_limits(reset_items)

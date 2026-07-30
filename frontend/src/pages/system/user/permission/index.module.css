@@ -25,6 +25,13 @@
   text-align: center;
 }
 
+.userTable :global(.ant-table-thead > tr > th) {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--ant-color-bg-container);
+}
+
 .panelTitle {
   margin-bottom: 16px;
   font-size: 16px;

@@ -38,7 +38,10 @@ import {
   type UpdateRolePayload,
 } from '@/api/role-api';
 import { fetchMenus, type MenuItem } from '@/api/menu-api';
-import { ROLE_CODE } from '@/constants/access-control';
+import {
+  RESERVED_ROLE_CODES,
+  ROLE_CODE,
+} from '@/constants/access-control';
 import { useUserStore } from '@/store/user-store';
 import { getRequestErrorMessage } from '@/utils/request';
 import SystemPage from '@/components/system-page/SystemPage';
@@ -114,7 +117,7 @@ export default function UserPermission(): React.ReactElement {
   const [userRoleCodes, setUserRoleCodes] = useState<string[]>([]);
   const [userRolesSaving, setUserRolesSaving] = useState<boolean>(false);
 
-  // ── 用户运行时菜单快照 ──
+  // ── 用户菜单权限 ──
   const [userMenuIds, setUserMenuIds] = useState<number[]>([]);
   const [userMenusLoading, setUserMenusLoading] = useState<boolean>(false);
   const [userMenusSaving, setUserMenusSaving] = useState<boolean>(false);
@@ -188,7 +191,7 @@ export default function UserPermission(): React.ReactElement {
     }
   }
 
-  /** 加载用户运行时菜单快照。 */
+  /** 加载用户菜单权限。 */
   async function loadUserMenus(userId: number): Promise<void> {
     setUserMenusLoading(true);
     try {
@@ -252,7 +255,7 @@ export default function UserPermission(): React.ReactElement {
           prev.map((u) => (u.id === selectedUser.id ? { ...u, roles: updatedRoles } : u)),
         );
         setSelectedUser((prev) => (prev ? { ...prev, roles: updatedRoles } : prev));
-        // 角色变更后，重新加载用户直接菜单快照。
+        // 角色变更会重新生成用户权限快照，因此同步刷新菜单权限。
         return loadUserMenus(selectedUser.id);
       })
       .catch((error: unknown) => {
@@ -305,7 +308,7 @@ export default function UserPermission(): React.ReactElement {
     setUserMenusSaving(true);
     return assignUserMenus(selectedUser.id, userMenuIds)
       .then(() => {
-        message.success('用户菜单已保存');
+        message.success('用户菜单权限已保存');
       })
       .catch((error: unknown) => {
         message.error(getErrorMessage(error));
@@ -481,10 +484,10 @@ export default function UserPermission(): React.ReactElement {
               )}
             </div>
 
-            {/* 用户菜单快照 */}
+            {/* 用户菜单权限 */}
             <div className={styles.userPermSection}>
               <div className={styles.sectionHeader}>
-                <Text strong>用户菜单</Text>
+                <Text strong>用户菜单权限</Text>
                 <Button
                   type="primary"
                   size="small"
@@ -645,6 +648,18 @@ export default function UserPermission(): React.ReactElement {
               { required: true, message: '请输入角色代码' },
               { min: 2, max: 64, message: '角色代码长度需在 2-64 之间' },
               { pattern: /^[a-zA-Z][a-zA-Z0-9_]*$/, message: '仅支持字母开头，字母/数字/下划线' },
+              {
+                validator: (_, value: string | undefined) => {
+                  if (
+                    editingRole !== null
+                    || !value
+                    || !RESERVED_ROLE_CODES.has(value)
+                  ) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error('该角色代码由系统保留'));
+                },
+              },
             ]}
           >
             <Input placeholder="如 editor" disabled={editingRole !== null} />

@@ -13,20 +13,17 @@ from api_common import (
 )
 from auth_utils import (
     PROTECTED_ROLE_CODES,
+    RESERVED_ROLE_CODES,
     ROLE_CODE_MANAGER,
     ROLE_CODE_SUPER_ADMIN,
 )
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.menu import Menu
 from app.models.permission import Permission
-from app.models.role import Role
+from app.models.role import Role, UserRole
 from app.models.user import User
-from app.services.identity_access_sync_service import (
-    IdentityAccessSyncService,
-    UserAccessExtras,
-)
 
 
 class RoleService:
@@ -94,7 +91,7 @@ class RoleService:
         Raises:
             DuplicateResourceError: 角色代码已存在。
         """
-        if code in PROTECTED_ROLE_CODES:
+        if code in RESERVED_ROLE_CODES:
             raise PermissionDeniedError(message="该角色代码由系统保留")
         existing = self._session.scalars(
             select(Role).where(Role.code == code, Role.deleted_at.is_(None))
@@ -166,7 +163,6 @@ class RoleService:
         if description is not None:
             role.description = description
         if menu_ids is not None:
-            affected_users = self._capture_affected_users(role)
             menus = self._load_menus(menu_ids) if menu_ids else []
             self._ensure_permissions_within_actor_scope(
                 menus=menus,
@@ -175,7 +171,6 @@ class RoleService:
             )
             role.menus = menus
             self._sync_role_permissions_from_menus(role, menus)
-            self._sync_affected_users(affected_users)
 
         self._session.commit()
 
@@ -214,13 +209,21 @@ class RoleService:
         if role.is_builtin:
             raise PermissionDeniedError(message="内置角色不可删除")
 
-        # 检查是否仍有关联用户
-        if role.users:
-            user_count = len([u for u in role.users if u.deleted_at is None])
-            if user_count > 0:
-                raise ConflictError(
-                    message=f"角色仍关联 {user_count} 个用户，请先解除关联后再删除"
+        user_count = int(
+            self._session.scalar(
+                select(func.count(UserRole.user_id))
+                .join(User, User.id == UserRole.user_id)
+                .where(
+                    UserRole.role_id == role.id,
+                    User.deleted_at.is_(None),
                 )
+            )
+            or 0
+        )
+        if user_count > 0:
+            raise ConflictError(
+                message=f"角色仍关联 {user_count} 个用户，请先解除关联后再删除"
+            )
 
         # 软删除：清除关联菜单后标记删除
         role.menus = []
@@ -264,8 +267,6 @@ class RoleService:
             actor_role_codes=actor_role_codes,
         )
 
-        affected_users = self._capture_affected_users(role)
-
         # 查询目标菜单
         menus: list[Menu] = []
         if menu_ids:
@@ -279,7 +280,6 @@ class RoleService:
         # 覆盖式更新
         role.menus = menus
         self._sync_role_permissions_from_menus(role, menus)
-        self._sync_affected_users(affected_users)
         self._session.commit()
 
         return {
@@ -334,27 +334,6 @@ class RoleService:
             )
         role.permissions = permissions
 
-    def _capture_affected_users(
-        self,
-        role: Role,
-    ) -> list[tuple[User, UserAccessExtras]]:
-        """在修改角色模板前保存关联用户的独立授权。"""
-        access_sync = IdentityAccessSyncService(self._session)
-        return [
-            (user, access_sync.capture_extras(user))
-            for user in role.users
-            if user.deleted_at is None
-        ]
-
-    def _sync_affected_users(
-        self,
-        affected_users: list[tuple[User, UserAccessExtras]],
-    ) -> None:
-        """把修改后的角色权限并集同步到关联用户。"""
-        access_sync = IdentityAccessSyncService(self._session)
-        for user, extras in affected_users:
-            access_sync.sync_from_roles(user, extras=extras)
-
     def _get_manageable_role(self, role_id: int) -> Role:
         """读取可由通用角色管理接口维护的角色。
 
@@ -392,9 +371,7 @@ class RoleService:
         if ROLE_CODE_SUPER_ADMIN in actor_role_codes:
             return
         permission_codes = {
-            menu.permission
-            for menu in menus
-            if menu.permission is not None
+            menu.permission for menu in menus if menu.permission is not None
         }
         unauthorized_codes = sorted(permission_codes - set(actor_permission_codes))
         if unauthorized_codes:

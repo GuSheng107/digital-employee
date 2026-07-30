@@ -89,6 +89,11 @@
   border-bottom: 0;
 }
 
+/*
+ * editable-card 页签仅作为路由导航条使用。以下覆盖用于移除 Ant Design
+ * 卡片边框并保持固定 40px 导航高度，需以组件内联优先级对应的 !important
+ * 覆盖，避免主题升级后重新出现双层边框。
+ */
 .systemTabsControl :global(.ant-tabs-tab) {
   height: 32px;
   margin-top: 8px !important;

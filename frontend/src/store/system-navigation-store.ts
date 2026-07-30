@@ -26,6 +26,10 @@ export const useSystemNavigationStore = create<SystemNavigationState>((set) => (
       visitedPath !== path
     )),
   })),
-  closeOtherPaths: (path) => set({ visitedPaths: [path] }),
+  closeOtherPaths: (path) => set((state) => (
+    state.visitedPaths.includes(path)
+      ? { visitedPaths: [path] }
+      : state
+  )),
   clearVisitedPaths: () => set({ visitedPaths: [] }),
 }));

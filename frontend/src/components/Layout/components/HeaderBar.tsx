@@ -65,6 +65,7 @@ export default function HeaderBar(): React.ReactElement {
   const location = useLocation();
   const userInfo = useUserStore((state) => state.userInfo);
   const profileLoading = useUserStore((state) => state.profileLoading);
+  const profileError = useUserStore((state) => state.profileError);
   const avatar = useUserStore((state) => state.avatar);
   const logout = useUserStore((state) => state.logout);
   const menus = useUserStore((state) => state.menus);
@@ -82,7 +83,7 @@ export default function HeaderBar(): React.ReactElement {
 
   const displayName = userInfo?.nickname
     || userInfo?.username
-    || (profileLoading ? '加载中' : '未登录');
+    || (profileLoading ? '加载中' : profileError ? '加载失败' : '未登录');
   const breadcrumbItems = useMemo(
     () => [
       { title: '数字员工' },
@@ -95,6 +96,7 @@ export default function HeaderBar(): React.ReactElement {
     [menus],
   );
   const currentSystemPage = systemPageByPath.get(location.pathname);
+  const hasCurrentSystemTab = visitedSystemPaths.includes(location.pathname);
   const visitedSystemPages = useMemo(
     () => visitedSystemPaths
       .map((path) => systemPageByPath.get(path))
@@ -142,6 +144,7 @@ export default function HeaderBar(): React.ReactElement {
   };
 
   const handleCloseSystemPage = (path: string): void => {
+    if (!visitedSystemPaths.includes(path)) return;
     const remainingPaths = visitedSystemPaths.filter((item) => item !== path);
     closeSystemPath(path);
     if (path === location.pathname) {
@@ -158,10 +161,12 @@ export default function HeaderBar(): React.ReactElement {
   };
   const handleSystemTabAction = ({ key }: { key: string }): void => {
     if (key === 'close-current') {
+      if (!hasCurrentSystemTab) return;
       handleCloseSystemPage(location.pathname);
       return;
     }
     if (key === 'close-others') {
+      if (!hasCurrentSystemTab) return;
       closeOtherSystemPaths(location.pathname);
       return;
     }
@@ -171,8 +176,8 @@ export default function HeaderBar(): React.ReactElement {
     }
   };
   const systemTabActionItems = [
-    { key: 'close-current', label: '关闭当前' },
-    { key: 'close-others', label: '关闭其他' },
+    { key: 'close-current', label: '关闭当前', disabled: !hasCurrentSystemTab },
+    { key: 'close-others', label: '关闭其他', disabled: !hasCurrentSystemTab },
     { type: 'divider' as const },
     { key: 'close-all', label: '关闭全部' },
   ];
