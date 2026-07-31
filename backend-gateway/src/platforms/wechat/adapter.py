@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """企业微信消息协议适配器。
 
 负责在企业微信长连接事件 Payload 与全局归一化 StandardMessage 协议之间进行双向翻译，
@@ -82,11 +81,7 @@ class WeChatAdapter(BaseAdapter):
         if isinstance(target_dict, dict):
             for k in keys:
                 v = target_dict.get(k)
-                if (
-                    v is not None
-                    and str(v).strip() != ""
-                    and str(v).strip().lower() != "none"
-                ):
+                if v is not None and str(v).strip() != "" and str(v).strip().lower() != "none":
                     return str(v).strip()
         return ""
 
@@ -102,19 +97,8 @@ class WeChatAdapter(BaseAdapter):
         req_id = headers.get("req_id", "")
 
         # 1. 采用多级 Fallback 字段抽取关键消息属性，以完美对齐复杂交互
-        msg_id = (
-            body.get("msgid")
-            or body.get("msg_id")
-            or body.get("message_id")
-            or req_id
-            or ""
-        )
-        chat_id = (
-            body.get("chatid")
-            or body.get("chat_id")
-            or body.get("conversation_id")
-            or ""
-        )
+        msg_id = body.get("msgid") or body.get("msg_id") or body.get("message_id") or req_id or ""
+        chat_id = body.get("chatid") or body.get("chat_id") or body.get("conversation_id") or ""
         chat_type_raw = body.get("chattype") or body.get("chat_type") or "single"
         msg_type_raw = body.get("msgtype") or body.get("msg_type") or "text"
 
@@ -216,9 +200,7 @@ class WeChatAdapter(BaseAdapter):
                     )
                     if storage_url:
                         standard_msg.content.append(
-                            MessageContent(
-                                msg_type=MessageType.IMAGE, file_url=storage_url
-                            )
+                            MessageContent(msg_type=MessageType.IMAGE, file_url=storage_url)
                         )
                 # 音频/语音
                 elif part_type in {"voice", "audio"}:
@@ -230,9 +212,7 @@ class WeChatAdapter(BaseAdapter):
                     )
                     if storage_url:
                         standard_msg.content.append(
-                            MessageContent(
-                                msg_type=MessageType.AUDIO, file_url=storage_url
-                            )
+                            MessageContent(msg_type=MessageType.AUDIO, file_url=storage_url)
                         )
                 # 视频
                 elif part_type == "video":
@@ -244,9 +224,7 @@ class WeChatAdapter(BaseAdapter):
                     )
                     if storage_url:
                         standard_msg.content.append(
-                            MessageContent(
-                                msg_type=MessageType.VIDEO, file_url=storage_url
-                            )
+                            MessageContent(msg_type=MessageType.VIDEO, file_url=storage_url)
                         )
                 # 文件
                 elif part_type == "file":
@@ -479,20 +457,14 @@ class WeChatAdapter(BaseAdapter):
                     actual_name = "file.bin"
 
             # 2. 跨线程投递到子线程中执行 SDK upload_media
-            if (
-                self.bot._loop is None
-                or not self.bot._loop.is_running()
-                or self.bot.client is None
-            ):
+            if self.bot._loop is None or not self.bot._loop.is_running() or self.bot.client is None:
                 return None
 
             # voice 映射
             upload_type = "voice" if res_type == "audio" else res_type
 
             future = asyncio.run_coroutine_threadsafe(
-                self.bot.client.upload_media(
-                    media_bytes, type=upload_type, filename=actual_name
-                ),
+                self.bot.client.upload_media(media_bytes, type=upload_type, filename=actual_name),
                 self.bot._loop,
             )
 
@@ -513,11 +485,7 @@ class WeChatAdapter(BaseAdapter):
         if not msg.content:
             return
 
-        if (
-            self.bot._loop is None
-            or not self.bot._loop.is_running()
-            or self.bot.client is None
-        ):
+        if self.bot._loop is None or not self.bot._loop.is_running() or self.bot.client is None:
             return
 
         # 检查是否能找到入站时缓存的原始数据帧 (若有且非 event 事件回调，说明是被动回复)
@@ -597,9 +565,7 @@ class WeChatAdapter(BaseAdapter):
                             current_frame,
                             media_type=send_media_type,
                             media_id=media_id,
-                            video_title=file_name
-                            if send_media_type == "video"
-                            else None,
+                            video_title=file_name if send_media_type == "video" else None,
                         ),
                         self.bot._loop,
                     )
@@ -610,9 +576,7 @@ class WeChatAdapter(BaseAdapter):
                             msg.session_id,
                             media_type=send_media_type,
                             media_id=media_id,
-                            video_title=file_name
-                            if send_media_type == "video"
-                            else None,
+                            video_title=file_name if send_media_type == "video" else None,
                         ),
                         self.bot._loop,
                     )
@@ -622,9 +586,7 @@ class WeChatAdapter(BaseAdapter):
             elif item.msg_type in {MessageType.CARD, MessageType.INTERACTIVE}:
                 wechat_card_body = None
                 if item.card_data:
-                    wechat_card_body = self._translate_common_card_to_wechat(
-                        item.card_data
-                    )
+                    wechat_card_body = self._translate_common_card_to_wechat(item.card_data)
                 elif item.card_json:
                     if isinstance(item.card_json, dict):
                         wechat_card_body = item.card_json

@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     api_key: str = Field(default="", repr=False)
     backend_data_base_url: str = "http://127.0.0.1:8010"
     backend_data_api_key: str = Field(default="", repr=False)
+    # 服务间内部令牌：CRUD 落库后触发 Gateway /api/v1/admin/reload。
+    # 与 backend-gateway 的 INTERNAL_ADMIN_TOKEN 保持一致；留空时 reload 会被 Gateway 拒绝。
+    internal_admin_token: str = Field(default="", repr=False)
+    gateway_base_url: str = "http://127.0.0.1:8864"
     phone_default_region: str = "CN"
     login_ip_rate_limit: int = 30
     login_ip_rate_window_seconds: int = 60

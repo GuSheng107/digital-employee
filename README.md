@@ -180,7 +180,7 @@ node -v   # 应为 v22.14.x
 
 `start-all` 会自动：
 
-1. 复制 `.env.example` → `.env`，并创建 `backend-gateway/config/bot.json`（首次启动）
+1. 复制 `.env.example` → `.env`（首次启动）
 2. 当 `backend-data` 的 `API_KEY` 为空时生成强随机密钥并持久化到本地 `.env`
 3. 对三个后端执行 `uv sync --locked`；若 `frontend/node_modules` **不存在** 则 `npm ci`，再 `npm run build`
 4. 清理 `8010`、`8020`、`8864`、`5173` 上的旧项目进程
@@ -216,7 +216,6 @@ node -v   # 应为 v22.14.x
 cd backend-gateway
 uv sync
 Copy-Item .env.example .env
-Copy-Item config\bot.template.json config\bot.json
 uv run uvicorn src.main:app --host 0.0.0.0 --port 8864
 
 # backend-data

@@ -4,11 +4,10 @@ from typing import Literal
 from urllib.parse import quote
 
 from dotenv import load_dotenv
+from nacos_client import adapter as nacos_adapter
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
-
-from nacos_client import adapter as nacos_adapter
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(BASE_DIR / ".env")

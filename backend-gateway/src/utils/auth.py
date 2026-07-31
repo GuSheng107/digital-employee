@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """通过 backend-share/auth-utils 获取用户上下文并执行接口鉴权。"""
 
 from __future__ import annotations

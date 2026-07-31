@@ -166,7 +166,6 @@ cd backend-gateway
 pip install uv
 uv sync
 cp .env.example .env
-cp config/bot.template.json config/bot.json
 cd ..
 
 # Backend Data

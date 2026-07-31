@@ -12,7 +12,6 @@ from typing import Any
 
 from data_client import DataClient, get_data_client
 
-
 DEFAULT_MESSAGE_POLL_SECONDS = 20.0
 DEFAULT_DATA_RETRY_SECONDS = 5.0
 DEFAULT_STORAGE_OBJECT_MAX_SIZE_BYTES = 20 * 1024 * 1024
@@ -81,9 +80,7 @@ class GatewayStorageClient:
 
     def download_file(self, *, file_url: str) -> BytesIO:
         """通过 data-client 解析受信存储 URL 并下载对象。"""
-        content, _content_type = self._get_data_client().download_object_by_url(
-            file_url
-        )
+        content, _content_type = self._get_data_client().download_object_by_url(file_url)
         return BytesIO(content)
 
     def _get_data_client(self) -> DataClient:

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """飞书 Bot 实例基底。
 
 基于 lark-oapi 长连接维持 WebSocket 网络保活与重连逻辑。所有消息数据翻译及媒体资源置换均交付 FeishuAdapter 处理。
@@ -6,10 +5,10 @@
 
 import asyncio
 import time
+from contextlib import suppress
 from typing import Any
 
 import lark_oapi as lark
-
 from lark_oapi.event.callback.model.p2_card_action_trigger import (
     P2CardActionTrigger,
     P2CardActionTriggerResponse,
@@ -118,13 +117,9 @@ class FeishuBot(BaseBot):
             self.ws_client._auto_reconnect = False
             if self._loop is not None and self._loop.is_running():
                 # 安全退信，断开底层 Socket 连接
-                future = asyncio.run_coroutine_threadsafe(
-                    self.ws_client._disconnect(), self._loop
-                )
-                try:
+                future = asyncio.run_coroutine_threadsafe(self.ws_client._disconnect(), self._loop)
+                with suppress(Exception):
                     future.result(timeout=3.0)
-                except Exception:
-                    pass
 
         if self._loop is not None and self._loop.is_running():
             self._loop.call_soon_threadsafe(self._loop.stop)
@@ -138,9 +133,7 @@ class FeishuBot(BaseBot):
         # 直接交由绑定的适配器处理翻译和入站
         self.adapter.handle_receive(data)
 
-    def _handle_card_action(
-        self, data: P2CardActionTrigger
-    ) -> P2CardActionTriggerResponse:
+    def _handle_card_action(self, data: P2CardActionTrigger) -> P2CardActionTriggerResponse:
         """接收卡片交互动作事件，交付适配器处理并归一化出站。
 
         Args:

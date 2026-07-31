@@ -20,6 +20,7 @@ dependencies = [
     "auth-utils==0.1.0",
     "data-client==0.1.0",
     "observability==0.1.0",
+    "httpx==0.28.1",
 ]
 
 [dependency-groups]
@@ -27,6 +28,9 @@ dev = [
     "pytest==7.4.4",
     "ruff==0.6.9",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
 
 [tool.uv.sources]
 nacos-client = { path = "../backend-share/nacos-client", editable = true }

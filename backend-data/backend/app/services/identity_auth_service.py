@@ -6,14 +6,15 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import TypedDict
 
 from api_common import (
     DuplicateResourceError,
     RateLimitExceededError,
-    SessionReplacedError,
     ServiceUnavailableError,
+    SessionReplacedError,
     TokenInvalidError,
     UserDisabledError,
 )
@@ -108,10 +109,8 @@ class IdentityAuthService:
             self._session.commit()
         except SQLAlchemyError:
             self._session.rollback()
-            try:
+            with suppress(RuntimeError):
                 invite_codes.restore(invite_code)
-            except RuntimeError:
-                pass
             raise
         token_meta = self._sessions.issue_token_pair(
             user_id=user.id,
@@ -265,7 +264,7 @@ class IdentityAuthService:
         responses: list[dict[str, int]] = []
         for item, result in zip(
             normalized_items,
-            results,
+            results, strict=False,
         ):
             limit = int(item["limit"])
             window_seconds = int(item["window_seconds"])
