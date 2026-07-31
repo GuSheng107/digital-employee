@@ -17,6 +17,11 @@ interface ArithmeticCaptchaInputProps {
   tone?: ArithmeticCaptchaTone;
 }
 
+/** 拼接条件类名，过滤 falsy 值。 */
+function cx(...classes: (string | false | undefined)[]): string {
+  return classes.filter(Boolean).join(' ');
+}
+
 /** 数字答案输入框与可刷新算术图片验证码。 */
 export default function ArithmeticCaptchaInput({
   value,
@@ -30,35 +35,27 @@ export default function ArithmeticCaptchaInput({
   const isLight = tone === 'light' || tone === 'lightCompact';
   const isCompact = tone === 'lightCompact';
 
-  const controlClass = [
+  const controlClass = cx(
     styles.control,
-    isLight ? styles.controlLight : '',
-    isCompact ? styles.controlLightCompact : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+    isLight && styles.controlLight,
+    isCompact && styles.controlLightCompact,
+  );
 
-  const answerClass = [
+  const answerClass = cx(
     isLight ? styles.answerLight : styles.answer,
-    isCompact ? styles.answerLightCompact : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+    isCompact && styles.answerLightCompact,
+  );
 
-  const imageFrameClass = [
+  const imageFrameClass = cx(
     styles.imageFrame,
-    isLight ? styles.imageFrameLight : '',
-    isCompact ? styles.imageFrameLightCompact : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+    isLight && styles.imageFrameLight,
+    isCompact && styles.imageFrameLightCompact,
+  );
 
-  const refreshClass = [
+  const refreshClass = cx(
     isLight ? styles.refreshLight : styles.refresh,
-    isCompact ? styles.refreshLightCompact : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+    isCompact && styles.refreshLightCompact,
+  );
 
   return (
     <div className={controlClass}>

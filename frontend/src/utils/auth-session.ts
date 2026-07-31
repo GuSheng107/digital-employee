@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { message } from 'antd';
 import { BACKEND_AUTH_API_BASE_URL } from '@/config/api-config';
 import { useUserStore } from '@/store/user-store';
 import { createTraceHeaders } from './trace-context';
@@ -114,7 +113,11 @@ export async function refreshAuthenticatedSession(): Promise<boolean> {
   }
 }
 
-/** 清理本地会话并带原访问地址跳转登录页。 */
+/** 清理本地会话并带原访问地址跳转登录页。
+ *
+ * SESSION_REPLACED 场景在 URL 追加 reason 参数，由登录页读取后提示，
+ * 避免在此处弹 message 后硬跳转导致提示丢失或与调用方 catch 重复弹窗。
+ */
 export function invalidateSessionAndRedirect(errorCode?: string): void {
   const hadStoredSession =
     localStorage.getItem('access_token') != null
@@ -122,13 +125,10 @@ export function invalidateSessionAndRedirect(errorCode?: string): void {
   useUserStore.getState().clearAuth();
   const currentPath = window.location.pathname + window.location.search;
   if (window.location.pathname !== '/login') {
+    const params = new URLSearchParams({ redirect: currentPath });
     if (hadStoredSession && errorCode === 'SESSION_REPLACED') {
-      void message.warning('您的账号已在其他设备登录，请重新登录');
-      setTimeout(() => {
-        window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`;
-      }, 1500);
-    } else {
-      window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`;
+      params.set('reason', 'session_replaced');
     }
+    window.location.href = `/login?${params.toString()}`;
   }
 }

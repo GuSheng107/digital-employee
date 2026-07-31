@@ -26,7 +26,7 @@ import { useRateLimitCountdown } from '@/hooks/use-rate-limit-countdown';
 import { getRateLimitRetryAfter } from '@/utils/request';
 import ArithmeticCaptchaInput from '@/components/arithmetic-captcha/ArithmeticCaptchaInput';
 import { useArithmeticCaptcha } from '@/hooks/use-arithmetic-captcha';
-import { registerFormTheme } from '@/pages/auth-form-theme';
+import { registerFormTheme } from '@/components/auth-page-shell/auth-form-theme';
 
 interface RegisterFormValues {
   username: string;

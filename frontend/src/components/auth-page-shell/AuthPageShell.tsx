@@ -8,6 +8,7 @@ interface AuthPageShellProps {
   theme: ThemeConfig;
   density?: 'default' | 'compact';
   heroSrc: string;
+  brandName?: string;
   brandTitle: string;
   brandSubtitle: string;
   formGreeting: string;
@@ -21,6 +22,7 @@ export default function AuthPageShell({
   theme,
   density = 'default',
   heroSrc,
+  brandName = 'Digital Employee',
   brandTitle,
   brandSubtitle,
   formGreeting,
@@ -54,7 +56,7 @@ export default function AuthPageShell({
             <div className={styles.brandMark}>
               <img src={logo} alt="" className={styles.brandMarkImg} />
             </div>
-            <span className={styles.brandName}>Digital Employee</span>
+            <span className={styles.brandName}>{brandName}</span>
           </header>
 
           <div className={styles.heroVisual}>
@@ -69,7 +71,7 @@ export default function AuthPageShell({
           </div>
 
           <footer className={styles.brandFooter}>
-            <span>© {new Date().getFullYear()} Digital Employee</span>
+            <span>© {new Date().getFullYear()} {brandName}</span>
           </footer>
         </section>
 

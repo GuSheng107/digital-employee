@@ -24,9 +24,10 @@ export default function RequireGuest({
   }
 
   if (isAuthenticated) {
+    // fallback 直跳用户实际首页，避免先到 '/' 再被 index 路由二次跳转
     return (
       <Navigate
-        to={getSafeRedirectPath(searchParams.get('redirect'))}
+        to={getSafeRedirectPath(searchParams.get('redirect'), '/system/user/profile')}
         replace
       />
     );

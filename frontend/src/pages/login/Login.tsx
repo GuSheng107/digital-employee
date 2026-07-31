@@ -12,7 +12,7 @@ import { getRateLimitRetryAfter } from '@/utils/request';
 import { getSafeRedirectPath } from '@/utils/auth-session';
 import ArithmeticCaptchaInput from '@/components/arithmetic-captcha/ArithmeticCaptchaInput';
 import { useArithmeticCaptcha } from '@/hooks/use-arithmetic-captcha';
-import { loginFormTheme } from '@/pages/auth-form-theme';
+import { loginFormTheme } from '@/components/auth-page-shell/auth-form-theme';
 import {
   forgetCredentialPreference,
   isRememberPasswordEnabled,
@@ -50,6 +50,13 @@ export default function Login(): React.ReactElement {
     refreshCaptcha,
   } = useArithmeticCaptcha();
   const [greeting] = useState(() => greetingByHour());
+
+  // 会话被挤占后跳转回登录页时，展示一次性提示
+  useEffect(() => {
+    if (searchParams.get('reason') === 'session_replaced') {
+      message.warning('您的账号已在其他设备登录，请重新登录');
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     let active = true;
