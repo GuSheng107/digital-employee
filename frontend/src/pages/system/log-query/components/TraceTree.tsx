@@ -1,17 +1,16 @@
 import { ApartmentOutlined } from '@ant-design/icons';
 import { Tree } from 'antd';
 import type { DataNode } from 'antd/es/tree';
-import type { TraceEvent, TraceSpan } from '../types/observability';
+import type { TraceSpan } from '../types/observability';
 import { TRACE_SERVICE_LABELS } from '../constants/observability';
 
 interface TraceTreeProps {
   spans: TraceSpan[];
-  events: TraceEvent[];
   selectedSpanId?: string;
   onSelect: (span: TraceSpan) => void;
 }
 
-function buildTree(spans: TraceSpan[], _events: TraceEvent[]): DataNode[] {
+function buildTree(spans: TraceSpan[]): DataNode[] {
   const spanMap = new Map(spans.map((span) => [span.span_id, span]));
   const childrenMap = new Map<string, TraceSpan[]>();
   const roots: TraceSpan[] = [];
@@ -41,7 +40,6 @@ function buildTree(spans: TraceSpan[], _events: TraceEvent[]): DataNode[] {
 
 export default function TraceTree({
   spans,
-  events,
   selectedSpanId,
   onSelect,
 }: TraceTreeProps): React.ReactElement {
@@ -51,7 +49,7 @@ export default function TraceTree({
       showIcon
       blockNode
       defaultExpandAll
-      treeData={buildTree(spans, events)}
+      treeData={buildTree(spans)}
       selectedKeys={selectedSpanId ? [selectedSpanId] : []}
       onSelect={(keys) => {
         const span = spanMap.get(String(keys[0] ?? ''));

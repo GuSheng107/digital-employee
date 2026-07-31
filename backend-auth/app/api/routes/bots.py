@@ -2,7 +2,7 @@
 
 - GET    /bots         分页查询 Bot 列表
 - POST   /bots         创建 Bot
-- PUT    /bots/{bot_id} 更新 Bot
+- POST   /bots/{bot_id} 更新 Bot
 - DELETE /bots/{bot_id} 软删除 Bot
 """
 

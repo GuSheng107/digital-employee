@@ -56,6 +56,7 @@ def _load_service_configuration() -> None:
         if nacos_client is not None:
             nacos_client.load_to_environ()
     except Exception:
+        logger.exception("[BOOTSTRAP] Nacos 配置加载失败，将使用本地 .env 配置启动")
         return
 
 

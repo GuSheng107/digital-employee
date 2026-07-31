@@ -160,7 +160,6 @@ export default function LogQuery(): React.ReactElement {
             <aside className={styles.traceTree}>
               <TraceTree
                 spans={detail.spans}
-                events={detail.events}
                 selectedSpanId={selectedSpan?.span_id}
                 onSelect={(span) => void selectSpan(span)}
               />

@@ -3,7 +3,7 @@
 - GET    /bots         分页查询 Bot 列表（前端管理页用）
 - GET    /bots/active  查询全部活跃 Bot（Gateway 启动拉取用）
 - POST   /bots         创建 Bot
-- PUT    /bots/{bot_id} 更新 Bot
+- POST   /bots/{bot_id} 更新 Bot
 - DELETE /bots/{bot_id} 软删除 Bot
 """
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Popconfirm, Table, Tag, message } from 'antd';
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { deleteBot, fetchBots, type BotItem } from '@/api/bot-api';
+import { deleteBot, fetchBots, type BotItem } from './api/bot-api';
 import SystemPage from '@/components/system-page/SystemPage';
 import { getRequestErrorMessage } from '@/utils/request';
 import BotFormModal from './components/BotFormModal';
@@ -37,10 +37,9 @@ export default function BotManagement(): React.ReactElement {
   }
 
   useEffect(() => {
-    const timerId = window.setTimeout(() => {
-      void loadData(1, DEFAULT_PAGE_SIZE);
-    }, 0);
-    return () => window.clearTimeout(timerId);
+    // 组件挂载时加载首页数据，setState 在异步回调中执行，属于合理的 effect 用法
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadData(1, DEFAULT_PAGE_SIZE);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

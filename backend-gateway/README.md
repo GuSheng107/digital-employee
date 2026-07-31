@@ -18,7 +18,7 @@ platform adapter
 - 出站消息先由 `backend-data` 转存 Redis，再以 ACK/NACK 租约交付网关；
   超时会重投，超过上限进入有界死信列表。
 - `/api/v1/admin/*` 通过 `backend-share/auth-utils` 获取用户上下文，并校验
-  `bot:manage`，不使用网关自建鉴权。
+  `admin:bot:manage`，不使用网关自建鉴权。
 
 ## 双模式
 
