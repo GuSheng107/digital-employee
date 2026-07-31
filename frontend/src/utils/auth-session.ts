@@ -16,6 +16,51 @@ interface RefreshTokenPair {
 
 let refreshPromise: Promise<boolean> | null = null;
 
+const AUTH_ENTRY_PATHS = new Set(['/login', '/register']);
+
+function isAuthEntryPath(pathname: string): boolean {
+  return (
+    AUTH_ENTRY_PATHS.has(pathname)
+    || pathname.startsWith('/login/')
+    || pathname.startsWith('/register/')
+  );
+}
+
+/**
+ * 仅允许站内相对路径（以 `/` 开头且非 `//`），防止登录后开放重定向。
+ * 排除 /login、/register，避免登录成功后仍停在鉴权入口页。
+ */
+export function getSafeRedirectPath(
+  candidate: string | null | undefined,
+  fallback = '/',
+): string {
+  if (typeof candidate !== 'string') {
+    return fallback;
+  }
+  const value = candidate.trim();
+  if (!value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) {
+    return fallback;
+  }
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(value);
+  } catch {
+    return fallback;
+  }
+  if (
+    decoded.startsWith('//')
+    || decoded.startsWith('/\\')
+    || decoded.includes('://')
+  ) {
+    return fallback;
+  }
+  const pathname = decoded.split(/[?#]/, 1)[0] ?? decoded;
+  if (isAuthEntryPath(pathname)) {
+    return fallback;
+  }
+  return value;
+}
+
 function isRefreshTokenPair(value: unknown): value is RefreshTokenPair {
   return (
     value != null
