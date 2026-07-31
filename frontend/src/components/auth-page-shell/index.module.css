@@ -1,0 +1,934 @@
+.container {
+  --coral: #ff725e;
+  --coral-deep: #e85a48;
+  --ink: #263238;
+  --muted: #6b7c85;
+  --paper: #fafafa;
+  --soft: #e0e0e0;
+  --panel: #ffffff;
+  --line: rgba(255, 114, 94, 0.14);
+  --font-sans: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  --font-display: 'Bahnschrift', 'DIN Alternate', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
+    sans-serif;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(255, 114, 94, 0.14), transparent 34%),
+    radial-gradient(circle at 88% 12%, rgba(255, 114, 94, 0.1), transparent 30%),
+    radial-gradient(circle at 78% 88%, rgba(235, 153, 110, 0.1), transparent 36%),
+    linear-gradient(155deg, #fff8f6 0%, #ffffff 46%, #f7f5f4 100%);
+  overflow: hidden;
+  font-family: var(--font-sans);
+}
+
+/* ── 左侧：插画品牌区 ── */
+
+.brandPanel {
+  position: relative;
+  flex: 1.15;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  justify-items: end;
+  padding: clamp(20px, 3vh, 36px) clamp(12px, 1.6vw, 28px) clamp(16px, 2.4vh, 28px) clamp(56px, 8vw, 140px);
+  overflow: hidden;
+  isolation: isolate;
+  background: transparent;
+}
+
+.brandAtmosphere {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  mask-image: linear-gradient(90deg, black 70%, transparent 100%);
+}
+
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(40px);
+  opacity: 0.55;
+  animation: orbDrift 12s ease-in-out infinite;
+}
+
+.orbA {
+  top: 8%;
+  left: 6%;
+  width: 220px;
+  height: 220px;
+  background: rgba(255, 114, 94, 0.45);
+}
+
+.orbB {
+  right: -4%;
+  top: 34%;
+  width: 280px;
+  height: 280px;
+  background: rgba(224, 224, 224, 0.7);
+  animation-delay: -4s;
+}
+
+.orbC {
+  left: 28%;
+  bottom: 4%;
+  width: 180px;
+  height: 180px;
+  background: rgba(255, 114, 94, 0.22);
+  animation-delay: -7s;
+}
+
+.wave {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  bottom: -8%;
+  height: 42%;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.55), transparent 62%),
+    linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.35));
+  border-radius: 50% 50% 0 0;
+  animation: waveBreathe 8s ease-in-out infinite;
+}
+
+.sheen {
+  position: absolute;
+  inset: -20% -30%;
+  background: linear-gradient(
+    115deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.28) 48%,
+    transparent 58%
+  );
+  transform: translateX(-40%);
+  animation: sheenSweep 9s ease-in-out infinite;
+}
+
+.spark {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 114, 94, 0.9);
+  box-shadow: 0 0 12px rgba(255, 114, 94, 0.55);
+  animation: sparkFloat 5.5s ease-in-out infinite;
+}
+
+.spark1 {
+  top: 22%;
+  left: 18%;
+  animation-delay: 0s;
+}
+
+.spark2 {
+  top: 36%;
+  right: 16%;
+  width: 6px;
+  height: 6px;
+  background: rgba(235, 153, 110, 0.95);
+  animation-delay: -1.4s;
+}
+
+.spark3 {
+  bottom: 28%;
+  left: 28%;
+  width: 5px;
+  height: 5px;
+  animation-delay: -2.6s;
+}
+
+.spark4 {
+  top: 18%;
+  right: 32%;
+  width: 7px;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.7);
+  animation-delay: -3.8s;
+}
+
+.brandHeader {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(100%, 680px);
+  justify-self: end;
+  animation: riseIn 0.7s ease both;
+}
+
+.brandMark {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 10px 28px rgba(38, 50, 56, 0.08);
+  animation: markPulse 3.6s ease-in-out infinite;
+}
+
+.brandMarkImg {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.brandName {
+  font-family: var(--font-display);
+  font-size: clamp(22px, 2.2vw, 28px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.heroVisual {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: min(100%, 680px);
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  justify-self: end;
+  animation: heroPop 0.95s 0.08s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.heroGlow {
+  position: absolute;
+  top: 46%;
+  left: 50%;
+  z-index: 0;
+  width: 58%;
+  height: 38%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 114, 94, 0.28), transparent 70%);
+  transform: translate(-50%, -50%);
+  filter: blur(18px);
+  animation: glowPulse 5s ease-in-out infinite;
+}
+
+.heroArt {
+  position: relative;
+  z-index: 1;
+  width: auto;
+  max-width: min(100%, 720px);
+  height: auto;
+  max-height: 100%;
+  object-fit: contain;
+  animation: artFloat 6.5s ease-in-out infinite;
+  filter: drop-shadow(0 28px 40px rgba(38, 50, 56, 0.12));
+}
+
+.heroShadow {
+  flex: none;
+  z-index: 0;
+  width: min(52%, 320px);
+  height: 14px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(38, 50, 56, 0.14), transparent 70%);
+  animation: shadowBreathe 6.5s ease-in-out infinite;
+}
+
+.brandCopy {
+  position: relative;
+  z-index: 2;
+  width: min(100%, 680px);
+  max-width: 34rem;
+  margin-top: clamp(4px, 1vh, 10px);
+  justify-self: end;
+  animation: riseIn 0.8s 0.16s ease both;
+}
+
+.brandTitle {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: clamp(30px, 3.6vw, 48px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+  color: var(--ink);
+  animation: titleReveal 0.9s 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.brandSubtitle {
+  margin: 0;
+  max-width: 28rem;
+  color: var(--muted);
+  font-size: clamp(14px, 1.2vw, 16px);
+  line-height: 1.55;
+  font-weight: 500;
+  animation: riseIn 0.75s 0.34s ease both;
+}
+
+.brandFooter {
+  position: relative;
+  z-index: 2;
+  width: min(100%, 680px);
+  margin-top: clamp(8px, 1.5vh, 18px);
+  color: rgba(107, 124, 133, 0.8);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  justify-self: end;
+  animation: riseIn 0.8s 0.24s ease both;
+}
+
+/* ── 右侧：登录区 ── */
+
+.formPanel {
+  position: relative;
+  flex: 0.9;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(24px, 4vh, 56px) clamp(28px, 4vw, 64px) clamp(24px, 4vh, 56px) clamp(12px, 1.5vw, 28px);
+  overflow: hidden;
+  isolation: isolate;
+  box-sizing: border-box;
+  background: transparent;
+  animation: panelSlideIn 0.75s 0.08s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.formAtmosphere {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent 0%, black 18%);
+}
+
+.formGrid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.4;
+  background-image:
+    radial-gradient(rgba(38, 50, 56, 0.08) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(circle at 62% 42%, black 12%, transparent 70%);
+}
+
+.formOrb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(36px);
+  animation: orbDrift 14s ease-in-out infinite;
+}
+
+.formOrbA {
+  top: -8%;
+  right: -6%;
+  width: 260px;
+  height: 260px;
+  background: rgba(255, 114, 94, 0.22);
+}
+
+.formOrbB {
+  left: -10%;
+  bottom: 8%;
+  width: 220px;
+  height: 220px;
+  background: rgba(224, 224, 224, 0.7);
+  animation-delay: -5s;
+}
+
+.formOrbC {
+  right: 18%;
+  bottom: -12%;
+  width: 180px;
+  height: 180px;
+  background: rgba(235, 153, 110, 0.2);
+  animation-delay: -9s;
+}
+
+.formRing {
+  position: absolute;
+  top: 12%;
+  right: 8%;
+  width: 160px;
+  height: 160px;
+  border: 1.5px dashed rgba(255, 114, 94, 0.22);
+  border-radius: 50%;
+  animation: formRingSpin 36s linear infinite;
+}
+
+.formRing::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px;
+  border-radius: 50%;
+  background: var(--coral);
+  box-shadow: 0 0 0 5px rgba(255, 114, 94, 0.12);
+  content: '';
+  transform: translateX(76px);
+}
+
+.formSpeck {
+  position: absolute;
+  left: 14%;
+  top: 22%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255, 114, 94, 0.55);
+  box-shadow:
+    46px 68px 0 rgba(38, 50, 56, 0.08),
+    120px 24px 0 rgba(255, 114, 94, 0.2),
+    18px 140px 0 rgba(224, 224, 224, 0.9);
+  animation: sparkFloat 7s ease-in-out infinite;
+}
+
+.formStage {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 380px;
+  max-height: 100%;
+  padding: clamp(18px, 2.4vh, 26px) clamp(18px, 2vw, 24px);
+  overflow: auto;
+  scrollbar-width: thin;
+  border: 1px solid rgba(38, 50, 56, 0.06);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(12px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 18px 40px rgba(38, 50, 56, 0.05);
+}
+
+.formGreeting {
+  margin: 0 0 10px;
+  color: var(--coral-deep);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  animation: riseIn 0.55s 0.16s ease both;
+}
+
+.formTitle {
+  margin: 0 0 12px;
+  font-family: var(--font-display);
+  font-size: clamp(34px, 3.6vw, 44px);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.12;
+  color: var(--ink);
+  animation: riseIn 0.6s 0.22s ease both;
+}
+
+.formTitle em {
+  display: block;
+  margin-top: 4px;
+  font-style: normal;
+  font-weight: 500;
+  color: #78909c;
+  letter-spacing: -0.02em;
+}
+
+.formSubtitle {
+  margin: 0 0 clamp(22px, 3.2vh, 34px);
+  max-width: 30rem;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+  animation: riseIn 0.6s 0.28s ease both;
+}
+
+.form {
+  width: 100%;
+}
+
+.formField {
+  margin-bottom: clamp(12px, 1.8vh, 18px);
+  animation: riseIn 0.5s ease both;
+}
+
+.form > .formField:nth-child(1) {
+  animation-delay: 0.34s;
+}
+
+.form > .formField:nth-child(2) {
+  animation-delay: 0.4s;
+}
+
+.form > .formField:nth-child(3) {
+  animation-delay: 0.46s;
+}
+
+.form > .formField:nth-child(4) {
+  animation-delay: 0.5s;
+}
+
+.form > .formField:nth-child(5),
+.form > .formField:nth-child(6) {
+  animation-delay: 0.54s;
+}
+
+.formLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #455a64;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.labelIcon {
+  color: var(--coral);
+  font-size: 13px;
+}
+
+.inputIcon {
+  color: #90a4ae;
+}
+
+.formInput {
+  width: 100%;
+  font-size: 15px;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.formInput:hover {
+  background: #ebebeb;
+}
+
+.formInput:focus,
+.formInput:focus-within {
+  background: #fff;
+}
+
+.formInput::placeholder,
+.formInput input::placeholder {
+  color: #9e9e9e;
+}
+
+.formInput input {
+  background: transparent;
+  color: var(--ink);
+}
+
+.submitField {
+  margin-bottom: 0;
+  animation-delay: 0.58s;
+}
+
+.submitButton {
+  width: 100%;
+  letter-spacing: 0.04em;
+  transition: transform 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+.submitButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 36px rgba(232, 90, 72, 0.32);
+}
+
+.submitButton:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.submitButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.registerLine {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 22px 0 0;
+  color: #90a4ae;
+  font-size: 13px;
+  animation: riseIn 0.5s 0.64s ease both;
+}
+
+.registerAction {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--coral-deep);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+  transition: color 0.2s;
+}
+
+.registerAction:hover {
+  color: var(--coral);
+}
+
+/* ── 动效 ── */
+
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes heroPop {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes titleReveal {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes panelSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes artFloat {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(-0.5deg);
+  }
+}
+
+@keyframes shadowBreathe {
+  0%,
+  100% {
+    transform: scaleX(1);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scaleX(0.82);
+    opacity: 0.4;
+  }
+}
+
+@keyframes glowPulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+}
+
+@keyframes orbDrift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(12px, -16px, 0) scale(1.06);
+  }
+}
+
+@keyframes waveBreathe {
+  0%,
+  100% {
+    transform: translateY(0) scaleX(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: translateY(-10px) scaleX(1.04);
+    opacity: 1;
+  }
+}
+
+@keyframes sheenSweep {
+  0%,
+  18% {
+    transform: translateX(-45%);
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.7;
+  }
+  55% {
+    transform: translateX(45%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(45%);
+    opacity: 0;
+  }
+}
+
+@keyframes sparkFloat {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translateY(-18px) scale(1.25);
+    opacity: 1;
+  }
+}
+
+@keyframes markPulse {
+  0%,
+  100% {
+    box-shadow: 0 10px 28px rgba(38, 50, 56, 0.08);
+  }
+  50% {
+    box-shadow: 0 12px 32px rgba(255, 114, 94, 0.22);
+  }
+}
+
+@keyframes formRingSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .heroArt,
+  .heroGlow,
+  .heroShadow,
+  .heroVisual,
+  .orb,
+  .wave,
+  .sheen,
+  .spark,
+  .brandHeader,
+  .brandMark,
+  .brandCopy,
+  .brandTitle,
+  .brandSubtitle,
+  .brandFooter,
+  .formPanel,
+  .formOrb,
+  .formRing,
+  .formSpeck,
+  .formGreeting,
+  .formTitle,
+  .formSubtitle,
+  .formField,
+  .registerLine,
+  .submitButton {
+    animation: none;
+  }
+}
+
+/* ── 响应式 ── */
+
+@media (max-width: 1100px) {
+  .heroArt {
+    max-width: min(100%, 600px);
+  }
+
+  .brandTitle {
+    font-size: clamp(28px, 4vw, 40px);
+  }
+}
+
+@media (max-width: 900px) {
+  /*
+   * 顶层 html/body/#app 为 overflow:hidden 的单视口布局。
+   * H5 必须让本页 .container 成为可滚动容器（height 约束在视口内），
+   * 不能用 height:auto 撑出 #app 后再裁切。
+   */
+  .container {
+    flex-direction: column;
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  .brandPanel {
+    flex: none;
+    height: auto;
+    min-height: 0;
+    padding: 20px 24px 8px;
+    grid-template-rows: auto minmax(120px, 28vh) auto;
+    justify-items: center;
+  }
+
+  .brandFooter {
+    display: none;
+  }
+
+  .brandHeader,
+  .heroVisual,
+  .brandCopy,
+  .brandFooter {
+    width: 100%;
+    justify-self: center;
+  }
+
+  .brandCopy {
+    text-align: center;
+    margin-inline: auto;
+  }
+
+  .brandSubtitle {
+    margin-inline: auto;
+  }
+
+  .heroVisual {
+    height: auto;
+    min-height: 120px;
+    max-height: 28vh;
+  }
+
+  .heroArt {
+    max-width: min(72vw, 320px);
+    max-height: 24vh;
+  }
+
+  .formPanel {
+    flex: none;
+    height: auto;
+    align-items: flex-start;
+    padding: 16px 22px 48px;
+    overflow: visible;
+  }
+
+  .formAtmosphere {
+    opacity: 0.55;
+  }
+
+  .formRing,
+  .formSpeck {
+    display: none;
+  }
+
+  .formStage {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .formTitle {
+    font-size: 32px;
+  }
+}
+
+/* ── 注册页更紧凑密度 ── */
+.compact .brandPanel {
+  flex: 1.1;
+}
+
+.compact .formPanel {
+  flex: 1;
+  padding: clamp(16px, 2.5vh, 36px) clamp(24px, 3.5vw, 56px);
+}
+
+.compact .formStage {
+  max-width: 460px;
+  padding: clamp(16px, 2vh, 22px) clamp(16px, 1.8vw, 22px);
+}
+
+.compact .formGreeting {
+  margin: 0 0 8px;
+}
+
+.compact .formTitle {
+  margin: 0 0 10px;
+  font-size: clamp(30px, 3.2vw, 40px);
+}
+
+.compact .formSubtitle {
+  margin: 0 0 clamp(16px, 2.4vh, 24px);
+  max-width: 32rem;
+  line-height: 1.65;
+}
+
+.compact .formInput {
+  font-size: 14px;
+}
+
+.compact .submitField {
+  margin-top: 4px;
+}
+
+.compact .submitButton:hover:not(:disabled) {
+  box-shadow: 0 16px 32px rgba(232, 90, 72, 0.32);
+}
+
+.compact .registerLine {
+  margin: 18px 0 0;
+  animation: riseIn 0.5s 0.5s ease both;
+}
+
+@media (max-width: 900px) {
+  .compact .brandPanel {
+    grid-template-rows: auto minmax(100px, 24vh) auto;
+  }
+
+  .compact .heroVisual {
+    min-height: 100px;
+    max-height: 24vh;
+  }
+
+  .compact .heroArt {
+    max-width: min(72vw, 280px);
+    max-height: 20vh;
+  }
+
+  .compact .formPanel {
+    padding: 12px 20px 48px;
+  }
+
+  .compact .formRing {
+    opacity: 0.5;
+  }
+}
+

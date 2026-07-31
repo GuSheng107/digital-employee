@@ -1,14 +1,18 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { Button, Checkbox, Form, Input, message } from 'antd';
-import { UserOutlined, LockOutlined } from '@ant-design/icons';
+import { LockOutlined, SafetyCertificateOutlined, UserOutlined } from '@ant-design/icons';
 import { useUserStore, getLoginErrorMessage } from '@/store/user-store';
-import logo from '@/assets/images/avatar/logo.svg';
+import presentationArt from '@/assets/images/illustrations/digital-presentation-amico.svg';
+import AuthPageShell from '@/components/auth-page-shell/AuthPageShell';
+import shell from '@/components/auth-page-shell/index.module.css';
 import styles from './index.module.css';
 import { useRateLimitCountdown } from '@/hooks/use-rate-limit-countdown';
 import { getRateLimitRetryAfter } from '@/utils/request';
+import { getSafeRedirectPath } from '@/utils/auth-session';
 import ArithmeticCaptchaInput from '@/components/arithmetic-captcha/ArithmeticCaptchaInput';
 import { useArithmeticCaptcha } from '@/hooks/use-arithmetic-captcha';
+import { loginFormTheme } from '@/pages/auth-form-theme';
 import {
   forgetCredentialPreference,
   isRememberPasswordEnabled,
@@ -21,6 +25,15 @@ interface LoginFormValues {
   password: string;
   captcha_answer: string;
   remember_password?: boolean;
+}
+
+function greetingByHour(): string {
+  const hour = new Date().getHours();
+  if (hour < 5) return '夜深了';
+  if (hour < 11) return '早上好';
+  if (hour < 14) return '中午好';
+  if (hour < 18) return '下午好';
+  return '晚上好';
 }
 
 export default function Login(): React.ReactElement {
@@ -36,11 +49,13 @@ export default function Login(): React.ReactElement {
     error: captchaError,
     refreshCaptcha,
   } = useArithmeticCaptcha();
+  const [greeting] = useState(() => greetingByHour());
 
   useEffect(() => {
+    let active = true;
     async function restoreRememberedCredential(): Promise<void> {
       const credential = await loadRememberedCredential();
-      if (credential) {
+      if (active && credential) {
         form.setFieldsValue({
           username: credential.username,
           password: credential.password,
@@ -49,6 +64,9 @@ export default function Login(): React.ReactElement {
       }
     }
     void restoreRememberedCredential();
+    return () => {
+      active = false;
+    };
   }, [form]);
 
   const handleSubmit = async (values: LoginFormValues): Promise<void> => {
@@ -75,13 +93,10 @@ export default function Login(): React.ReactElement {
         return;
       }
       message.success('登录成功');
-      // 登录成功后跳转到 redirect 参数指定的页面，默认首页
-      const redirect = searchParams.get('redirect') || '/';
-      navigate(redirect, { replace: true });
+      navigate(getSafeRedirectPath(searchParams.get('redirect')), { replace: true });
     } catch (error) {
       const retryAfter = getRateLimitRetryAfter(error);
       if (retryAfter) startCountdown(retryAfter);
-      // 用 message 全局提示替代 Alert，在深色背景上更醒目
       message.error(getLoginErrorMessage(error));
       form.setFieldValue('captcha_answer', undefined);
       await refreshCaptcha();
@@ -89,233 +104,134 @@ export default function Login(): React.ReactElement {
   };
 
   return (
-    <div className={styles.container}>
-      {/* 左侧品牌展示区 */}
-      <div className={styles.brandPanel}>
-        <div className={styles.brandBg} />
-        <div className={styles.brandNoise} />
-        <div className={`${styles.brandGlow} ${styles.brandGlow1}`} />
-        <div className={`${styles.brandGlow} ${styles.brandGlow2}`} />
-        <div className={`${styles.brandGlow} ${styles.brandGlow3}`} />
-
-        <div className={styles.systemStatus}>
-          <span className={styles.statusPulse} />
-          <span>WORKFORCE OS</span>
-          <span className={styles.statusDivider} />
-          <span className={styles.statusOnline}>SYSTEM ONLINE</span>
-        </div>
-
-        <div className={styles.constellation} aria-hidden="true">
-          <div className={`${styles.orbit} ${styles.orbitOuter}`} />
-          <div className={`${styles.orbit} ${styles.orbitMiddle}`} />
-          <div className={`${styles.orbit} ${styles.orbitInner}`} />
-
-          <svg
-            className={styles.signalMap}
-            viewBox="0 0 620 620"
-            role="presentation"
+    <AuthPageShell
+      theme={loginFormTheme}
+      heroSrc={presentationArt}
+      brandTitle="数字员工"
+      brandSubtitle="把重复工作交给始终在线的数字团队，让人回归创造。"
+      formGreeting={greeting}
+      formTitle={
+        <>
+          继续创造
+          <em>从这里开始</em>
+        </>
+      }
+      formSubtitle="登录后编排任务、接入会话，让数字员工替你把事做完。"
+      footer={
+        <p className={shell.registerLine}>
+          还没有账号？
+          <button
+            type="button"
+            className={shell.registerAction}
+            onClick={() => navigate('/register')}
           >
-            <defs>
-              <linearGradient id="signal-gradient" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stopColor="#b9ff66" />
-                <stop offset="48%" stopColor="#2dd4bf" />
-                <stop offset="100%" stopColor="#38bdf8" />
-              </linearGradient>
-            </defs>
-            <path d="M310 310 L126 165" />
-            <path d="M310 310 L488 118" />
-            <path d="M310 310 L525 405" />
-            <path d="M310 310 L188 515" />
-            <circle cx="310" cy="310" r="216" />
-          </svg>
+            去注册
+          </button>
+        </p>
+      }
+    >
+      <Form
+        form={form}
+        name="login"
+        layout="vertical"
+        onFinish={handleSubmit}
+        initialValues={{
+          remember_password: isRememberPasswordEnabled(),
+        }}
+        autoComplete="off"
+        className={shell.form}
+        requiredMark={false}
+      >
+        <Form.Item
+          name="username"
+          label={<span className={shell.formLabel}>用户名</span>}
+          rules={[{ required: true, message: '请输入用户名' }]}
+          className={shell.formField}
+        >
+          <Input
+            prefix={<UserOutlined className={shell.inputIcon} />}
+            placeholder="你的账号"
+            className={shell.formInput}
+            size="large"
+            autoComplete="username"
+          />
+        </Form.Item>
 
-          <div className={styles.coreHalo} />
-          <div className={styles.coreNode}>
-            <span className={styles.coreIndex}>DE</span>
-            <img src={logo} alt="" />
-            <small>ORCHESTRATOR</small>
-          </div>
+        <Form.Item
+          name="password"
+          label={<span className={shell.formLabel}>密码</span>}
+          rules={[{ required: true, message: '请输入密码' }]}
+          className={shell.formField}
+        >
+          <Input.Password
+            prefix={<LockOutlined className={shell.inputIcon} />}
+            placeholder="登录密码"
+            className={shell.formInput}
+            size="large"
+            autoComplete="current-password"
+          />
+        </Form.Item>
 
-          <div className={`${styles.agentNode} ${styles.agentNodePlan}`}>
-            <span className={styles.agentIndex}>01</span>
-            <strong>规划</strong>
-            <small>PLAN</small>
-          </div>
-          <div className={`${styles.agentNode} ${styles.agentNodeKnow}`}>
-            <span className={styles.agentIndex}>02</span>
-            <strong>知识</strong>
-            <small>KNOW</small>
-          </div>
-          <div className={`${styles.agentNode} ${styles.agentNodeAct}`}>
-            <span className={styles.agentIndex}>03</span>
-            <strong>执行</strong>
-            <small>ACT</small>
-          </div>
-          <div className={`${styles.agentNode} ${styles.agentNodeLearn}`}>
-            <span className={styles.agentIndex}>04</span>
-            <strong>进化</strong>
-            <small>LEARN</small>
-          </div>
-
-          <div className={styles.liveCard}>
-            <span className={styles.liveCardLabel}>LIVE FLOW</span>
-            <strong>12</strong>
-            <span>任务协同中</span>
-            <div className={styles.liveBars}>
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-            </div>
-          </div>
-        </div>
-
-        <div className={styles.brandContent}>
-          <div className={styles.brandLogo}>
-            <div className={styles.brandLogoIcon}>
-              <img src={logo} alt="logo" className={styles.brandLogoImg} />
-            </div>
-            <span className={styles.brandLogoText}>Digital Employee</span>
-          </div>
-
-          <p className={styles.brandEyebrow}>
-            <span>AI-NATIVE COLLABORATION</span>
-            <span>2026.07</span>
-          </p>
-
-          <h1 className={styles.brandTitle}>
-            数字员工
-            <br />
-            <span>协作中枢</span>
-          </h1>
-
-          <p className={styles.brandSubtitle}>
-            让人<span className={styles.brandSubtitleAccent}>回归创造</span>
-            <br />
-            把重复工作交给始终在线的数字团队
-          </p>
-          <div className={styles.capabilityList}>
-            <span>任务编排</span>
-            <span>知识执行</span>
-            <span>持续进化</span>
-          </div>
-        </div>
-
-        <div className={styles.brandFooter}>
-          <span>© 2026 DIGITAL EMPLOYEE</span>
-          <span className={styles.footerRule} />
-          <span>CREATE · AUTOMATE · ELEVATE</span>
-        </div>
-      </div>
-
-      {/* 右侧登录表单区 */}
-      <div className={styles.formPanel}>
-        <div className={styles.formCard}>
-          <h2 className={styles.formTitle}>欢迎回来</h2>
-          <p className={styles.formSubtitle}>登录以开始你的创造之旅</p>
-
-          <Form
-            form={form}
-            name="login"
-            layout="vertical"
-            onFinish={handleSubmit}
-            initialValues={{
-              remember_password: isRememberPasswordEnabled(),
+        <Form.Item
+          name="captcha_answer"
+          label={
+            <span className={shell.formLabel}>
+              <SafetyCertificateOutlined className={shell.labelIcon} />
+              验证码
+            </span>
+          }
+          rules={[
+            { required: true, message: '请输入计算结果' },
+            { pattern: /^\d{1,3}$/, message: '请输入正确的数字结果' },
+          ]}
+          className={shell.formField}
+        >
+          <ArithmeticCaptchaInput
+            challenge={challenge}
+            loading={captchaLoading}
+            error={captchaError}
+            tone="light"
+            onRefresh={() => {
+              form.setFieldValue('captcha_answer', undefined);
+              void refreshCaptcha();
             }}
-            autoComplete="off"
-            className={styles.form}
+          />
+        </Form.Item>
+
+        <div className={styles.formRow}>
+          <Form.Item
+            name="remember_password"
+            valuePropName="checked"
+            className={styles.rememberField}
           >
-            <Form.Item
-              name="username"
-              label={<span className={styles.formLabel}>用户名</span>}
-              rules={[{ required: true, message: '请输入用户名' }]}
-              className={styles.formField}
-            >
-              <Input
-                prefix={<UserOutlined style={{ color: '#94a3b8' }} />}
-                placeholder="请输入用户名"
-                className={styles.formInput}
-                size="large"
-                autoComplete="username"
-              />
-            </Form.Item>
-
-            <Form.Item
-              name="password"
-              label={<span className={styles.formLabel}>密码</span>}
-              rules={[{ required: true, message: '请输入密码' }]}
-              className={styles.formField}
-            >
-              <Input.Password
-                prefix={<LockOutlined style={{ color: '#94a3b8' }} />}
-                placeholder="请输入密码"
-                className={styles.formInput}
-                size="large"
-                autoComplete="current-password"
-              />
-            </Form.Item>
-
-            <Form.Item
-              name="captcha_answer"
-              label={<span className={styles.formLabel}>图片验证码</span>}
-              rules={[
-                { required: true, message: '请输入计算结果' },
-                { pattern: /^\d{1,3}$/, message: '请输入正确的数字结果' },
-              ]}
-              className={styles.formField}
-            >
-              <ArithmeticCaptchaInput
-                challenge={challenge}
-                loading={captchaLoading}
-                error={captchaError}
-                onRefresh={() => {
-                  form.setFieldValue('captcha_answer', undefined);
-                  void refreshCaptcha();
-                }}
-              />
-            </Form.Item>
-
-            <Form.Item
-              name="remember_password"
-              valuePropName="checked"
-              className={styles.rememberField}
-            >
-              <Checkbox className={styles.rememberCheckbox}>
-                记住密码
-              </Checkbox>
-            </Form.Item>
-
-            <Form.Item className={styles.formField}>
-              <Button
-                type="primary"
-                htmlType="submit"
-                loading={loading}
-                disabled={remainingSeconds > 0}
-                className={styles.submitButton}
-                size="large"
-              >
-                {loading
-                  ? '登录中...'
-                  : remainingSeconds > 0
-                    ? `${remainingSeconds} 秒后重试`
-                    : '登 录'}
-              </Button>
-            </Form.Item>
-          </Form>
-
-          <div className={styles.registerLink}>
-            还没有账号？
-            <Button type="link" onClick={() => navigate('/register')}>
-              立即注册
-            </Button>
-          </div>
-
-          <div className={styles.formFooter}>
-            忘记密码？请联系系统管理员
-          </div>
+            <Checkbox className={styles.rememberCheckbox}>记住我</Checkbox>
+          </Form.Item>
+          <button
+            type="button"
+            className={styles.helpLink}
+            onClick={() => message.info('请联系系统管理员重置密码')}
+          >
+            忘记密码
+          </button>
         </div>
-      </div>
-    </div>
+
+        <Form.Item className={shell.submitField}>
+          <Button
+            type="primary"
+            htmlType="submit"
+            loading={loading}
+            disabled={remainingSeconds > 0}
+            className={shell.submitButton}
+            size="large"
+          >
+            {loading
+              ? '正在登录...'
+              : remainingSeconds > 0
+                ? `${remainingSeconds} 秒后重试`
+                : '登录'}
+          </Button>
+        </Form.Item>
+      </Form>
+    </AuthPageShell>
   );
 }

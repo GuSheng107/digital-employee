@@ -4,6 +4,8 @@ import { Button, Input, Skeleton, Tooltip } from 'antd';
 import type { CaptchaChallenge } from '@/api/auth-api';
 import styles from './index.module.css';
 
+export type ArithmeticCaptchaTone = 'default' | 'light' | 'lightCompact';
+
 interface ArithmeticCaptchaInputProps {
   value?: string;
   onChange?: (event: ChangeEvent<HTMLInputElement>) => void;
@@ -11,6 +13,8 @@ interface ArithmeticCaptchaInputProps {
   loading: boolean;
   error: string | null;
   onRefresh: () => void;
+  /** 视觉变体：登录用 light，注册用 lightCompact */
+  tone?: ArithmeticCaptchaTone;
 }
 
 /** 数字答案输入框与可刷新算术图片验证码。 */
@@ -21,21 +25,56 @@ export default function ArithmeticCaptchaInput({
   loading,
   error,
   onRefresh,
+  tone = 'default',
 }: ArithmeticCaptchaInputProps): ReactElement {
+  const isLight = tone === 'light' || tone === 'lightCompact';
+  const isCompact = tone === 'lightCompact';
+
+  const controlClass = [
+    styles.control,
+    isLight ? styles.controlLight : '',
+    isCompact ? styles.controlLightCompact : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const answerClass = [
+    isLight ? styles.answerLight : styles.answer,
+    isCompact ? styles.answerLightCompact : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const imageFrameClass = [
+    styles.imageFrame,
+    isLight ? styles.imageFrameLight : '',
+    isCompact ? styles.imageFrameLightCompact : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const refreshClass = [
+    isLight ? styles.refreshLight : styles.refresh,
+    isCompact ? styles.refreshLightCompact : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <div className={styles.control}>
+    <div className={controlClass}>
       <Input
         value={value}
         onChange={onChange}
-        className={styles.answer}
+        className={answerClass}
         placeholder="计算结果"
         inputMode="numeric"
         autoComplete="off"
         maxLength={3}
+        size="large"
       />
       <button
         type="button"
-        className={styles.imageFrame}
+        className={imageFrameClass}
         aria-label="点击更换验证码"
         aria-live="polite"
         title="点击更换验证码"
@@ -61,7 +100,7 @@ export default function ArithmeticCaptchaInput({
           icon={<ReloadOutlined spin={loading} />}
           disabled={loading}
           aria-label="刷新验证码"
-          className={styles.refresh}
+          className={refreshClass}
           onClick={onRefresh}
         />
       </Tooltip>
