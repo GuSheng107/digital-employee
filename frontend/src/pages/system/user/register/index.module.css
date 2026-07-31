@@ -36,11 +36,4 @@
   font-size: 12px;
 }
 
-.resetHint {
-  margin-top: 4px;
-  padding: 10px 12px;
-  border-radius: var(--ant-border-radius);
-  color: var(--ant-color-text-secondary);
-  background: var(--ant-color-fill-quaternary);
-  line-height: 1.6;
-}
+

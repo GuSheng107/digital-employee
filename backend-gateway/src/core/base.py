@@ -77,6 +77,11 @@ class BaseBot(abc.ABC):
         return self._last_error
 
     @property
+    def restart_count(self) -> int:
+        """返回连续崩溃重启次数。"""
+        return self._restart_count
+
+    @property
     def is_zombie(self) -> bool:
         """判断 Bot 是否处于僵尸状态。
 

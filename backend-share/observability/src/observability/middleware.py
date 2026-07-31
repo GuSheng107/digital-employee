@@ -7,6 +7,7 @@ import json
 from collections.abc import Awaitable, Callable, Iterable
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import parse_qs
 from uuid import UUID, uuid4
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -38,7 +39,7 @@ from observability.enums import (
     TraceStatus,
     TraceTrigger,
 )
-from observability.sanitize import decode_body, sanitize_headers
+from observability.sanitize import decode_body, sanitize_headers, sanitize_value
 from observability.schemas import (
     TraceBatch,
     TraceEvent,
@@ -245,6 +246,16 @@ class TraceMiddleware:
             "utf-8",
             errors="replace",
         )
+        # 对查询参数中的敏感字段进行脱敏，避免凭证泄露到 trace 属性与载荷
+        sanitized_query_dict = sanitize_value(
+            {
+                k: v[0] if len(v) == 1 else v
+                for k, v in parse_qs(query_string).items()
+            }
+        ) if query_string else {}
+        sanitized_query_string = "&".join(
+            f"{k}={v}" for k, v in sanitized_query_dict.items()
+        ) if sanitized_query_dict else query_string
         request_content_type = headers.get("content-type", "")
         response_content_type = response_headers.get("content-type", "")
         trigger = (
@@ -255,7 +266,7 @@ class TraceMiddleware:
         attributes: dict[str, Any] = {
             "http.method": method,
             "http.path": path,
-            "http.query": query_string,
+            "http.query": sanitized_query_string,
             "http.status_code": status_code,
             "request.headers": sanitize_headers(headers),
             "response.headers": sanitize_headers(response_headers),
@@ -299,6 +310,20 @@ class TraceMiddleware:
                     content_type=request_content_type or "application/octet-stream",
                     content=decode_body(request_body, request_content_type),
                     size_bytes=len(request_body),
+                    created_at=started_at,
+                )
+            )
+        elif query_string:
+            # GET 等无请求体请求，将脱敏后的查询参数当作请求体记录
+            payloads.append(
+                TracePayload(
+                    trace_id=trace_id,
+                    span_id=span_id,
+                    service=self.service,
+                    payload_type=TracePayloadType.HTTP_REQUEST_BODY,
+                    content_type="application/json",
+                    content=sanitized_query_dict,
+                    size_bytes=len(query_string.encode("utf-8")),
                     created_at=started_at,
                 )
             )

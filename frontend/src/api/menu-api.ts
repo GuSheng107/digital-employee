@@ -51,7 +51,7 @@ export function createMenu(payload: CreateMenuPayload): Promise<MenuItem> {
 
 /** 更新菜单（字段未传则不修改） */
 export function updateMenu(menuId: number, payload: UpdateMenuPayload): Promise<MenuItem> {
-  return backendAuthRequest.put<MenuItem>(`/menus/${menuId}`, payload);
+  return backendAuthRequest.post<MenuItem>(`/menus/${menuId}`, payload);
 }
 
 /** 删除菜单（软删除） */

@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { message } from 'antd';
 import { BACKEND_AUTH_API_BASE_URL } from '@/config/api-config';
 import { useUserStore } from '@/store/user-store';
 import { createTraceHeaders } from './trace-context';
@@ -15,6 +14,51 @@ interface RefreshTokenPair {
 }
 
 let refreshPromise: Promise<boolean> | null = null;
+
+const AUTH_ENTRY_PATHS = new Set(['/login', '/register']);
+
+function isAuthEntryPath(pathname: string): boolean {
+  return (
+    AUTH_ENTRY_PATHS.has(pathname)
+    || pathname.startsWith('/login/')
+    || pathname.startsWith('/register/')
+  );
+}
+
+/**
+ * 仅允许站内相对路径（以 `/` 开头且非 `//`），防止登录后开放重定向。
+ * 排除 /login、/register，避免登录成功后仍停在鉴权入口页。
+ */
+export function getSafeRedirectPath(
+  candidate: string | null | undefined,
+  fallback = '/',
+): string {
+  if (typeof candidate !== 'string') {
+    return fallback;
+  }
+  const value = candidate.trim();
+  if (!value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) {
+    return fallback;
+  }
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(value);
+  } catch {
+    return fallback;
+  }
+  if (
+    decoded.startsWith('//')
+    || decoded.startsWith('/\\')
+    || decoded.includes('://')
+  ) {
+    return fallback;
+  }
+  const pathname = decoded.split(/[?#]/, 1)[0] ?? decoded;
+  if (isAuthEntryPath(pathname)) {
+    return fallback;
+  }
+  return value;
+}
 
 function isRefreshTokenPair(value: unknown): value is RefreshTokenPair {
   return (
@@ -69,7 +113,11 @@ export async function refreshAuthenticatedSession(): Promise<boolean> {
   }
 }
 
-/** 清理本地会话并带原访问地址跳转登录页。 */
+/** 清理本地会话并带原访问地址跳转登录页。
+ *
+ * SESSION_REPLACED 场景在 URL 追加 reason 参数，由登录页读取后提示，
+ * 避免在此处弹 message 后硬跳转导致提示丢失或与调用方 catch 重复弹窗。
+ */
 export function invalidateSessionAndRedirect(errorCode?: string): void {
   const hadStoredSession =
     localStorage.getItem('access_token') != null
@@ -77,9 +125,10 @@ export function invalidateSessionAndRedirect(errorCode?: string): void {
   useUserStore.getState().clearAuth();
   const currentPath = window.location.pathname + window.location.search;
   if (window.location.pathname !== '/login') {
+    const params = new URLSearchParams({ redirect: currentPath });
     if (hadStoredSession && errorCode === 'SESSION_REPLACED') {
-      void message.warning('您的账号已在其他设备登录，请重新登录');
+      params.set('reason', 'session_replaced');
     }
-    window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`;
+    window.location.href = `/login?${params.toString()}`;
   }
 }

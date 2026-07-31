@@ -23,7 +23,7 @@ export async function createDataItem(payload: DataItemPayload): Promise<DataItem
 
 // 更新数据项
 export async function updateDataItem(id: string, payload: Partial<DataItemPayload>): Promise<DataItem> {
-  return dataPlatformRequest.put<DataItem>(`/api/v1/data-items/${id}`, payload);
+  return dataPlatformRequest.post<DataItem>(`/api/v1/data-items/${id}`, payload);
 }
 
 // 删除数据项

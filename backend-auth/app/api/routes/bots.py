@@ -2,7 +2,7 @@
 
 - GET    /bots         分页查询 Bot 列表
 - POST   /bots         创建 Bot
-- PUT    /bots/{bot_id} 更新 Bot
+- POST   /bots/{bot_id} 更新 Bot
 - DELETE /bots/{bot_id} 软删除 Bot
 """
 
@@ -78,7 +78,7 @@ def create_bot(payload: CreateBotPayload) -> dict:
     return success_response(result)
 
 
-@router.put(
+@router.post(
     "/{bot_id}",
     response_model=ApiResponse,
     dependencies=[Depends(require_permission(PermissionCode.BOT_MANAGE))],

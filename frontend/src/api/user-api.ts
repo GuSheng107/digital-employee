@@ -57,12 +57,12 @@ export function createUser(payload: CreateUserPayload): Promise<{ id: number; us
 }
 
 export function assignUserRoles(userId: number, roleCodes: string[]): Promise<{ user_id: number; roles: string[] }> {
-  return backendAuthRequest.put(`/users/${userId}/roles`, { role_codes: roleCodes });
+  return backendAuthRequest.post(`/users/${userId}/roles`, { role_codes: roleCodes });
 }
 
 /** 管理员重置指定用户密码（覆盖式，不校验旧密码） */
 export function resetUserPassword(userId: number, newPassword: string): Promise<{ user_id: number; username: string }> {
-  return backendAuthRequest.put(`/users/${userId}/password`, { new_password: newPassword });
+  return backendAuthRequest.post(`/users/${userId}/password`, { new_password: newPassword });
 }
 
 export interface VipLevelOption {
@@ -90,14 +90,14 @@ export function updateUserVip(
   vip_level_display: string;
   vip_expires_at: string | null;
 }> {
-  return backendAuthRequest.put(`/users/${userId}/vip`, payload);
+  return backendAuthRequest.post(`/users/${userId}/vip`, payload);
 }
 
 export function updateUserStatus(
   userId: number,
   status: number,
 ): Promise<{ user_id: number; status: number }> {
-  return backendAuthRequest.put(`/users/${userId}/status`, { status });
+  return backendAuthRequest.post(`/users/${userId}/status`, { status });
 }
 
 export function deleteUser(
@@ -126,7 +126,7 @@ export function fetchUserMenus(userId: number): Promise<UserMenuItem[]> {
 
 /** 分配用户独立菜单（覆盖式） */
 export function assignUserMenus(userId: number, menuIds: number[]): Promise<{ user_id: number; menu_ids: number[] }> {
-  return backendAuthRequest.put(`/users/${userId}/menus`, { menu_ids: menuIds });
+  return backendAuthRequest.post(`/users/${userId}/menus`, { menu_ids: menuIds });
 }
 
 /** 用户独立权限项 */
@@ -145,11 +145,11 @@ export function fetchUserPermissions(userId: number): Promise<UserPermissionItem
 
 /** 分配用户独立权限（覆盖式） */
 export function assignUserPermissions(userId: number, permissionIds: number[]): Promise<{ user_id: number; permission_ids: number[] }> {
-  return backendAuthRequest.put(`/users/${userId}/permissions`, { permission_ids: permissionIds });
+  return backendAuthRequest.post(`/users/${userId}/permissions`, { permission_ids: permissionIds });
 }
 
 export function updateProfile(payload: UpdateProfilePayload): Promise<{ id: number; username: string; nickname: string | null; email: string | null; phone: string | null; avatar_url: string | null; must_change_password: boolean }> {
-  return backendAuthRequest.put('/users/me', payload);
+  return backendAuthRequest.post('/users/me', payload);
 }
 
 export function uploadAvatar(file: File | Blob): Promise<{ avatar_url: string }> {

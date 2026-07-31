@@ -8,9 +8,11 @@ import {
   FileSearchOutlined,
   MenuOutlined,
   ProfileOutlined,
+  RobotOutlined,
   SafetyOutlined,
   SettingOutlined,
   TableOutlined,
+  TeamOutlined,
   ToolOutlined,
   UserAddOutlined,
   UserOutlined,
@@ -32,13 +34,20 @@ const MENU_ICON_FACTORIES: Readonly<Record<string, MenuIconFactory>> = {
   FileSearchOutlined: () => <FileSearchOutlined />,
   MenuOutlined: () => <MenuOutlined />,
   ProfileOutlined: () => <ProfileOutlined />,
+  RobotOutlined: () => <RobotOutlined />,
   SafetyOutlined: () => <SafetyOutlined />,
   SettingOutlined: () => <SettingOutlined />,
   TableOutlined: () => <TableOutlined />,
+  TeamOutlined: () => <TeamOutlined />,
   ToolOutlined: () => <ToolOutlined />,
   UserAddOutlined: () => <UserAddOutlined />,
   UserOutlined: () => <UserOutlined />,
 };
+
+/** 菜单管理页可配置的图标名，与侧栏实际渲染能力保持一致。 */
+export const MENU_ICON_NAMES: readonly string[] = Object.freeze(
+  Object.keys(MENU_ICON_FACTORIES),
+);
 
 export function getMenuIcon(
   iconName: string | null | undefined,

@@ -21,7 +21,11 @@ export const UserRegister = lazy(() => import('@/pages/system/user/register/User
 export const UserPermission = lazy(() => import('@/pages/system/user/permission/UserPermission'));
 export const InviteCode = lazy(() => import('@/pages/system/user/invite-code/InviteCode'));
 
-// 系统设置-系统-菜单管理/日志查询/Bot管理
+// 系统设置-系统-菜单管理/日志查询
 export const MenuManagement = lazy(() => import('@/pages/system/menu/MenuManagement'));
 export const LogQuery = lazy(() => import('@/pages/system/log-query/LogQuery'));
-export const BotManagement = lazy(() => import('@/pages/system/bot/BotManagement'));
+
+// 数字员工-Bot管理
+export const BotManagement = lazy(
+  () => import('@/pages/digital-employee/bot/BotManagement'),
+);

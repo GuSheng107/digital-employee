@@ -760,10 +760,6 @@ export default function UserRegister(): React.ReactElement {
             <Input.Password placeholder="请再次输入新密码" autoComplete="new-password" />
           </Form.Item>
         </Form>
-        <div className={styles.resetHint}>
-          管理员重置密码不受复杂度规则限制；重置后会撤销该用户现有会话，
-          并在下次登录时强制其设置符合规则的新密码。
-        </div>
       </Modal>
 
       <Modal

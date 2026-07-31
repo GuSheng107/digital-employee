@@ -1,22 +1,16 @@
 import { ApartmentOutlined } from '@ant-design/icons';
-import { Tag, Tree } from 'antd';
+import { Tree } from 'antd';
 import type { DataNode } from 'antd/es/tree';
-import type { TraceEvent, TraceSpan } from '../types/observability';
-import {
-  CALL_STATUS_COLORS,
-  CALL_STATUS_LABELS,
-  TRACE_SERVICE_LABELS,
-  resolveSpanCallStatus,
-} from '../constants/observability';
+import type { TraceSpan } from '../types/observability';
+import { TRACE_SERVICE_LABELS } from '../constants/observability';
 
 interface TraceTreeProps {
   spans: TraceSpan[];
-  events: TraceEvent[];
   selectedSpanId?: string;
   onSelect: (span: TraceSpan) => void;
 }
 
-function buildTree(spans: TraceSpan[], events: TraceEvent[]): DataNode[] {
+function buildTree(spans: TraceSpan[]): DataNode[] {
   const spanMap = new Map(spans.map((span) => [span.span_id, span]));
   const childrenMap = new Map<string, TraceSpan[]>();
   const roots: TraceSpan[] = [];
@@ -31,30 +25,21 @@ function buildTree(spans: TraceSpan[], events: TraceEvent[]): DataNode[] {
     }
   });
 
-  const toNode = (span: TraceSpan): DataNode => {
-    const callStatus = resolveSpanCallStatus(span, events);
-    return {
+  const toNode = (span: TraceSpan): DataNode => ({
     key: span.span_id,
     icon: <ApartmentOutlined />,
     title: (
       <span className="trace-tree-title">
-        <strong>{TRACE_SERVICE_LABELS[span.service] ?? span.service}</strong>
-        <span>{span.operation}</span>
-        <Tag color={CALL_STATUS_COLORS[callStatus]}>
-          {CALL_STATUS_LABELS[callStatus]}
-        </Tag>
-        <small>{span.duration_ms} ms</small>
+        {TRACE_SERVICE_LABELS[span.service] ?? span.service}
       </span>
     ),
     children: (childrenMap.get(span.span_id) ?? []).map(toNode),
-    };
-  };
+  });
   return roots.map(toNode);
 }
 
 export default function TraceTree({
   spans,
-  events,
   selectedSpanId,
   onSelect,
 }: TraceTreeProps): React.ReactElement {
@@ -64,7 +49,7 @@ export default function TraceTree({
       showIcon
       blockNode
       defaultExpandAll
-      treeData={buildTree(spans, events)}
+      treeData={buildTree(spans)}
       selectedKeys={selectedSpanId ? [selectedSpanId] : []}
       onSelect={(keys) => {
         const span = spanMap.get(String(keys[0] ?? ''));

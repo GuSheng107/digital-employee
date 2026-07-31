@@ -41,6 +41,18 @@ class CreateInviteCodeRequest(BaseModel):
         return normalized
 
 
+class UpdateInviteCodeRequest(BaseModel):
+    """更新邀请码请求（仅可修改剩余次数与过期时间）。"""
+
+    remaining: int = Field(..., ge=1, le=100, description="可用次数")
+    expires_in_hours: int = Field(
+        ...,
+        ge=1,
+        le=720,
+        description="过期时间(小时)",
+    )
+
+
 class InviteCodeItem(BaseModel):
     """邀请码信息。"""
 

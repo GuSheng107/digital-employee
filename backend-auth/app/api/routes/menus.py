@@ -63,7 +63,7 @@ def create_menu(
     return success_response(result)
 
 
-@router.put(
+@router.post(
     "/{menu_id}",
     response_model=ApiResponse,
     dependencies=[Depends(require_permission(PermissionCode.MENU_MANAGE))],

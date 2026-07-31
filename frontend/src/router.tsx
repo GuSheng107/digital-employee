@@ -1,8 +1,9 @@
 import { Suspense } from 'react';
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router';
 import Layout from './components/Layout';
 import AppInitializer from './components/app-initializer/AppInitializer';
 import RequireAuth from './components/require-auth/RequireAuth';
+import RequireGuest from './components/require-guest/RequireGuest';
 import RequirePermission from './components/require-permission/RequirePermission';
 import Login from './pages/login/Login';
 import { PageLoading } from './components/page-loading/PageLoading';
@@ -39,14 +40,22 @@ function withPermission(
   );
 }
 
+function withGuestPage(element: React.ReactElement): React.ReactElement {
+  return (
+    <AppInitializer>
+      <RequireGuest>{element}</RequireGuest>
+    </AppInitializer>
+  );
+}
+
 export const router = createBrowserRouter([
   {
     path: '/login',
-    element: <Login />,
+    element: withGuestPage(<Login />),
   },
   {
     path: '/register',
-    element: withSuspense(<Register />),
+    element: withGuestPage(withSuspense(<Register />)),
   },
   {
     path: '/',
@@ -122,8 +131,9 @@ export const router = createBrowserRouter([
           [PERMISSION_CODE.OBSERVABILITY_LOG_VIEW],
         ),
       },
+      // 数字员工-Bot管理
       {
-        path: 'system/bot',
+        path: 'digital-employee/bots',
         element: withPermission(
           <BotManagement />,
           [PERMISSION_CODE.BOT_MANAGE],

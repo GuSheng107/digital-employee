@@ -43,7 +43,7 @@ import {
   type PermissionItem,
 } from '@/api/permission-api';
 import { useUserStore } from '@/store/user-store';
-import { getMenuIcon } from '@/constants/menu-icons';
+import { getMenuIcon, MENU_ICON_NAMES } from '@/constants/menu-icons';
 import { getRequestErrorMessage } from '@/utils/request';
 import SystemPage from '@/components/system-page/SystemPage';
 import styles from './index.module.css';
@@ -178,16 +178,6 @@ export default function MenuManagement(): React.ReactElement {
 
   /** 表格数据：仅根节点进入 dataSource，子节点通过 children 嵌套 */
   const tableData = useMemo(() => buildTableData(menus), [menus]);
-
-  const menuSummary = useMemo(
-    () => ({
-      total: menus.length,
-      directories: menus.filter((menu) => menu.menu_type === 1).length,
-      pages: menus.filter((menu) => menu.menu_type === 2).length,
-      permissions: menus.filter((menu) => Boolean(menu.permission)).length,
-    }),
-    [menus],
-  );
 
   /** 父菜单树选项：包含「顶级」选项 */
   const parentTreeData = useMemo<TreeNode[]>(() => {
@@ -552,29 +542,6 @@ export default function MenuManagement(): React.ReactElement {
     >
       <div className={styles.container}>
 
-      <div className={styles.summaryGrid}>
-        <div className={styles.summaryItem}>
-          <span className={styles.summaryLabel}>全部节点</span>
-          <strong className={styles.summaryValue}>{menuSummary.total}</strong>
-        </div>
-        <div className={styles.summaryItem}>
-          <span className={styles.summaryLabel}>目录层级</span>
-          <strong className={styles.summaryValue}>
-            {menuSummary.directories}
-          </strong>
-        </div>
-        <div className={styles.summaryItem}>
-          <span className={styles.summaryLabel}>页面菜单</span>
-          <strong className={styles.summaryValue}>{menuSummary.pages}</strong>
-        </div>
-        <div className={styles.summaryItem}>
-          <span className={styles.summaryLabel}>权限绑定</span>
-          <strong className={styles.summaryValue}>
-            {menuSummary.permissions}
-          </strong>
-        </div>
-      </div>
-
       <div className={styles.tableWrapper}>
         <Table<MenuTreeNode>
           rowKey="id"
@@ -682,10 +649,23 @@ export default function MenuManagement(): React.ReactElement {
           <Form.Item
             label="图标名"
             name="icon"
-            rules={[{ max: 64, message: '图标名不超过 64 字符' }]}
-            extra="antd 图标组件名，如 DatabaseOutlined、SettingOutlined"
+            extra="从前端已注册的 Ant Design 图标中选择；留空则使用默认图标"
           >
-            <Input placeholder="DatabaseOutlined" />
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="value"
+              placeholder="选择菜单图标"
+              options={MENU_ICON_NAMES.map((iconName) => ({
+                value: iconName,
+                label: (
+                  <Space size={8}>
+                    {getMenuIcon(iconName)}
+                    <span>{iconName}</span>
+                  </Space>
+                ),
+              }))}
+            />
           </Form.Item>
 
           <Form.Item

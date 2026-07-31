@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.database import get_core_db_session
+from app.models.user import User
 from app.schemas.identity import (
     AccessTokenIdentityRequest,
     CompleteLoginRequest,
@@ -36,6 +37,7 @@ from app.schemas.identity import (
     ResetIdentityRateLimitRequest,
     ResetIdentityRateLimitsRequest,
     RoleCodesRequest,
+    UpdateIdentityInviteCodeRequest,
     UpdateIdentityMenuRequest,
     UpdateIdentityProfileRequest,
     UpdateIdentityRoleRequest,
@@ -156,7 +158,7 @@ def create_user(
     return success_response(UserService(session).create_user(**payload.model_dump()))
 
 
-@router.put("/users/{user_id}/profile", response_model=ApiResponse)
+@router.post("/users/{user_id}/profile", response_model=ApiResponse)
 def update_profile(
     user_id: int,
     payload: UpdateIdentityProfileRequest,
@@ -198,7 +200,7 @@ def upload_avatar(
     )
 
 
-@router.put("/users/{user_id}/roles", response_model=ApiResponse)
+@router.post("/users/{user_id}/roles", response_model=ApiResponse)
 def assign_user_roles(
     user_id: int,
     payload: RoleCodesRequest,
@@ -216,7 +218,7 @@ def assign_user_roles(
     )
 
 
-@router.put("/users/{user_id}/password", response_model=ApiResponse)
+@router.post("/users/{user_id}/password", response_model=ApiResponse)
 def reset_user_password(
     user_id: int,
     payload: ResetIdentityPasswordRequest,
@@ -233,7 +235,7 @@ def reset_user_password(
     )
 
 
-@router.put("/users/{user_id}/vip", response_model=ApiResponse)
+@router.post("/users/{user_id}/vip", response_model=ApiResponse)
 def update_user_vip(
     user_id: int,
     payload: UpdateIdentityVipRequest,
@@ -252,7 +254,7 @@ def update_user_vip(
     )
 
 
-@router.put("/users/{user_id}/status", response_model=ApiResponse)
+@router.post("/users/{user_id}/status", response_model=ApiResponse)
 def update_user_status(
     user_id: int,
     payload: UpdateIdentityStatusRequest,
@@ -294,7 +296,7 @@ def get_user_menus(
     return success_response(UserService(session).get_user_menus(user_id=user_id))
 
 
-@router.put("/users/{user_id}/menus", response_model=ApiResponse)
+@router.post("/users/{user_id}/menus", response_model=ApiResponse)
 def assign_user_menus(
     user_id: int,
     payload: ManagedIdsRequest,
@@ -321,7 +323,7 @@ def get_user_permissions(
     return success_response(UserService(session).get_user_permissions(user_id=user_id))
 
 
-@router.put("/users/{user_id}/permissions", response_model=ApiResponse)
+@router.post("/users/{user_id}/permissions", response_model=ApiResponse)
 def assign_user_permissions(
     user_id: int,
     payload: ManagedIdsRequest,
@@ -356,7 +358,7 @@ def create_role(
     return success_response(RoleService(session).create_role(**payload.model_dump()))
 
 
-@router.put("/roles/{role_id}", response_model=ApiResponse)
+@router.post("/roles/{role_id}", response_model=ApiResponse)
 def update_role(
     role_id: int,
     payload: UpdateIdentityRoleRequest,
@@ -441,7 +443,7 @@ def get_role_menus(
     return success_response(RoleService(session).get_role_menus(role_id=role_id))
 
 
-@router.put("/roles/{role_id}/menus", response_model=ApiResponse)
+@router.post("/roles/{role_id}/menus", response_model=ApiResponse)
 def assign_role_menus(
     role_id: int,
     payload: ManageIdentityRoleMenusRequest,
@@ -475,7 +477,7 @@ def create_menu(
     return success_response(MenuService(session).create_menu(**payload.model_dump()))
 
 
-@router.put("/menus/{menu_id}", response_model=ApiResponse)
+@router.post("/menus/{menu_id}", response_model=ApiResponse)
 def update_menu(
     menu_id: int,
     payload: UpdateIdentityMenuRequest,
@@ -528,8 +530,51 @@ def create_invite_code(
 def list_invite_codes(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    session: Session = Depends(get_core_db_session),
 ) -> dict:
-    """分页读取有效与失效邀请码。"""
+    """分页读取有效与失效邀请码，并补充创建者昵称。"""
+    result = InviteCodeService().list_page(page=page, page_size=page_size)
+    items = result.get("items", [])
+    if items:
+        creator_ids = {
+            item["created_by"]
+            for item in items
+            if item.get("created_by")
+        }
+        nicknames = {
+            row.id: row.nickname
+            for row in session.query(User.id, User.nickname)
+            .filter(User.id.in_(creator_ids))
+            .all()
+        }
+        for item in items:
+            creator_id = item.get("created_by")
+            item["created_by_nickname"] = (
+                nicknames.get(creator_id)
+                or f"用户 {creator_id}"
+            )
+    return success_response(result)
+
+
+@router.post("/invite-codes/{code}", response_model=ApiResponse)
+def update_invite_code(
+    code: str,
+    payload: UpdateIdentityInviteCodeRequest,
+) -> dict:
+    """更新邀请码的剩余次数与过期时间（不可修改邀请码）。"""
     return success_response(
-        InviteCodeService().list_page(page=page, page_size=page_size)
+        InviteCodeService().update(
+            code=code,
+            remaining=payload.remaining,
+            expires_in_hours=payload.expires_in_hours,
+        )
     )
+
+
+@router.delete("/invite-codes/{code}", response_model=ApiResponse)
+def delete_invite_code(
+    code: str,
+) -> dict:
+    """删除邀请码。"""
+    InviteCodeService().delete(code=code)
+    return success_response(None)

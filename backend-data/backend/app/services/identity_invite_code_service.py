@@ -123,6 +123,47 @@ class InviteCodeService:
             PageSpec(page=page, page_size=page_size),
         ).response()
 
+    def update(
+        self,
+        *,
+        code: str,
+        remaining: int,
+        expires_in_hours: int,
+    ) -> dict:
+        """更新邀请码的剩余次数与过期时间（不可修改邀请码）。
+
+        Args:
+            code: 邀请码。
+            remaining: 新的可用次数（1-100）。
+            expires_in_hours: 新的过期时间（小时），TTL 据此设置。
+
+        Returns:
+            包含 code、remaining、expires_at 的字典。
+
+        Raises:
+            InvalidCredentialsError: 邀请码不存在或已过期。
+        """
+        key = self._key(code)
+        data = self._redis.get_json(key)
+        if data is None:
+            raise InvalidCredentialsError(message="邀请码不存在或已过期")
+
+        now = time.time()
+        ttl_seconds = expires_in_hours * 3600
+        expires_at = now + ttl_seconds
+        data["remaining"] = remaining
+        data["expires_at"] = expires_at
+        self._redis.set_json(key, data, ttl_seconds=ttl_seconds)
+        return {
+            "code": code,
+            "remaining": remaining,
+            "expires_at": expires_at,
+        }
+
+    def delete(self, code: str) -> None:
+        """删除邀请码。"""
+        self._redis.delete(self._key(code))
+
     def consume(self, code: str) -> None:
         """原子消费一次邀请码。"""
         updated = self._redis.consume_json_counter(

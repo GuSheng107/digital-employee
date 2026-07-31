@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router';
 import logo from '@/assets/images/avatar/logo.svg';
 import styles from './index.module.css';
 

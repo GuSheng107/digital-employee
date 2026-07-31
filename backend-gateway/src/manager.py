@@ -102,8 +102,10 @@ class BotManager:
                     mode=bot_dict.get("mode", "test"),
                 )
                 self.add_or_update_bot(bot_cfg)
-            except (KeyError, ValidationError):
-                pass
+            except (KeyError, ValidationError) as exc:
+                logger.warning(
+                    "[BOT-MANAGER] 机器配置转换失败 ({}): {}", bid, exc
+                )
 
     def inject_main_loop_to_all(self, loop: asyncio.AbstractEventLoop) -> None:
         """将 FastAPI 主事件循环注入给所有已加载的 Bot 实例。
@@ -279,7 +281,7 @@ class BotManager:
                             "[BOT-MANAGER] Bot {} 连续重启已达上限 {} 次，"
                             "标记为 dead 不再自动重启，需人工排查。",
                             bot_id,
-                            bot._restart_count,
+                            bot.restart_count,
                         )
                         continue
 
@@ -294,7 +296,7 @@ class BotManager:
                         logger.warning(
                             "[BOT-MANAGER] Watchdog 重启僵尸 Bot {}（第 {} 次）。",
                             bot_id,
-                            bot._restart_count,
+                            bot.restart_count,
                         )
                     except Exception:
                         logger.exception(

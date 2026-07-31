@@ -17,46 +17,6 @@
   font-weight: 500;
 }
 
-.summaryGrid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  flex: none;
-  margin: 0;
-  padding: 10px;
-  background:
-    linear-gradient(135deg, rgb(22 119 255 / 7%), transparent 58%),
-    var(--ant-color-fill-quaternary);
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 12px;
-}
-
-.summaryItem {
-  display: flex;
-  min-height: 58px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 16px;
-  background: color-mix(in srgb, var(--ant-color-bg-container) 86%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ant-color-border-secondary) 72%, transparent);
-  border-radius: 8px;
-}
-
-.summaryLabel {
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.summaryValue {
-  color: var(--ant-color-text-heading);
-  font-family: "Bahnschrift", "DIN Alternate", var(--ant-font-family);
-  font-size: 24px;
-  font-weight: 650;
-  line-height: 1;
-}
-
 .tableWrapper {
   flex: 1;
   min-height: 0;
@@ -243,12 +203,6 @@
   box-shadow: none;
 }
 
-@media (max-width: 900px) {
-  .summaryGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 760px) {
   .toolbarActions {
     width: 100%;
@@ -260,11 +214,4 @@
 }
 
 @media (max-width: 520px) {
-  .summaryGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .summaryItem {
-    min-height: 50px;
-  }
 }

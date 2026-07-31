@@ -247,10 +247,6 @@ export abstract class BaseRequest {
     return this.instance.post(url, data, config).then((res) => this.unwrapResponse<T>(res.data));
   }
 
-  put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
-    return this.instance.put(url, data, config).then((res) => this.unwrapResponse<T>(res.data));
-  }
-
   delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
     return this.instance.delete(url, config).then((res) => this.unwrapResponse<T>(res.data));
   }

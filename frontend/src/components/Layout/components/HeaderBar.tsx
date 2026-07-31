@@ -17,7 +17,7 @@ import {
   MoreOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router';
 import styles from '../index.module.css';
 import { useUserStore } from '@/store/user-store';
 import type { MenuNode } from '@/api/auth-api';
@@ -85,10 +85,16 @@ export default function HeaderBar(): React.ReactElement {
     || userInfo?.username
     || (profileLoading ? '加载中' : profileError ? '加载失败' : '未登录');
   const breadcrumbItems = useMemo(
-    () => [
-      { title: '数字员工' },
-      ...(findMenuTrail(menus, location.pathname) ?? []).map((title) => ({ title })),
-    ],
+    () => {
+      const menuTrail = findMenuTrail(menus, location.pathname) ?? [];
+      const normalizedTrail = menuTrail[0] === '数字员工'
+        ? menuTrail.slice(1)
+        : menuTrail;
+      return [
+        { title: '数字员工' },
+        ...normalizedTrail.map((title) => ({ title })),
+      ];
+    },
     [location.pathname, menus],
   );
   const systemPageByPath = useMemo(

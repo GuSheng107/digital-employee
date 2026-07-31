@@ -8,6 +8,7 @@
 2. `operations.md`：Linux 启停脚本、日志和故障排查。
 3. `cloudbeaver-structure-management.md`：数据库结构管理边界。
 4. `integration-with-digital-employee.md`：与数字员工主项目的集成方式。
+5. `2026-07-30-add-digital-employee-bot-menu.sql`：数字员工 Bot 管理权限与菜单数据脚本。
 
 核心原则：
 

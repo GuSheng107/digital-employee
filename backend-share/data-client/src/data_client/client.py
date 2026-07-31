@@ -289,7 +289,7 @@ class DataClient:
     ) -> dict[str, Any]:
         """更新个人资料。"""
         return self._request_dict(
-            "PUT",
+            "POST",
             f"/api/v1/identity/users/{user_id}/profile",
             json={
                 "nickname": nickname,
@@ -325,7 +325,7 @@ class DataClient:
     ) -> dict[str, Any]:
         """覆盖用户角色。"""
         return self._request_dict(
-            "PUT",
+            "POST",
             f"/api/v1/identity/users/{user_id}/roles",
             json={
                 "role_codes": role_codes,
@@ -345,7 +345,7 @@ class DataClient:
     ) -> dict[str, Any]:
         """保存管理员重置后的密码哈希。"""
         return self._request_dict(
-            "PUT",
+            "POST",
             f"/api/v1/identity/users/{user_id}/password",
             json={
                 "password_hash": password_hash,
@@ -366,7 +366,7 @@ class DataClient:
     ) -> dict[str, Any]:
         """更新 VIP 设置。"""
         return self._request_dict(
-            "PUT",
+            "POST",
             f"/api/v1/identity/users/{user_id}/vip",
             json={
                 "is_vip": is_vip,
@@ -389,7 +389,7 @@ class DataClient:
     ) -> dict[str, Any]:
         """启用或停用用户。"""
         return self._request_dict(
-            "PUT",
+            "POST",
             f"/api/v1/identity/users/{user_id}/status",
             json={
                 "status": status,
@@ -433,7 +433,7 @@ class DataClient:
     ) -> dict[str, Any]:
         """覆盖用户独立菜单。"""
         return self._request_dict(
-            "PUT",
+            "POST",
             f"/api/v1/identity/users/{user_id}/menus",
             json={
                 "ids": menu_ids,
@@ -464,7 +464,7 @@ class DataClient:
     ) -> dict[str, Any]:
         """覆盖用户独立权限。"""
         return self._request_dict(
-            "PUT",
+            "POST",
             f"/api/v1/identity/users/{user_id}/permissions",
             json={
                 "ids": permission_ids,
@@ -514,7 +514,7 @@ class DataClient:
     ) -> dict[str, Any]:
         """更新角色。"""
         return self._request_dict(
-            "PUT",
+            "POST",
             f"/api/v1/identity/roles/{role_id}",
             json={
                 "name": name,
@@ -555,7 +555,7 @@ class DataClient:
     ) -> dict[str, Any]:
         """覆盖角色菜单。"""
         return self._request_dict(
-            "PUT",
+            "POST",
             f"/api/v1/identity/roles/{role_id}/menus",
             json={
                 "ids": menu_ids,
@@ -584,7 +584,7 @@ class DataClient:
     ) -> dict[str, Any]:
         """更新菜单。"""
         return self._request_dict(
-            "PUT",
+            "POST",
             f"/api/v1/identity/menus/{menu_id}",
             json=payload,
         )
@@ -631,6 +631,34 @@ class DataClient:
             "GET",
             "/api/v1/identity/invite-codes",
             params={"page": page, "page_size": page_size},
+        )
+
+    def update_invite_code(
+        self,
+        *,
+        code: str,
+        remaining: int,
+        expires_in_hours: int,
+    ) -> dict[str, Any]:
+        """更新邀请码的剩余次数与过期时间。"""
+        return self._request_dict(
+            "POST",
+            f"/api/v1/identity/invite-codes/{code}",
+            json={
+                "remaining": remaining,
+                "expires_in_hours": expires_in_hours,
+            },
+        )
+
+    def delete_invite_code(
+        self,
+        *,
+        code: str,
+    ) -> dict[str, Any]:
+        """删除邀请码。"""
+        return self._request_dict(
+            "DELETE",
+            f"/api/v1/identity/invite-codes/{code}",
         )
 
     def test_dependencies(
@@ -896,7 +924,7 @@ class DataClient:
     def update_bot(self, *, bot_id: str, **fields: Any) -> dict[str, Any]:
         """更新 Bot 配置。"""
         return self._request_dict(
-            "PUT",
+            "POST",
             f"/api/v1/bots/{bot_id}",
             json=fields,
         )
