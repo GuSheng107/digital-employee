@@ -117,16 +117,62 @@ graph TD
 
 ---
 
-### 3.3 流向三：机器人凭证与生命周期流 (Bot Config & Lifetime Pipeline)
+### 3.3 流向三：机器人凭证与配置流 (Bot Config & Lifetime Pipeline)
 *即：机器人的 AppID、AppSecret、Webhook Key 等敏感凭证从哪里加载。*
 
-- **数据从哪里来**：管理员在前端页面配置并在 `PostgreSQL` 中加密存储的 `bot_configs` 表。
-- **数据流转路径**：
-  1. 管理员在前端修改 Bot 配置 $\to$ 请求 `backend-auth` $\to$ 通过 `data-client` 持久化到 `backend-data` 的 `PostgreSQL`。
-  2. `backend-gateway` 启动时（或接收到刷新指令时），调用 `BotManager.load_from_database()`。
-  3. 网关通过 `data-client` 请求 `backend-data` 的 `GET /api/v1/bot/credentials` 接口。
-  4. `backend-data` 从 `PostgreSQL` 读取凭证，使用内部密钥解密后返回解密后的配置 JSON。
-  5. `backend-gateway` 将凭证加载至本地内存 `BotManager` 中，初始化飞书 SDK `FeishuBot` 或企微 `WeChatBot` 实例，注册事件监听器。
+- **数据从哪里来**：管理员在前端配置并在 `PostgreSQL` 的 **`bots`** 表中加密存储。
+  - **核心表名**：**`bots`** 表（底层 ORM 模型定义于 `backend-data/backend/app/models/bot.py` 的 `Bot` 类）。
+  - **关联扩展表**：`bot_call_permissions`（Bot 跨部门/跨层级额外授权表）、`user_bots`（用户与 Bot 权限关联表）。
+
+#### 📌 `bots` 数据表物理结构与 DDL 定义
+
+```sql
+CREATE TABLE IF NOT EXISTS bots (
+    id BIGSERIAL PRIMARY KEY,                          -- 物理主键 ID
+    bot_id VARCHAR(64) NOT NULL,                        -- 业务唯一标识 (Gateway 识别用)
+    name VARCHAR(128) NOT NULL,                         -- 机器人显示名称
+    platform VARCHAR(32) NOT NULL,                      -- 接入平台类型 (feishu / wechat)
+    app_id VARCHAR(128),                                -- 平台分配的 AppID / Key
+    app_secret TEXT,                                    -- 平台应用密钥 (带 enc:v1: 前缀加密)
+    parent_bot_id BIGINT REFERENCES bots(id) ON DELETE SET NULL, -- 父级 Bot ID (支持树形结构)
+    mode VARCHAR(16) DEFAULT 'test',                    -- 运行模式 (test / prod)
+    status SMALLINT DEFAULT 1,                          -- 状态 (1: 启用/活跃, 0: 停用)
+    created_by BIGINT,                                  -- 创建人用户 ID
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),      -- 创建时间
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),      -- 更新时间
+    deleted_at TIMESTAMPTZ                              -- 软删除标记 (NULL 表示未删除)
+);
+
+-- 部分唯一索引：仅对未软删除行约束 bot_id 唯一，允许软删除后重建同名 bot_id
+CREATE UNIQUE INDEX IF NOT EXISTS uq_bots_bot_id_active 
+ON bots (bot_id) 
+WHERE deleted_at IS NULL;
+```
+
+#### 📌 `bots` 字段全属性对照表
+
+| 字段名称 | 物理数据类型 | 是否必填 | 默认值 | 详细说明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | `BIGINT` / `BIGSERIAL` | **是** | 自增 | 表自增主键 |
+| `bot_id` | `VARCHAR(64)` | **是** | - | 网关与其交互的业务逻辑唯一标识 (如 `feishu-robot-main`) |
+| `name` | `VARCHAR(128)` | **是** | - | 机器人展示名称 (如 `HR 审批助手`) |
+| `platform` | `VARCHAR(32)` | **是** | - | 平台协议分类 (例如 `feishu`, `wechat`) |
+| `app_id` | `VARCHAR(128)` | 否 | `NULL` | 飞书/企微开放平台分配的 `App ID` |
+| `app_secret` | `TEXT` | 否 | `NULL` | 平台应用 Secret（**密文存储**，前缀 `enc:v1:`） |
+| `parent_bot_id` | `BIGINT` | 否 | `NULL` | 外键指向 `bots.id`，表达 Bot 间的组织继承与树形归属关系 |
+| `mode` | `VARCHAR(16)` | 否 | `'test'` | 环境隔离模式 (`test` 测试环境, `prod` 生产环境) |
+| `status` | `SMALLINT` | 否 | `1` | 运行状态 (`1`: 启用/活跃状态，`0`: 停用) |
+| `created_by` | `BIGINT` | 否 | `NULL` | 创建该机器人的用户主键 ID |
+| `created_at` | `TIMESTAMPTZ` | **是** | `NOW()` | 记录创建时间戳 (带时区) |
+| `updated_at` | `TIMESTAMPTZ` | **是** | `NOW()` | 记录修改更新时间戳 (带时区) |
+| `deleted_at` | `TIMESTAMPTZ` | 否 | `NULL` | 软删除标记 (非空时表示该条记录已删除) |
+
+- **数据流转与解密路径**：
+  1. 管理员在前端修改 Bot 配置 $\to$ 请求 `backend-auth` $\to$ 通过 `data-client` 持久化到 `backend-data` 的 `PostgreSQL` **`bots`** 表中（`app_secret` 经过 `secret_crypto.encrypt` 加密后落库）。
+  2. `backend-gateway` 启动时（或接收到热重载指令时），调用 `BotManager.load_from_database()`。
+  3. 网关通过 `data-client` 请求 `backend-data` 专门面向内部服务暴露的 `GET /api/v1/bots/active` 接口。
+  4. `backend-data` 的 `BotService` 从 **`bots`** 表过滤查询 `deleted_at IS NULL AND status = 1` 的记录，并调用 `secret_crypto.decrypt()` 将 `app_secret` 解密还原为明文。
+  5. `backend-gateway` 接收到 JSON 列表，将凭证加载至本地内存 `BotManager` 中，初始化飞书 SDK (`FeishuBot`) 或企微 SDK (`WeChatBot`) 实例，注册事件监听器。
 - **数据最终去向**：`backend-gateway` 的内存变量（进程生命周期）。
 
 ---

@@ -19,6 +19,7 @@ class CreateBotRequest(BaseModel):
     app_id: str = Field(..., min_length=1, max_length=128)
     app_secret: str = Field(..., min_length=1, max_length=256)
     mode: BotMode = Field(default="test")
+    created_by: int | None = Field(default=None)
 
 
 class UpdateBotRequest(BaseModel):

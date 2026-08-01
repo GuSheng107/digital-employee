@@ -46,6 +46,7 @@ def create_bot(payload: CreateBotRequest) -> dict:
         app_id=payload.app_id,
         app_secret=payload.app_secret,
         mode=payload.mode,
+        created_by=payload.created_by,
     )
     return success_response(result)
 

@@ -12,6 +12,8 @@ export interface BotItem {
   app_secret: string;
   mode: BotMode;
   status: number;
+  created_by?: number | null;
+  created_by_name?: string | null;
   created_at: string | null;
   updated_at: string | null;
 }

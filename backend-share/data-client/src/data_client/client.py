@@ -906,19 +906,23 @@ class DataClient:
         app_id: str,
         app_secret: str,
         mode: str = "test",
+        created_by: int | None = None,
     ) -> dict[str, Any]:
         """创建 Bot。"""
+        payload: dict[str, Any] = {
+            "bot_id": bot_id,
+            "name": name,
+            "platform": platform,
+            "app_id": app_id,
+            "app_secret": app_secret,
+            "mode": mode,
+        }
+        if created_by is not None:
+            payload["created_by"] = created_by
         return self._request_dict(
             "POST",
             "/api/v1/bots",
-            json={
-                "bot_id": bot_id,
-                "name": name,
-                "platform": platform,
-                "app_id": app_id,
-                "app_secret": app_secret,
-                "mode": mode,
-            },
+            json=payload,
         )
 
     def update_bot(self, *, bot_id: str, **fields: Any) -> dict[str, Any]:

@@ -15,7 +15,8 @@ from auth_utils import PermissionCode
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from app.api.deps import require_permission
+from app.api.deps import get_current_user, require_permission
+from app.schemas.auth import UserInfo
 from app.services.bot_service import BotService
 
 router = APIRouter()
@@ -64,8 +65,11 @@ def list_bots(
     response_model=ApiResponse,
     dependencies=[Depends(require_permission(PermissionCode.BOT_MANAGE))],
 )
-def create_bot(payload: CreateBotPayload) -> dict:
-    """创建 Bot。"""
+def create_bot(
+    payload: CreateBotPayload,
+    current_user: UserInfo = Depends(get_current_user),
+) -> dict:
+    """创建 Bot（自动绑定当前创建者用户 ID）。"""
     service = BotService()
     result = service.create_bot(
         bot_id=payload.bot_id,
@@ -74,6 +78,7 @@ def create_bot(payload: CreateBotPayload) -> dict:
         app_id=payload.app_id,
         app_secret=payload.app_secret,
         mode=payload.mode,
+        created_by=current_user.id,
     )
     return success_response(result)
 

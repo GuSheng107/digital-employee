@@ -21,15 +21,23 @@ from secret_crypto import decrypt, encrypt
 
 from app.core.database import DatabaseRole, get_database_client
 from app.models.bot import Bot
+from app.models.user import User
+from sqlalchemy import func
 
 
-def _bot_to_dict(bot: Bot, *, mask_secret: bool = False) -> dict[str, Any]:
+def _bot_to_dict(
+    bot: Bot,
+    *,
+    mask_secret: bool = False,
+    created_by_name: str | None = None,
+) -> dict[str, Any]:
     """将 Bot ORM 对象转换为字典。
 
     Args:
         bot: Bot ORM 实例。
         mask_secret: 是否脱敏 app_secret。脱敏时返回 ``***``；不脱敏时返回
             解密后的明文（供 Gateway 使用）。
+        created_by_name: 创建者的显示名称/用户名（联查时提供）。
     """
     return {
         "id": bot.id,
@@ -40,6 +48,8 @@ def _bot_to_dict(bot: Bot, *, mask_secret: bool = False) -> dict[str, Any]:
         "app_secret": "***" if mask_secret else decrypt(bot.app_secret or ""),
         "mode": bot.mode,
         "status": bot.status,
+        "created_by": bot.created_by,
+        "created_by_name": created_by_name,
         "created_at": bot.created_at.isoformat() if bot.created_at else None,
         "updated_at": bot.updated_at.isoformat() if bot.updated_at else None,
     }
@@ -52,19 +62,30 @@ class BotService:
         self._db = get_database_client(DatabaseRole.CORE)
 
     def list_bots(self, *, page: int, page_size: int) -> dict[str, Any]:
-        """分页查询未删除的 Bot 列表（前端管理页用，app_secret 脱敏）。"""
+        """分页查询未删除的 Bot 列表（前端管理页用，app_secret 脱敏，联查创建者）。"""
         offset = (page - 1) * page_size
         with self._db.session() as session:
-            query = session.query(Bot).filter(Bot.deleted_at.is_(None))
+            query = (
+                session.query(
+                    Bot,
+                    func.coalesce(User.nickname, User.username).label("creator_name"),
+                )
+                .outerjoin(User, Bot.created_by == User.id)
+                .filter(Bot.deleted_at.is_(None))
+            )
             total = query.count()
-            bots = (
+            rows = (
                 query.order_by(Bot.id.desc())
                 .offset(offset)
                 .limit(page_size)
                 .all()
             )
+            items = [
+                _bot_to_dict(bot, mask_secret=True, created_by_name=creator_name)
+                for bot, creator_name in rows
+            ]
             return {
-                "items": [_bot_to_dict(b, mask_secret=True) for b in bots],
+                "items": items,
                 "total": total,
                 "page": page,
                 "page_size": page_size,
@@ -89,6 +110,7 @@ class BotService:
         app_id: str,
         app_secret: str,
         mode: str = "test",
+        created_by: int | None = None,
     ) -> dict[str, Any]:
         """创建 Bot。
 
@@ -99,6 +121,7 @@ class BotService:
             app_id: 平台应用 ID。
             app_secret: 平台应用密钥（明文传入，service 层加密后落库）。
             mode: 运行模式（test / prod）。
+            created_by: 创建人用户 ID。
 
         Returns:
             创建后的 Bot 字典（app_secret 脱敏）。
@@ -125,6 +148,7 @@ class BotService:
                 app_secret=encrypt(app_secret),
                 mode=mode,
                 status=1,
+                created_by=created_by,
             )
             session.add(bot)
             session.commit()

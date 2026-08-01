@@ -114,6 +114,12 @@ export default function BotManagement(): React.ReactElement {
       },
     },
     {
+      title: '创建者',
+      dataIndex: 'created_by_name',
+      key: 'created_by_name',
+      render: (name: string | null) => name || '系统',
+    },
+    {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
