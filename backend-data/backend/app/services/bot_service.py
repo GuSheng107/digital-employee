@@ -61,7 +61,13 @@ class BotService:
     def __init__(self) -> None:
         self._db = get_database_client(DatabaseRole.CORE)
 
-    def list_bots(self, *, page: int, page_size: int) -> dict[str, Any]:
+    def list_bots(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        created_by: int | None = None,
+    ) -> dict[str, Any]:
         """分页查询未删除的 Bot 列表（前端管理页用，app_secret 脱敏，联查创建者）。"""
         offset = (page - 1) * page_size
         with self._db.session() as session:
@@ -73,6 +79,8 @@ class BotService:
                 .outerjoin(User, Bot.created_by == User.id)
                 .filter(Bot.deleted_at.is_(None))
             )
+            if created_by is not None:
+                query = query.filter(Bot.created_by == created_by)
             total = query.count()
             rows = (
                 query.order_by(Bot.id.desc())
@@ -90,6 +98,23 @@ class BotService:
                 "page": page,
                 "page_size": page_size,
             }
+
+    def get_bot(self, *, bot_id: str) -> dict[str, Any]:
+        """获取单个 Bot 详情。"""
+        with self._db.session() as session:
+            row = (
+                session.query(
+                    Bot,
+                    func.coalesce(User.nickname, User.username).label("creator_name"),
+                )
+                .outerjoin(User, Bot.created_by == User.id)
+                .filter(Bot.bot_id == bot_id, Bot.deleted_at.is_(None))
+                .first()
+            )
+            if row is None:
+                raise ResourceNotFoundError(message=f"Bot '{bot_id}' 不存在")
+            bot, creator_name = row
+            return _bot_to_dict(bot, mask_secret=True, created_by_name=creator_name)
 
     def list_active_bots(self) -> list[dict[str, Any]]:
         """查询全部启用的 Bot（Gateway 启动拉取用，含 app_secret 明文）。"""

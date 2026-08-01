@@ -885,17 +885,30 @@ class DataClient:
 
     # ── Bot 管理 ──────────────────────────────────
 
-    def list_bots(self, *, page: int, page_size: int) -> dict[str, Any]:
-        """分页查询 Bot 列表。"""
+    def list_bots(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        created_by: int | None = None,
+    ) -> dict[str, Any]:
+        """分页查询 Bot 列表（支持按 created_by 筛选）。"""
+        params: dict[str, Any] = {"page": page, "page_size": page_size}
+        if created_by is not None:
+            params["created_by"] = created_by
         return self._request_dict(
             "GET",
             "/api/v1/bots",
-            params={"page": page, "page_size": page_size},
+            params=params,
         )
 
     def list_active_bots(self) -> list[dict[str, Any]]:
         """查询全部活跃 Bot（含 app_secret 明文）。"""
         return self._request_list("GET", "/api/v1/bots/active")
+
+    def get_bot(self, *, bot_id: str) -> dict[str, Any]:
+        """获取单个 Bot 详情。"""
+        return self._request_dict("GET", f"/api/v1/bots/{bot_id}")
 
     def create_bot(
         self,
