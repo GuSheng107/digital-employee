@@ -27,17 +27,17 @@ graph TD
     subgraph Gateway [backend-gateway :8864 接入网关]
         GW_WEBHOOK[Webhook 接口层]
         GW_NORM[Hub 消息归一化引擎]
-        GW_RELAY[Outbound Relay 长轮询线程]
+        GW_RELAY[AMQP 原生异步消费者监听]
         GW_STORAGE[GatewayStorageClient]
         GW_MEM[(内存 Bot 凭证缓存)]
     end
 
-    subgraph DataClient [backend-share / data-client]
-        SDK_HTTP[HTTP API Client + X-Service-API-Key]
+    subgraph ShareSDK [backend-share / rabbitmq-client & data-client]
+        SDK_MQ[rabbitmq-client AMQP 驱动]
+        SDK_HTTP[data-client HTTP API Client]
     end
 
     subgraph DataPlatform [backend-data :8010 数据中台]
-        DATA_MB[Message Broker Service 消息中枢]
         DATA_BOT[Bot 元数据服务]
         DATA_OSS[Storage Service 对象存储服务]
         DATA_ID[Identity & Data 服务]
@@ -46,7 +46,6 @@ graph TD
     subgraph Infrastructure [物理基础设施]
         MQ_IN[(RabbitMQ: inbound_queue)]
         MQ_OUT[(RabbitMQ: outbound_queue)]
-        REDIS_LEASE[(Redis: 消息租约与缓存)]
         PG_DB[(PostgreSQL 数据库)]
         MINIO_OSS[(MinIO 对象存储)]
     end
@@ -54,9 +53,8 @@ graph TD
     %% 流向 A: 上行消息
     FS_PLATFORM -->|1. HTTP POST Webhook 事件| GW_WEBHOOK
     GW_WEBHOOK -->|2. 解密/验签| GW_NORM
-    GW_NORM -->|3. 归一化 InboundMessage| SDK_HTTP
-    SDK_HTTP -->|4. POST /api/v1/infrastructure/message-broker/inbound| DATA_MB
-    DATA_MB -->|5. 写入入站队列| MQ_IN
+    GW_NORM -->|3. 归一化 InboundMessage| SDK_MQ
+    SDK_MQ -->|4. 原生 AMQP 协议直连发布| MQ_IN
     DATA_MB -->|6. 记录消息日志| PG_DB
 
     %% 流向 B: 下行消息

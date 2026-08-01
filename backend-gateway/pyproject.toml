@@ -8,6 +8,7 @@ dependencies = [
     "api-common==0.1.0",
     "auth-utils==0.1.0",
     "data-client==0.1.0",
+    "rabbitmq-client==0.1.0",
     "fastapi==0.140.7",
     "lark-oapi==1.4.8",
     "loguru==0.7.3",
@@ -24,6 +25,7 @@ nacos-client = { path = "../backend-share/nacos-client", editable = true }
 api-common = { path = "../backend-share/api-common", editable = true }
 auth-utils = { path = "../backend-share/auth-utils", editable = true }
 data-client = { path = "../backend-share/data-client", editable = true }
+rabbitmq-client = { path = "../backend-share/rabbitmq-client", editable = true }
 observability = { path = "../backend-share/observability", editable = true }
 
 [dependency-groups]
