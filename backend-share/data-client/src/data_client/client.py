@@ -919,6 +919,7 @@ class DataClient:
         app_id: str,
         app_secret: str,
         mode: str = "test",
+        agent_id: str | None = None,
         created_by: int | None = None,
     ) -> dict[str, Any]:
         """创建 Bot。"""
@@ -930,6 +931,8 @@ class DataClient:
             "app_secret": app_secret,
             "mode": mode,
         }
+        if agent_id is not None:
+            payload["agent_id"] = agent_id
         if created_by is not None:
             payload["created_by"] = created_by
         return self._request_dict(

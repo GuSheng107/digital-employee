@@ -114,6 +114,20 @@ export default function BotManagement(): React.ReactElement {
       },
     },
     {
+      title: '关联 Agent',
+      key: 'agent_name',
+      render: (_: unknown, record: BotItem) => {
+        if (!record.agent_id) {
+          return <span style={{ color: '#8c8c8c' }}>-</span>;
+        }
+        return (
+          <Tag color="purple">
+            {record.agent_name || record.agent_id}
+          </Tag>
+        );
+      },
+    },
+    {
       title: '创建者',
       dataIndex: 'created_by_name',
       key: 'created_by_name',

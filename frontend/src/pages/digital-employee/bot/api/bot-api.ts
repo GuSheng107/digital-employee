@@ -12,6 +12,8 @@ export interface BotItem {
   app_secret: string;
   mode: BotMode;
   status: number;
+  agent_id?: string | null;
+  agent_name?: string | null;
   created_by?: number | null;
   created_by_name?: string | null;
   created_at: string | null;
@@ -32,6 +34,7 @@ export interface CreateBotPayload {
   app_id: string;
   app_secret: string;
   mode?: BotMode;
+  agent_id?: string | null;
 }
 
 export interface UpdateBotPayload {
@@ -40,6 +43,7 @@ export interface UpdateBotPayload {
   app_id?: string;
   app_secret?: string;
   mode?: BotMode;
+  agent_id?: string | null;
 }
 
 /** 分页查询 Bot 列表 */

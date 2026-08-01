@@ -19,6 +19,7 @@ class CreateBotRequest(BaseModel):
     app_id: str = Field(..., min_length=1, max_length=128)
     app_secret: str = Field(..., min_length=1, max_length=256)
     mode: BotMode = Field(default="test")
+    agent_id: str | None = Field(default=None)
     created_by: int | None = Field(default=None)
 
 
@@ -30,3 +31,4 @@ class UpdateBotRequest(BaseModel):
     app_id: str | None = Field(default=None, min_length=1, max_length=128)
     app_secret: str | None = Field(default=None, min_length=1, max_length=256)
     mode: BotMode | None = Field(default=None)
+    agent_id: str | None = Field(default=None)

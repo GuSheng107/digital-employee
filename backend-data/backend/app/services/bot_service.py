@@ -20,6 +20,7 @@ from api_common import DuplicateResourceError, ResourceNotFoundError
 from secret_crypto import decrypt, encrypt
 
 from app.core.database import DatabaseRole, get_database_client
+from app.models.agent import Agent
 from app.models.bot import Bot
 from app.models.user import User
 from sqlalchemy import func
@@ -30,6 +31,7 @@ def _bot_to_dict(
     *,
     mask_secret: bool = False,
     created_by_name: str | None = None,
+    agent_name: str | None = None,
 ) -> dict[str, Any]:
     """将 Bot ORM 对象转换为字典。
 
@@ -38,6 +40,7 @@ def _bot_to_dict(
         mask_secret: 是否脱敏 app_secret。脱敏时返回 ``***``；不脱敏时返回
             解密后的明文（供 Gateway 使用）。
         created_by_name: 创建者的显示名称/用户名（联查时提供）。
+        agent_name: 关联 Agent 的名称（联查时提供）。
     """
     return {
         "id": bot.id,
@@ -48,6 +51,8 @@ def _bot_to_dict(
         "app_secret": "***" if mask_secret else decrypt(bot.app_secret or ""),
         "mode": bot.mode,
         "status": bot.status,
+        "agent_id": bot.agent_id,
+        "agent_name": agent_name,
         "created_by": bot.created_by,
         "created_by_name": created_by_name,
         "created_at": bot.created_at.isoformat() if bot.created_at else None,
@@ -75,8 +80,10 @@ class BotService:
                 session.query(
                     Bot,
                     func.coalesce(User.nickname, User.username).label("creator_name"),
+                    func.coalesce(Agent.name, Bot.agent_id).label("agent_name"),
                 )
                 .outerjoin(User, Bot.created_by == User.id)
+                .outerjoin(Agent, Bot.agent_id == Agent.agent_id)
                 .filter(Bot.deleted_at.is_(None))
             )
             if created_by is not None:
@@ -89,8 +96,13 @@ class BotService:
                 .all()
             )
             items = [
-                _bot_to_dict(bot, mask_secret=True, created_by_name=creator_name)
-                for bot, creator_name in rows
+                _bot_to_dict(
+                    bot,
+                    mask_secret=True,
+                    created_by_name=creator_name,
+                    agent_name=agent_name,
+                )
+                for bot, creator_name, agent_name in rows
             ]
             return {
                 "items": items,
@@ -106,15 +118,22 @@ class BotService:
                 session.query(
                     Bot,
                     func.coalesce(User.nickname, User.username).label("creator_name"),
+                    func.coalesce(Agent.name, Bot.agent_id).label("agent_name"),
                 )
                 .outerjoin(User, Bot.created_by == User.id)
+                .outerjoin(Agent, Bot.agent_id == Agent.agent_id)
                 .filter(Bot.bot_id == bot_id, Bot.deleted_at.is_(None))
                 .first()
             )
             if row is None:
                 raise ResourceNotFoundError(message=f"Bot '{bot_id}' 不存在")
-            bot, creator_name = row
-            return _bot_to_dict(bot, mask_secret=True, created_by_name=creator_name)
+            bot, creator_name, agent_name = row
+            return _bot_to_dict(
+                bot,
+                mask_secret=True,
+                created_by_name=creator_name,
+                agent_name=agent_name,
+            )
 
     def list_active_bots(self) -> list[dict[str, Any]]:
         """查询全部启用的 Bot（Gateway 启动拉取用，含 app_secret 明文）。"""
@@ -135,25 +154,10 @@ class BotService:
         app_id: str,
         app_secret: str,
         mode: str = "test",
+        agent_id: str | None = None,
         created_by: int | None = None,
     ) -> dict[str, Any]:
-        """创建 Bot。
-
-        Args:
-            bot_id: 业务唯一标识。
-            name: Bot 显示名称。
-            platform: 平台类型（feishu / wechat）。
-            app_id: 平台应用 ID。
-            app_secret: 平台应用密钥（明文传入，service 层加密后落库）。
-            mode: 运行模式（test / prod）。
-            created_by: 创建人用户 ID。
-
-        Returns:
-            创建后的 Bot 字典（app_secret 脱敏）。
-
-        Raises:
-            DuplicateResourceError: bot_id 已存在（未删除范围内）。
-        """
+        """创建 Bot。"""
         with self._db.session() as session:
             existing = (
                 session.query(Bot)
@@ -173,6 +177,7 @@ class BotService:
                 app_secret=encrypt(app_secret),
                 mode=mode,
                 status=1,
+                agent_id=agent_id,
                 created_by=created_by,
             )
             session.add(bot)
