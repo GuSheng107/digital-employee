@@ -953,6 +953,66 @@ class DataClient:
             f"/api/v1/bots/{bot_id}",
         )
 
+    # ── Agent 管理 ─────────────────────────────────
+
+    def list_agents(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        created_by: int | None = None,
+    ) -> dict[str, Any]:
+        """分页查询 Agent 列表。"""
+        params: dict[str, Any] = {"page": page, "page_size": page_size}
+        if created_by is not None:
+            params["created_by"] = created_by
+        return self._request_dict(
+            "GET",
+            "/api/v1/agents",
+            params=params,
+        )
+
+    def get_agent(self, *, agent_id: str) -> dict[str, Any]:
+        """获取单个 Agent 详情。"""
+        return self._request_dict("GET", f"/api/v1/agents/{agent_id}")
+
+    def create_agent(
+        self,
+        *,
+        agent_id: str,
+        name: str,
+        status: int = 1,
+        created_by: int | None = None,
+    ) -> dict[str, Any]:
+        """创建 Agent。"""
+        payload: dict[str, Any] = {
+            "agent_id": agent_id,
+            "name": name,
+            "status": status,
+        }
+        if created_by is not None:
+            payload["created_by"] = created_by
+        return self._request_dict(
+            "POST",
+            "/api/v1/agents",
+            json=payload,
+        )
+
+    def update_agent(self, *, agent_id: str, **fields: Any) -> dict[str, Any]:
+        """更新 Agent 配置。"""
+        return self._request_dict(
+            "POST",
+            f"/api/v1/agents/{agent_id}",
+            json=fields,
+        )
+
+    def delete_agent(self, agent_id: str) -> dict[str, Any]:
+        """软删除 Agent。"""
+        return self._request_dict(
+            "DELETE",
+            f"/api/v1/agents/{agent_id}",
+        )
+
     def close(self) -> None:
         """关闭复用的同步 HTTP 连接池。"""
         self._sync_client.close()

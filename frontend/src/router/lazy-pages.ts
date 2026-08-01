@@ -29,3 +29,8 @@ export const LogQuery = lazy(() => import('@/pages/system/log-query/LogQuery'));
 export const BotManagement = lazy(
   () => import('@/pages/digital-employee/bot/BotManagement'),
 );
+
+// 数字员工-Agent管理
+export const AgentManagement = lazy(
+  () => import('@/pages/digital-employee/agent/AgentManagement'),
+);

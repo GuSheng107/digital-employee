@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.routes import (
+    agents,
     auth,
     bots,
     health,
@@ -32,3 +33,4 @@ api_router.include_router(
     tags=["permissions"],
 )
 api_router.include_router(bots.router, prefix="/bots", tags=["bots"])
+api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
