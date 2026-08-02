@@ -209,9 +209,11 @@ class AuthService:
         payload["menus"] = []
         return UserInfo.model_validate(payload)
 
+    _MAX_MENU_DEPTH = 50
+
     @staticmethod
     def _build_menu_tree(nodes: list[MenuNode]) -> list[MenuNode]:
-        """将扁平菜单按 parent_id 构建为树。"""
+        """将扁平菜单按 parent_id 构建为树，最大深度 50 防止环路。"""
         node_map = {node.id: node for node in nodes}
         roots: list[MenuNode] = []
         for node in nodes:
@@ -220,8 +222,31 @@ class AuthService:
             else:
                 node_map[node.parent_id].children.append(node)
         roots.sort(key=lambda node: node.sort)
+
+        # 按深度排序子节点，并做环路防护
         for node in nodes:
             node.children.sort(key=lambda child: child.sort)
+            ancestry: set[int] = set()
+            current: MenuNode | None = node_map.get(node.parent_id) if node.parent_id else None
+            depth = 0
+            while current is not None:
+                if current.id in ancestry or depth > AuthService._MAX_MENU_DEPTH:
+                    # 检测到环路或超深，切断引用并提升为根节点
+                    current.children = [
+                        c for c in current.children if c.id != node.id
+                    ]
+                    node.parent_id = 0
+                    if node not in roots:
+                        roots.append(node)
+                    break
+                ancestry.add(current.id)
+                depth += 1
+                current = (
+                    node_map.get(current.parent_id)
+                    if current.parent_id
+                    else None
+                )
+        roots.sort(key=lambda root: root.sort)
         return roots
 
     @staticmethod

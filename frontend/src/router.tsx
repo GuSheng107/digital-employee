@@ -1,4 +1,4 @@
-import { Suspense } from 'react';
+import { lazy, Suspense } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router';
 import Layout from './components/Layout';
 import AppInitializer from './components/app-initializer/AppInitializer';
@@ -22,6 +22,10 @@ import {
   UserProfile,
   UserRegister,
 } from './router/lazy-pages';
+
+// 动态路由兜底：将所有未匹配静态路由的路径交给 DynamicPage，
+// 后者根据 /auth/me 菜单树中的 component 字段 + 组件注册表解析页面。
+const DynamicPage = lazy(() => import('@/pages/dynamic-page/DynamicPage'));
 
 // 懒加载页面统一 fallback
 const LazyFallback = <PageLoading />;
@@ -148,10 +152,12 @@ export const router = createBrowserRouter([
           [PERMISSION_CODE.AGENT_MANAGE],
         ),
       },
+      // ★ 动态路由兜底：菜单管理页面新增的菜单项若未在静态路由中注册，
+      // 则走 DynamicPage —— 根据 /auth/me 菜单树 + component 注册表渲染。
+      {
+        path: '*',
+        element: withSuspense(<DynamicPage />),
+      },
     ],
-  },
-  {
-    path: '*',
-    element: <Navigate to="/" replace />,
   },
 ]);
