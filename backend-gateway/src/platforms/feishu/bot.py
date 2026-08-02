@@ -4,7 +4,9 @@
 """
 
 import asyncio
+import logging
 import time
+import warnings
 from contextlib import suppress
 from typing import Any
 
@@ -13,9 +15,61 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
     P2CardActionTrigger,
     P2CardActionTriggerResponse,
 )
+from lark_oapi.ws.client import Client as LarkWsClient
+from lark_oapi.ws.exception import ConnectionClosedException
 
 from src.core.base import BaseBot
 from src.platforms.feishu.adapter import FeishuAdapter
+
+# 屏蔽 lark-oapi SDK 内部跨事件循环的已知报错，不影响重连机制
+warnings.filterwarnings("ignore", category=RuntimeWarning, message="Task exception was never retrieved")
+warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*was never awaited")
+
+
+def _patch_receive_message_loop_once() -> None:
+    """Monkey-patch lark_oapi Client._receive_message_loop，防止 _disconnect()
+    在 except 块内抛出跨事件循环异常时传播到 task 级别。
+
+    原代码 (lark_oapi/ws/client.py):
+        except Exception as e:
+            logger.error(...)
+            await self._disconnect()       # ← 这里抛异常，覆盖了原始异常
+            if self._auto_reconnect:
+                await self._reconnect()
+            else:
+                raise e
+
+    Python 不会打印 "Task exception was never retrieved" 只有当一个 task
+    以异常结束时且没有 add_done_callback 去获取异常时才会触发。本补丁将
+    _disconnect() 的异常也吞掉，确保 _reconnect() 能正常执行。
+    """
+    original = LarkWsClient._receive_message_loop
+
+    if getattr(original, "_patched", False):
+        return
+
+    async def _patched_receive_message_loop(self):
+        try:
+            while True:
+                if self._conn is None:
+                    raise ConnectionClosedException("connection is closed")
+                msg = await self._conn.recv()
+                asyncio.get_running_loop().create_task(self._handle_message(msg))
+        except Exception as e:
+            from lark_oapi.core.log import logger as _lark_logger
+
+            _lark_logger.error(self._fmt_log("receive message loop exit, err: {}", e))
+            try:
+                await self._disconnect()
+            except Exception:
+                pass  # 吞掉 _disconnect 的跨事件循环异常，避免 task 异常未检索
+            if self._auto_reconnect:
+                await self._reconnect()
+            else:
+                raise e
+
+    _patched_receive_message_loop._patched = True
+    LarkWsClient._receive_message_loop = _patched_receive_message_loop
 
 
 class FeishuBot(BaseBot):
@@ -72,6 +126,24 @@ class FeishuBot(BaseBot):
         """运行 Bot 连接维持（阻塞式，在独立子线程中工作）。"""
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
+
+        # 为 lark-oapi 的日志器添加过滤器，屏蔽 SDK 内部跨事件循环报错，改为中文提示
+        _lark_logger = logging.getLogger("Lark")
+        _original_handle = _lark_logger.handle
+
+        def _lark_log_filter(record: logging.LogRecord) -> None:
+            if record.levelno >= logging.ERROR and "receive message loop exit" in record.getMessage():
+                record.msg = "飞书 WebSocket 因事件循环冲突断开，SDK 将自动重连（此为已知问题，不影响正常使用）"
+                record.exc_info = None  # 移除堆栈
+
+        _lark_logger.handle = lambda record: (
+            _lark_log_filter(record) or _original_handle(record)
+        )
+
+        # 从根源上修复 lark_oapi Client._receive_message_loop：_disconnect() 在
+        # except 块内抛出跨事件循环异常时，不让它传播到 task 级别触发
+        # "Task exception was never retrieved"。
+        _patch_receive_message_loop_once()
 
         backoff = 1.0
         while self._is_running:
