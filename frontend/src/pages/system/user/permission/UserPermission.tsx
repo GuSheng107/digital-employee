@@ -13,13 +13,14 @@ import {
   Spin,
   Table,
   Tag,
+  Tooltip,
   Tree,
   Typography,
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { TreeDataNode, TreeProps } from 'antd';
-import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, PlusOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import {
   assignUserMenus,
   assignUserRoles,
@@ -58,13 +59,22 @@ function getErrorMessage(error: unknown): string {
   return getRequestErrorMessage(error, '操作失败，请稍后重试');
 }
 
-/** 把菜单管理接口的扁平目录转换为权限配置树。 */
+/** 把菜单管理接口的扁平目录转换为权限配置树。有权限码要求的菜单会附带提示图标。 */
 function convertMenusToTreeData(menus: MenuItem[]): TreeDataNode[] {
   const nodes = new Map<number, TreeDataNode>();
   menus.forEach((menu) => {
     nodes.set(menu.id, {
       key: menu.id,
-      title: menu.title,
+      title: menu.permission ? (
+        <Tooltip title={`需权限码：${menu.permission}`}>
+          <Space size={4}>
+            <SafetyCertificateOutlined style={{ color: '#1677ff', fontSize: 13 }} />
+            <span>{menu.title}</span>
+          </Space>
+        </Tooltip>
+      ) : (
+        menu.title
+      ),
     });
   });
 

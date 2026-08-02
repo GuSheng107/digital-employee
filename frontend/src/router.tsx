@@ -14,6 +14,7 @@ import {
   DataPlatformDashboard,
   DataPlatformDataItems,
   DataPlatformSystemConfig,
+  DynamicPage,
   InviteCode,
   LogQuery,
   MenuManagement,
@@ -148,10 +149,12 @@ export const router = createBrowserRouter([
           [PERMISSION_CODE.AGENT_MANAGE],
         ),
       },
+      // ★ 动态路由兜底：菜单管理页面新增的菜单项若未在静态路由中注册，
+      // 则走 DynamicPage —— 根据 /auth/me 菜单树 + component 注册表渲染。
+      {
+        path: '*',
+        element: withSuspense(<DynamicPage />),
+      },
     ],
-  },
-  {
-    path: '*',
-    element: <Navigate to="/" replace />,
   },
 ]);

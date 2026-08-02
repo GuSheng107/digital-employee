@@ -31,8 +31,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.redis_client import RateLimitCounterEntry
-from app.models.menu import Menu
-from app.models.permission import Permission
+from app.models.menu import Menu, RoleMenu
+from app.models.permission import Permission, RolePermission
 from app.models.role import Role, UserRole
 from app.models.user import User
 from app.models.user_permission import UserMenu, UserPermission
@@ -354,16 +354,7 @@ class IdentityAuthService:
                 .order_by(Role.id)
             )
         )
-        permission_codes = sorted(
-            self._session.scalars(
-                select(Permission.code)
-                .join(
-                    UserPermission,
-                    UserPermission.permission_id == Permission.id,
-                )
-                .where(UserPermission.user_id == user_id)
-            )
-        )
+        permission_codes = self._load_effective_permissions(user_id=user_id)
         menu_set = (
             self._load_effective_menus(
                 user_id=user_id,
@@ -378,6 +369,10 @@ class IdentityAuthService:
             permission_codes = []
             if include_menus:
                 menu_set = self._password_change_menu_subset(menu_set)
+        elif include_menus and not menu_set:
+            # 兜底：当用户因角色/菜单配置缺失导致菜单为空时，
+            # 至少保证个人信息页可见，避免登录后出现空白侧边栏。
+            menu_set = self._minimum_menu_fallback()
         effective_is_vip, effective_vip_level = self._effective_vip_values(
             is_vip=user.is_vip,
             vip_level=user.vip_level,
@@ -402,6 +397,35 @@ class IdentityAuthService:
             "menus": list(menu_set.values()),
             "must_change_password": must_change_password,
         }
+
+    def _load_effective_permissions(self, *, user_id: int) -> list[str]:
+        """汇总用户持有的全部权限码：独立分配（user_permissions）+角色继承（role_permissions）。
+
+        super_admin 会走 FULL_ACCESS_ROLE_CODES 旁路不调用此方法；
+        普通用户通过 UNION 取直分配置与角色配置的并集，去重排序后返回。
+        """
+        direct_codes = self._session.scalars(
+            select(Permission.code)
+            .join(
+                UserPermission,
+                UserPermission.permission_id == Permission.id,
+            )
+            .where(UserPermission.user_id == user_id)
+        )
+        role_codes = self._session.scalars(
+            select(Permission.code)
+            .join(
+                RolePermission,
+                RolePermission.permission_id == Permission.id,
+            )
+            .join(UserRole, UserRole.role_id == RolePermission.role_id)
+            .join(Role, Role.id == UserRole.role_id)
+            .where(
+                UserRole.user_id == user_id,
+                Role.deleted_at.is_(None),
+            )
+        )
+        return sorted({*direct_codes, *role_codes})
 
     def _load_effective_menus(
         self,
@@ -432,10 +456,28 @@ class IdentityAuthService:
                 statement.order_by(Menu.sort, Menu.id)
             ).mappings()
         else:
-            statement = (
-                statement.join(UserMenu, UserMenu.menu_id == Menu.id)
+            direct_menu_exists = (
+                select(UserMenu.menu_id)
                 .where(
                     UserMenu.user_id == user_id,
+                    UserMenu.menu_id == Menu.id,
+                )
+                .exists()
+            )
+            role_menu_exists = (
+                select(RoleMenu.menu_id)
+                .join(UserRole, UserRole.role_id == RoleMenu.role_id)
+                .join(Role, Role.id == UserRole.role_id)
+                .where(
+                    UserRole.user_id == user_id,
+                    RoleMenu.menu_id == Menu.id,
+                    Role.deleted_at.is_(None),
+                )
+                .exists()
+            )
+            statement = (
+                statement.where(
+                    or_(direct_menu_exists, role_menu_exists),
                     or_(
                         Menu.permission.is_(None),
                         Menu.permission.in_(permission_codes),
@@ -463,6 +505,80 @@ class IdentityAuthService:
             }
             for menu in menu_rows
         }
+
+    def _minimum_menu_fallback(
+        self,
+    ) -> dict[int, dict[str, int | str | bool | None]]:
+        """当用户菜单为空时返回个人信息页及其父目录作为最低可见菜单。
+
+        此兜底逻辑仅在角色/菜单配置缺失时触发，确保登录后不会出现
+        空白侧边栏。正常配置下不会被调用。
+
+        一次性查询所有可见菜单并在内存中追溯父目录链，避免逐层查询
+        产生的 N+1 问题；同时保留各菜单原有的 permission 字段，避免
+        兜底场景下权限隔离被弱化。
+        """
+        _MAX_FALLBACK_DEPTH = 50
+        # 一次查询所有可见菜单，在内存中追溯父链，规避 N+1 查询
+        menu_rows = self._session.execute(
+            select(
+                Menu.id,
+                Menu.parent_id,
+                Menu.menu_type,
+                Menu.title,
+                Menu.path,
+                Menu.component,
+                Menu.icon,
+                Menu.permission,
+                Menu.sort,
+                Menu.visible,
+            ).where(
+                Menu.deleted_at.is_(None),
+                Menu.visible.is_(True),
+            )
+        ).mappings().all()
+        menu_map = {int(row["id"]): row for row in menu_rows}
+        # 定位个人信息页
+        profile_menu = next(
+            (row for row in menu_rows if row["path"] == USER_PROFILE_ROUTE_PATH),
+            None,
+        )
+        if profile_menu is None:
+            return {}
+        # 向上追溯父目录链，双重防护：深度上限 + visited 集合防环
+        result: dict[int, dict[str, int | str | bool | None]] = {}
+        current = profile_menu
+        visited: set[int] = set()
+        depth = 0
+        while current is not None and depth < _MAX_FALLBACK_DEPTH:
+            depth += 1
+            menu_id = int(current["id"])
+            if menu_id in visited:
+                break
+            visited.add(menu_id)
+            result[menu_id] = {
+                "id": menu_id,
+                "parent_id": int(current["parent_id"]),
+                "menu_type": int(current["menu_type"]),
+                "title": str(current["title"]),
+                "path": str(current["path"]) if current["path"] is not None else None,
+                "component": (
+                    str(current["component"])
+                    if current["component"] is not None
+                    else None
+                ),
+                "icon": str(current["icon"]) if current["icon"] is not None else None,
+                "permission": (
+                    str(current["permission"])
+                    if current["permission"] is not None
+                    else None
+                ),
+                "sort": int(current["sort"]),
+                "visible": True,
+            }
+            parent_id = int(current["parent_id"])
+            current = menu_map.get(parent_id) if parent_id else None
+        return result
 
     @staticmethod
     def _password_change_menu_subset(

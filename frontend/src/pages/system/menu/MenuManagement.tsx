@@ -83,16 +83,25 @@ function getErrorMessage(error: unknown): string {
   return getRequestErrorMessage(error, '操作失败，请稍后重试');
 }
 
-/** 把扁平菜单列表构建为树形（用于父菜单 TreeSelect） */
-function buildTree(menus: MenuItem[]): TreeNode[] {
+/**
+ * 把扁平菜单列表构建为树形。
+ *
+ * ``filterPredicate`` 仅在提供给父菜单 TreeSelect 时使用，只保留目录节点，
+ * 避免用户误选非目录（菜单/按钮）当父节点后被后端拒绝。
+ */
+function buildTree(
+  menus: MenuItem[],
+  filterPredicate?: (menu: MenuItem) => boolean,
+): TreeNode[] {
+  const filtered = filterPredicate ? menus.filter(filterPredicate) : menus;
   const map = new Map<number, TreeNode>();
-  menus.forEach((m) => {
+  filtered.forEach((m) => {
     if (!map.has(m.id)) {
       map.set(m.id, { value: m.id, title: m.title });
     }
   });
   const roots: TreeNode[] = [];
-  menus.forEach((m) => {
+  filtered.forEach((m) => {
     const node = map.get(m.id);
     if (!node) return;
     if (m.parent_id === 0 || !map.has(m.parent_id)) {
@@ -179,9 +188,9 @@ export default function MenuManagement(): React.ReactElement {
   /** 表格数据：仅根节点进入 dataSource，子节点通过 children 嵌套 */
   const tableData = useMemo(() => buildTableData(menus), [menus]);
 
-  /** 父菜单树选项：包含「顶级」选项 */
+  /** 父菜单树选项：仅保留目录节点 + 顶级选项，非目录不能作为父节点 */
   const parentTreeData = useMemo<TreeNode[]>(() => {
-    const tree = buildTree(menus);
+    const tree = buildTree(menus, (m) => m.menu_type === 1);
     return [{ value: 0, title: '顶级菜单', children: tree }];
   }, [menus]);
 
@@ -240,6 +249,12 @@ export default function MenuManagement(): React.ReactElement {
     });
     setModalOpen(true);
   }
+
+  /** 正在编辑的节点是否有子节点，用于锁定菜单类型 */
+  const editingHasChildren = useMemo(
+    () => editingId !== null && menus.some((m) => m.parent_id === editingId),
+    [editingId, menus],
+  );
 
   function openEditModal(menu: MenuItem): void {
     setEditingId(menu.id);
@@ -500,7 +515,7 @@ export default function MenuManagement(): React.ReactElement {
             </Button>
             <Popconfirm
               title="确认删除该菜单？"
-              description="删除后需手动重新分配角色。"
+              description="删除后关联该菜单的角色将自动移除此项。"
               onConfirm={() => void handleDelete(record)}
               okText="删除"
               cancelText="取消"
@@ -594,11 +609,12 @@ export default function MenuManagement(): React.ReactElement {
             label="父菜单"
             name="parent_id"
             rules={[{ required: true, message: '请选择父菜单' }]}
+            extra="仅目录可作为父节点；顶级菜单（目录）选「顶级菜单」"
           >
             <TreeSelect
               treeData={parentTreeData}
               treeDefaultExpandAll
-              placeholder="选择父菜单，顶级菜单选「顶级菜单」"
+              placeholder="选择父目录，顶级菜单选「顶级菜单」"
             />
           </Form.Item>
 
@@ -606,8 +622,10 @@ export default function MenuManagement(): React.ReactElement {
             label="菜单类型"
             name="menu_type"
             rules={[{ required: true, message: '请选择菜单类型' }]}
+            extra={editingHasChildren ? '当前节点下有子菜单，不可更改类型' : undefined}
           >
             <Select
+              disabled={editingHasChildren}
               options={[
                 { value: 1, label: '目录（含子菜单的容器）' },
                 { value: 2, label: '菜单（实际页面）' },
