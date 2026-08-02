@@ -252,6 +252,28 @@ export abstract class BaseRequest {
   }
 }
 
+/** 判断是否为服务不可用类错误。
+ *
+ * 覆盖两种场景：
+ *   - 网络层失败（连接被拒绝/DNS 失败/超时无响应）：HttpError.status 为
+ *     undefined，axios 错误未携带 HTTP 响应；
+ *   - 网关类 5xx（502/503/504）：上游服务或网关自身不可用。
+ *
+ * 调用方据此区分“服务暂时不可用（可重试）”与“业务返回的错误（如 403）”，
+ * 避免在后端短暂不可用时把已登录用户重定向回登录页。
+ */
+export function isServiceUnavailableError(error: unknown): boolean {
+  if (!(error instanceof HttpError)) {
+    return false;
+  }
+  return (
+    error.status === undefined
+    || error.status === 502
+    || error.status === 503
+    || error.status === 504
+  );
+}
+
 /** 通用错误信息提取。
  *
  * 如果是 HttpError 且携带业务码，返回 `[CODE] message` 格式；

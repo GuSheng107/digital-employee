@@ -2,7 +2,10 @@ import { Button, Layout, Result } from 'antd';
 import { Outlet, useLocation } from 'react-router';
 import styles from '../index.module.css';
 import { PageLoading } from '@/components/page-loading/PageLoading';
-import { useUserStore } from '@/store/user-store';
+import {
+  AUTH_SERVICE_UNAVAILABLE_MESSAGE,
+  useUserStore,
+} from '@/store/user-store';
 
 const { Content } = Layout;
 
@@ -23,17 +26,21 @@ export default function MainContent(): React.ReactElement {
   if (!userInfo && profileLoading) {
     pageContent = <PageLoading label="正在加载用户信息" />;
   } else if (!userInfo && profileError) {
+    // 服务不可用（连接被拒绝/超时/5xx）：用 warning 状态引导用户重试连接；
+    // 其他业务错误（如权限不足）用 error 状态，引导重新加载。
+    const isServiceUnavailable =
+      profileError === AUTH_SERVICE_UNAVAILABLE_MESSAGE;
     pageContent = (
       <Result
-        status="warning"
-        title="用户信息加载失败"
+        status={isServiceUnavailable ? 'warning' : 'error'}
+        title={isServiceUnavailable ? '认证服务暂时不可用' : '用户信息加载失败'}
         subTitle={profileError}
         extra={(
           <Button
             type="primary"
             onClick={() => void hydrateCurrentUser()}
           >
-            重新加载
+            {isServiceUnavailable ? '重试连接服务' : '重新加载'}
           </Button>
         )}
       />

@@ -12,7 +12,17 @@ import {
   type TokenPair,
   type UserInfo,
 } from '@/api/auth-api';
-import { getRequestErrorMessage, HttpError } from '@/utils/request';
+import {
+  getRequestErrorMessage,
+  HttpError,
+  isServiceUnavailableError,
+} from '@/utils/request';
+
+/** 认证服务暂时不可用时的统一提示文案。
+ *
+ * 导出常量便于 MainContent 等组件精确匹配该场景，避免用模糊的字符串
+ * 包含判断区分错误类型。 */
+export const AUTH_SERVICE_UNAVAILABLE_MESSAGE = '认证服务暂时不可用，请稍后重试';
 
 interface AuthState {
   /** 是否已登录 */
@@ -206,14 +216,16 @@ export const useUserStore = create<AuthState>((set) => ({
         });
         return;
       }
+      // 服务不可用（连接被拒绝/超时/5xx 网关错误）：保留登录态，提示重试，
+      // 避免后端短暂不可用时把已登录用户踢回登录页。
+      const serviceDown = isServiceUnavailableError(error);
       set({
         restoring: false,
         isAuthenticated: true,
         profileLoading: false,
-        profileError: getRequestErrorMessage(
-          error,
-          '用户信息加载失败，请稍后重试',
-        ),
+        profileError: serviceDown
+          ? AUTH_SERVICE_UNAVAILABLE_MESSAGE
+          : getRequestErrorMessage(error, '用户信息加载失败，请稍后重试'),
       });
     }
   },
@@ -276,12 +288,12 @@ export const useUserStore = create<AuthState>((set) => ({
         });
         return;
       }
+      const serviceDown = isServiceUnavailableError(error);
       set({
         profileLoading: false,
-        profileError: getRequestErrorMessage(
-          error,
-          '用户信息加载失败，请稍后重试',
-        ),
+        profileError: serviceDown
+          ? AUTH_SERVICE_UNAVAILABLE_MESSAGE
+          : getRequestErrorMessage(error, '用户信息加载失败，请稍后重试'),
       });
     }
   },
