@@ -89,7 +89,7 @@ class DataClient:
             or DEFAULT_BACKEND_DATA_BASE_URL
         )
         self._base_url = configured_url.rstrip("/")
-        self._api_key = api_key or os.environ.get("BACKEND_DATA_API_KEY", "")
+        self._api_key = api_key or os.environ.get("DATA_API_KEY", "")
         self._timeout = timeout
         self._sync_client = httpx.Client(timeout=self._timeout)
         self._async_client: httpx.AsyncClient | None = None

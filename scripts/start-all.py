@@ -12,7 +12,6 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from hashlib import sha256
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -23,10 +22,6 @@ SERVICE_PORTS = (8010, 8020, 8864, 5173)
 HEALTH_ATTEMPTS = 40
 HEALTH_INTERVAL_SECONDS = 0.5
 HEALTH_TIMEOUT_SECONDS = 2.0
-SERVICE_API_KEY_ENV_NAME = "API_KEY"
-APP_SECRET_KEY_ENV_NAME = "APP_SECRET_KEY"
-INTERNAL_ADMIN_TOKEN_ENV_NAME = "INTERNAL_ADMIN_TOKEN"
-SECRET_BYTES = 48
 PRODUCTION_ENVIRONMENT = {
     "APP_ENV": "production",
     "NACOS_NAMESPACE": "prod",
@@ -140,59 +135,6 @@ def _persist_env_value(path: Path, key: str, value: str) -> None:
         temporary_path.unlink(missing_ok=True)
 
 
-def _ensure_service_api_key(env_path: Path) -> str:
-    """读取或生成持久化的服务间 API Key。"""
-    service_api_key = _read_env_file(env_path).get(
-        SERVICE_API_KEY_ENV_NAME,
-        "",
-    ).strip()
-    if service_api_key:
-        return service_api_key
-
-    service_api_key = secrets.token_urlsafe(SECRET_BYTES)
-    _persist_env_value(
-        env_path,
-        SERVICE_API_KEY_ENV_NAME,
-        service_api_key,
-    )
-    LOGGER.info("已为 backend-data 生成并持久化服务间 API Key")
-    return service_api_key
-
-
-def _ensure_app_secret_key(env_path: Path) -> str:
-    """读取或生成 app_secret 加密主密钥并持久化到 backend-data .env。"""
-    key = _read_env_file(env_path).get(APP_SECRET_KEY_ENV_NAME, "").strip()
-    if key:
-        return key
-    key = secrets.token_urlsafe(SECRET_BYTES)
-    _persist_env_value(env_path, APP_SECRET_KEY_ENV_NAME, key)
-    LOGGER.info("已为 backend-data 生成并持久化 APP_SECRET_KEY")
-    return key
-
-
-def _ensure_internal_admin_token(auth_env_path: Path, gateway_env_path: Path) -> str:
-    """读取或生成服务间内部令牌，并同步到 auth 与 gateway 的 .env。
-
-    auth 为 reload 的调用方，以 auth .env 中的值为优先；若 auth 为空则读
-    gateway；两者都为空时生成新令牌。随后确保两份 .env 持有相同值。
-    """
-    auth_token = _read_env_file(auth_env_path).get(
-        INTERNAL_ADMIN_TOKEN_ENV_NAME, "",
-    ).strip()
-    gateway_token = _read_env_file(gateway_env_path).get(
-        INTERNAL_ADMIN_TOKEN_ENV_NAME, "",
-    ).strip()
-    token = auth_token or gateway_token
-    if not token:
-        token = secrets.token_urlsafe(SECRET_BYTES)
-        LOGGER.info("已生成并持久化服务间内部令牌 INTERNAL_ADMIN_TOKEN")
-    if auth_token != token:
-        _persist_env_value(auth_env_path, INTERNAL_ADMIN_TOKEN_ENV_NAME, token)
-    if gateway_token != token:
-        _persist_env_value(gateway_env_path, INTERNAL_ADMIN_TOKEN_ENV_NAME, token)
-    return token
-
-
 def _resolve_command(name: str, *, windows_name: str | None = None) -> str:
     """解析必需的可执行文件路径。"""
     candidate = windows_name if sys.platform == "win32" and windows_name else name
@@ -285,10 +227,6 @@ def _build_service_specs() -> list[ServiceSpec]:
     )
     if build_result.returncode != 0:
         raise RuntimeError("Frontend production 构建失败")
-    service_api_key = _ensure_service_api_key(data_env_file)
-    _ensure_app_secret_key(data_env_file)
-    _ensure_internal_admin_token(auth_env_file, gateway_env_file)
-    data_client_overrides = {"BACKEND_DATA_API_KEY": service_api_key}
 
     return [
         ServiceSpec(
@@ -308,10 +246,7 @@ def _build_service_specs() -> list[ServiceSpec]:
             health_url="http://127.0.0.1:8020/api/v1/health",
             environment=_build_environment(
                 auth_env_file,
-                overrides={
-                    **PRODUCTION_ENVIRONMENT,
-                    **data_client_overrides,
-                },
+                overrides=PRODUCTION_ENVIRONMENT,
             ),
         ),
         ServiceSpec(
@@ -321,10 +256,7 @@ def _build_service_specs() -> list[ServiceSpec]:
             health_url="http://127.0.0.1:8864/api/v1/health",
             environment=_build_environment(
                 gateway_env_file,
-                overrides={
-                    **PRODUCTION_ENVIRONMENT,
-                    **data_client_overrides,
-                },
+                overrides=PRODUCTION_ENVIRONMENT,
             ),
         ),
         ServiceSpec(
@@ -419,59 +351,6 @@ def _wait_for_health(service: ServiceSpec, process: subprocess.Popen[bytes]) -> 
     raise RuntimeError(f"{service.name} 健康检查超时：{service.health_url}")
 
 
-def _verify_service_dependencies(service_api_key: str) -> None:
-    """验证受保护依赖探活和消息中间件拓扑。"""
-    headers = {"X-API-Key": service_api_key}
-    checks = (
-        EndpointCheck(
-            name="Backend Data dependencies",
-            url="http://127.0.0.1:8010/api/v1/health/dependencies",
-            headers=headers,
-        ),
-        EndpointCheck(
-            name="Message broker topology",
-            url="http://127.0.0.1:8010/api/v1/infrastructure/message-broker/topology",
-            headers=headers,
-            method="POST",
-        ),
-        EndpointCheck(
-            name="Redis rate-limit transaction",
-            url="http://127.0.0.1:8010/api/v1/identity/auth/rate-limit/consume",
-            headers={**headers, "Content-Type": "application/json"},
-            method="POST",
-            body=json.dumps(
-                {
-                    "bucket": "startup-verification",
-                    "identifier_hash": sha256(
-                        b"digital-employee-startup"
-                    ).hexdigest(),
-                    "limit": 10000,
-                    "window_seconds": 60,
-                },
-                separators=(",", ":"),
-            ).encode("utf-8"),
-        ),
-    )
-    for check in checks:
-        try:
-            status, body = _request_endpoint(check)
-        except (OSError, URLError) as exc:
-            raise RuntimeError(f"{check.name} 验收失败") from exc
-        if not 200 <= status < 400:
-            raise RuntimeError(f"{check.name} 验收返回 HTTP {status}")
-        if not isinstance(body, dict) or body.get("success") is not True:
-            raise RuntimeError(f"{check.name} 未返回成功响应")
-        if check.name == "Backend Data dependencies":
-            dependency_data = body.get("data")
-            if not isinstance(dependency_data, dict) or any(
-                not isinstance(status_data, dict)
-                or status_data.get("ok") is not True
-                for status_data in dependency_data.values()
-            ):
-                raise RuntimeError("Backend Data 存在未就绪依赖")
-        LOGGER.info("%s 验收通过", check.name)
-
-
 def main() -> int:
     """清理旧进程，按依赖顺序启动并验证全部服务。"""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -482,8 +361,6 @@ def main() -> int:
             LOGGER.info("正在启动 %s...", service.name)
             process = _start_service(service)
             _wait_for_health(service, process)
-        service_api_key = services[0].environment["API_KEY"]
-        _verify_service_dependencies(service_api_key)
     except (OSError, RuntimeError) as exc:
         LOGGER.error("一键启动失败：%s", exc)
         try:

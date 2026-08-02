@@ -24,10 +24,9 @@ def _load_nacos_config_to_environ() -> None:
     except ImportError:
         return  # nacos-client 未安装，仅本地开发场景
 
-    client = NacosClient.from_env_optional()
-    if client is not None:
-        client.load_to_environ()
-        _adapt_nacos_to_backend_data_env()
+    client = NacosClient.from_env_required()
+    client.load_to_environ()
+    _adapt_nacos_to_backend_data_env()
 
 
 def _adapt_nacos_to_backend_data_env() -> None:
@@ -64,6 +63,12 @@ def _adapt_nacos_to_backend_data_env() -> None:
     # Redis 已匹配（REDIS_HOST/REDIS_PORT/REDIS_PASSWORD），无需转换
     # RabbitMQ 仅由 backend-data 持有连接与拓扑配置。
     nacos_adapter.compose_rabbitmq_url()
+    # API Key: Nacos 的 data.api_key -> DATA_API_KEY -> API_KEY（服务端校验）
+    # 同时复用为 APP_SECRET_KEY（crypto 加密口令），仅后端间传递，不暴露到前端
+    nacos_adapter.copy_overwrite("DATA_API_KEY", "API_KEY")
+    nacos_adapter.copy_overwrite("DATA_API_KEY", "APP_SECRET_KEY")
+    # Ports: Nacos 的 data.port -> DATA_PORT -> APP_PORT
+    nacos_adapter.copy_overwrite("DATA_PORT", "APP_PORT")
 
 
 class Settings(BaseSettings):
