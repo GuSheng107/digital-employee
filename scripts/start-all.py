@@ -216,13 +216,29 @@ def _build_environment(
 
 
 def _sync_python_project(uv: str, project_directory: Path) -> None:
-    """严格按锁文件安装项目及可编辑的本地 share 依赖。"""
+    """严格按锁文件安装项目及可编辑的本地 share 依赖；当 lock 匹配失败时自动修复。"""
     LOGGER.info("正在同步 Python 依赖：%s", project_directory.name)
     result = subprocess.run(
         (uv, "sync", "--locked"),
         cwd=project_directory,
         check=False,
     )
+    if result.returncode != 0:
+        LOGGER.warning(
+            "检测到 %s 锁文件需要更新，正在自动执行 uv lock 尝试修复...",
+            project_directory.name,
+        )
+        lock_result = subprocess.run(
+            (uv, "lock"),
+            cwd=project_directory,
+            check=False,
+        )
+        if lock_result.returncode == 0:
+            result = subprocess.run(
+                (uv, "sync", "--locked"),
+                cwd=project_directory,
+                check=False,
+            )
     if result.returncode != 0:
         raise RuntimeError(f"Python 依赖同步失败：{project_directory}")
 

@@ -7,12 +7,13 @@ Redis、MinIO 或 RabbitMQ 的驱动、连接、拓扑和凭证。
 from __future__ import annotations
 
 import os
+from collections.abc import Awaitable, Callable
 from io import BytesIO
 from typing import Any
 
 from data_client import DataClient, get_data_client
+from rabbitmq_client import ConsumerResult, RabbitMQClient, get_rabbitmq_client
 
-DEFAULT_MESSAGE_POLL_SECONDS = 20.0
 DEFAULT_DATA_RETRY_SECONDS = 5.0
 DEFAULT_STORAGE_OBJECT_MAX_SIZE_BYTES = 20 * 1024 * 1024
 
@@ -90,22 +91,19 @@ class GatewayStorageClient:
 
 
 class GatewayMessageBusClient:
-    """把网关的逻辑消息操作委托给 backend-data。"""
+    """直接使用 share 包中的 rabbitmq-client 进行原生 AMQP 消息收发。"""
 
-    def __init__(self, data_client: DataClient | None = None) -> None:
-        self._data = data_client
+    def __init__(self, rabbitmq_client: RabbitMQClient | None = None) -> None:
+        self._mq = rabbitmq_client
         self.is_available = False
-        self.poll_seconds = _read_positive_float(
-            "BACKEND_DATA_MESSAGE_POLL_SECONDS",
-            DEFAULT_MESSAGE_POLL_SECONDS,
-        )
         self.retry_seconds = _read_positive_float(
             "BACKEND_DATA_RETRY_SECONDS",
             DEFAULT_DATA_RETRY_SECONDS,
         )
 
     async def ensure_ready(self) -> dict[str, Any]:
-        status = await self._get_data_client().ensure_message_broker()
+        """建立 RabbitMQ 原生 AMQP 拓扑。"""
+        status = await self._get_mq_client().ensure_topology()
         self.is_available = status.get("connected") is True
         return status
 
@@ -116,7 +114,8 @@ class GatewayMessageBusClient:
         bot_id: str,
         payload: str,
     ) -> dict[str, Any]:
-        result = await self._get_data_client().publish_inbound_message(
+        """直接将上行消息发布至 RabbitMQ 入站队列。"""
+        result = await self._get_mq_client().publish_inbound(
             platform=platform,
             bot_id=bot_id,
             payload=payload,
@@ -124,28 +123,22 @@ class GatewayMessageBusClient:
         self.is_available = True
         return result
 
-    async def claim(self) -> dict[str, Any] | None:
-        result = await self._get_data_client().claim_outbound_message(
-            timeout_seconds=self.poll_seconds,
-        )
-        self.is_available = True
-        return result
-
-    async def acknowledge(self, receipt_id: str) -> None:
-        await self._get_data_client().acknowledge_outbound_message(receipt_id)
-
-    async def reject(self, receipt_id: str) -> None:
-        await self._get_data_client().reject_outbound_message(receipt_id)
+    async def start_consumer(
+        self,
+        callback: Callable[[str], Awaitable[ConsumerResult]],
+    ) -> None:
+        """启动出站消息 AMQP 监听消费者。"""
+        await self._get_mq_client().start_outbound_consumer(callback)
 
     async def close(self) -> None:
         self.is_available = False
-        if self._data is not None:
-            await self._data.aclose()
+        if self._mq is not None:
+            await self._mq.close()
 
-    def _get_data_client(self) -> DataClient:
-        if self._data is None:
-            self._data = get_data_client()
-        return self._data
+    def _get_mq_client(self) -> RabbitMQClient:
+        if self._mq is None:
+            self._mq = get_rabbitmq_client()
+        return self._mq
 
 
 storage_client = GatewayStorageClient()

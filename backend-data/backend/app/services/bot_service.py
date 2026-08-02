@@ -20,16 +20,33 @@ from api_common import DuplicateResourceError, ResourceNotFoundError
 from secret_crypto import decrypt, encrypt
 
 from app.core.database import DatabaseRole, get_database_client
+from app.models.agent import Agent
 from app.models.bot import Bot
+from app.models.user import User
+from sqlalchemy import func
+
+# 可空字段白名单：这些字段允许显式传入 None 来置空（与“未传字段”区分，
+# 后者由 ``model_dump(exclude_unset=True)`` 在路由层过滤掉）。
+# 命中白名单的字段即便值为 None 也会 ``setattr``；其他字段维持
+# ``value is not None`` 的旧语义，避免必填字段（如 app_secret）被误传 null 落库。
+NULLABLE_FIELDS: frozenset[str] = frozenset({"agent_id"})
 
 
-def _bot_to_dict(bot: Bot, *, mask_secret: bool = False) -> dict[str, Any]:
+def _bot_to_dict(
+    bot: Bot,
+    *,
+    mask_secret: bool = False,
+    created_by_name: str | None = None,
+    agent_name: str | None = None,
+) -> dict[str, Any]:
     """将 Bot ORM 对象转换为字典。
 
     Args:
         bot: Bot ORM 实例。
         mask_secret: 是否脱敏 app_secret。脱敏时返回 ``***``；不脱敏时返回
             解密后的明文（供 Gateway 使用）。
+        created_by_name: 创建者的显示名称/用户名（联查时提供）。
+        agent_name: 关联 Agent 的名称（联查时提供）。
     """
     return {
         "id": bot.id,
@@ -40,6 +57,10 @@ def _bot_to_dict(bot: Bot, *, mask_secret: bool = False) -> dict[str, Any]:
         "app_secret": "***" if mask_secret else decrypt(bot.app_secret or ""),
         "mode": bot.mode,
         "status": bot.status,
+        "agent_id": bot.agent_id,
+        "agent_name": agent_name,
+        "created_by": bot.created_by,
+        "created_by_name": created_by_name,
         "created_at": bot.created_at.isoformat() if bot.created_at else None,
         "updated_at": bot.updated_at.isoformat() if bot.updated_at else None,
     }
@@ -51,24 +72,74 @@ class BotService:
     def __init__(self) -> None:
         self._db = get_database_client(DatabaseRole.CORE)
 
-    def list_bots(self, *, page: int, page_size: int) -> dict[str, Any]:
-        """分页查询未删除的 Bot 列表（前端管理页用，app_secret 脱敏）。"""
+    def list_bots(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        created_by: int | None = None,
+    ) -> dict[str, Any]:
+        """分页查询未删除的 Bot 列表（前端管理页用，app_secret 脱敏，联查创建者）。"""
         offset = (page - 1) * page_size
         with self._db.session() as session:
-            query = session.query(Bot).filter(Bot.deleted_at.is_(None))
+            query = (
+                session.query(
+                    Bot,
+                    func.coalesce(User.nickname, User.username).label("creator_name"),
+                    func.coalesce(Agent.name, Bot.agent_id).label("agent_name"),
+                )
+                .outerjoin(User, Bot.created_by == User.id)
+                .outerjoin(Agent, Bot.agent_id == Agent.agent_id)
+                .filter(Bot.deleted_at.is_(None))
+            )
+            if created_by is not None:
+                query = query.filter(Bot.created_by == created_by)
             total = query.count()
-            bots = (
+            rows = (
                 query.order_by(Bot.id.desc())
                 .offset(offset)
                 .limit(page_size)
                 .all()
             )
+            items = [
+                _bot_to_dict(
+                    bot,
+                    mask_secret=True,
+                    created_by_name=creator_name,
+                    agent_name=agent_name,
+                )
+                for bot, creator_name, agent_name in rows
+            ]
             return {
-                "items": [_bot_to_dict(b, mask_secret=True) for b in bots],
+                "items": items,
                 "total": total,
                 "page": page,
                 "page_size": page_size,
             }
+
+    def get_bot(self, *, bot_id: str) -> dict[str, Any]:
+        """获取单个 Bot 详情。"""
+        with self._db.session() as session:
+            row = (
+                session.query(
+                    Bot,
+                    func.coalesce(User.nickname, User.username).label("creator_name"),
+                    func.coalesce(Agent.name, Bot.agent_id).label("agent_name"),
+                )
+                .outerjoin(User, Bot.created_by == User.id)
+                .outerjoin(Agent, Bot.agent_id == Agent.agent_id)
+                .filter(Bot.bot_id == bot_id, Bot.deleted_at.is_(None))
+                .first()
+            )
+            if row is None:
+                raise ResourceNotFoundError(message=f"Bot '{bot_id}' 不存在")
+            bot, creator_name, agent_name = row
+            return _bot_to_dict(
+                bot,
+                mask_secret=True,
+                created_by_name=creator_name,
+                agent_name=agent_name,
+            )
 
     def list_active_bots(self) -> list[dict[str, Any]]:
         """查询全部启用的 Bot（Gateway 启动拉取用，含 app_secret 明文）。"""
@@ -89,23 +160,10 @@ class BotService:
         app_id: str,
         app_secret: str,
         mode: str = "test",
+        agent_id: str | None = None,
+        created_by: int | None = None,
     ) -> dict[str, Any]:
-        """创建 Bot。
-
-        Args:
-            bot_id: 业务唯一标识。
-            name: Bot 显示名称。
-            platform: 平台类型（feishu / wechat）。
-            app_id: 平台应用 ID。
-            app_secret: 平台应用密钥（明文传入，service 层加密后落库）。
-            mode: 运行模式（test / prod）。
-
-        Returns:
-            创建后的 Bot 字典（app_secret 脱敏）。
-
-        Raises:
-            DuplicateResourceError: bot_id 已存在（未删除范围内）。
-        """
+        """创建 Bot。"""
         with self._db.session() as session:
             existing = (
                 session.query(Bot)
@@ -125,6 +183,8 @@ class BotService:
                 app_secret=encrypt(app_secret),
                 mode=mode,
                 status=1,
+                agent_id=agent_id,
+                created_by=created_by,
             )
             session.add(bot)
             session.commit()
@@ -155,8 +215,12 @@ class BotService:
                     message=f"Bot '{bot_id}' 不存在",
                 )
             for key, value in fields.items():
-                if value is not None and hasattr(bot, key):
-                    setattr(bot, key, encrypt(value) if key == "app_secret" else value)
+                if not hasattr(bot, key):
+                    continue
+                if value is None and key not in NULLABLE_FIELDS:
+                    # 非白名单字段跳过 None，避免必填字段被误传 null 落库
+                    continue
+                setattr(bot, key, encrypt(value) if key == "app_secret" else value)
             session.commit()
             session.refresh(bot)
             return _bot_to_dict(bot, mask_secret=True)

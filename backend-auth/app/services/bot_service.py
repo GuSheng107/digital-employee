@@ -71,9 +71,21 @@ class BotService:
         )
         self._http_post = http_post or _default_http_post
 
-    def list_bots(self, *, page: int, page_size: int) -> dict[str, Any]:
+    def list_bots(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        created_by: int | None = None,
+    ) -> dict[str, Any]:
         """分页查询 Bot 列表。"""
-        return self._data.list_bots(page=page, page_size=page_size)
+        return self._data.list_bots(
+            page=page, page_size=page_size, created_by=created_by
+        )
+
+    def get_bot(self, *, bot_id: str) -> dict[str, Any]:
+        """获取单个 Bot 详情。"""
+        return self._data.get_bot(bot_id=bot_id)
 
     def create_bot(self, **payload: Any) -> dict[str, Any]:
         """创建 Bot，落库成功后触发 Gateway reload。"""

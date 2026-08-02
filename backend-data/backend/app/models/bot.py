@@ -55,6 +55,7 @@ class Bot(Base):
     )
     mode: Mapped[str] = mapped_column(String(16), default="test")
     status: Mapped[int] = mapped_column(SmallInteger, default=1)
+    agent_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_by: Mapped[int | None] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()

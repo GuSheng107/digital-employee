@@ -3,14 +3,17 @@
 RabbitMQ 连接、拓扑声明、发布和消费只能存在于 backend-data。其他服务
 通过 backend-share/data-client 领取消息；消息在返回 HTTP 响应前先转存
 Redis，并以可 ACK/NACK 的租约交付，避免把 MQ 客户端对象泄漏到服务边界外。
+
+注意：本模块原有的 ``publish_inbound`` / ``claim_outbound`` / ``ack_outbound``
+/ ``nack_outbound`` 4 个公开方法已删除（HTTP 消息代理端点废弃后无调用方）。
+保留 ``ensure_topology`` / ``close`` 与若干 Redis 租约辅助方法，原因见
+各方法 docstring。
 """
 
 from __future__ import annotations
 
 import asyncio
 import re
-import uuid
-from datetime import UTC, datetime
 from typing import Any
 
 import aio_pika
@@ -22,28 +25,22 @@ from aio_pika.abc import (
 )
 from api_common import (
     DependencyUnavailableError,
-    ResourceNotFoundError,
     ValidationError,
 )
-from observability import (
-    SpanKind,
-    TraceEventType,
-    TracePayloadType,
-    TraceService,
-    TraceTrigger,
-    propagation_headers,
-    trace_operation,
-)
-
 from app.core.config import settings
-from app.core.observability import persist_trace_batch
 from app.core.redis_client import RedisClientWrapper, get_redis_client
 
 ROUTING_SEGMENT_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 class MessageBrokerService:
-    """集中管理 RabbitMQ 拓扑，并通过 Redis 租约向其他服务交付消息。"""
+    """集中管理 RabbitMQ 拓扑，并通过 Redis 租约向其他服务交付消息。
+
+    保留原因：``app/core/business_observability.py`` 在 ``DATA_BUSINESS_SERVICES``
+    中注册了本类用于结构化事件埋点；``app/main.py`` lifespan shutdown 调用
+    ``close()`` 释放连接；``infrastructure.py`` 的 ``/topology`` 端点调用
+    ``ensure_topology()``。删除本类会破坏上述 3 处依赖。
+    """
 
     def __init__(
         self,
@@ -56,6 +53,14 @@ class MessageBrokerService:
         self._outbound_queue: AbstractRobustQueue | None = None
         self._connect_lock = asyncio.Lock()
 
+    # ------------------------------------------------------------------
+    # Redis 租约相关属性
+    #
+    # 保留原因：``_claim_from_relay`` 依赖这些 key 拼接 Redis 路径。虽然
+    # ``claim_outbound`` 公开方法已删，但 ``_claim_from_relay`` 仍保留作为
+    # Redis 可靠消息租约模式的参考实现，后续若重新引入基于 Redis 的
+    # 出站消息租约（如 DLQ 兜底重试）可直接复用。
+    # ------------------------------------------------------------------
     @property
     def _ready_key(self) -> str:
         return f"{settings.message_relay_redis_prefix}:ready"
@@ -77,7 +82,12 @@ class MessageBrokerService:
         return f"{settings.message_relay_redis_prefix}:message:"
 
     async def ensure_topology(self) -> dict[str, Any]:
-        """建立 RabbitMQ 连接并幂等声明交换机、入站队列和出站队列。"""
+        """建立 RabbitMQ 连接并幂等声明交换机、入站队列和出站队列。
+
+        保留原因：``infrastructure.py`` 的 ``POST /message-broker/topology``
+        端点调用本方法，``scripts/start-all.py`` 启动验证流程通过该端点
+        触发 backend-data 自身初始化 MQ 拓扑。
+        """
         if self._is_ready():
             return self._topology_status()
 
@@ -129,155 +139,12 @@ class MessageBrokerService:
             self._outbound_queue = outbound_queue
             return self._topology_status()
 
-    async def publish_inbound(
-        self,
-        *,
-        platform: str,
-        bot_id: str,
-        payload: str,
-    ) -> dict[str, str]:
-        """把标准化入站消息持久化发布到 Agent 入站主题。"""
-        self._validate_routing_segment(platform, field_name="platform")
-        self._validate_routing_segment(bot_id, field_name="bot_id")
-        await self.ensure_topology()
-        if self._exchange is None:
-            raise DependencyUnavailableError(message="消息队列尚未初始化")
-
-        routing_key = f"{settings.rabbitmq_inbound_publish_prefix}.{platform}.{bot_id}"
-        message_id = str(uuid.uuid4())
-        try:
-            async with trace_operation(
-                service=TraceService.BACKEND_DATA,
-                kind=SpanKind.PRODUCER,
-                operation="发布 Agent 入站消息",
-                trigger=TraceTrigger.MESSAGE_QUEUE,
-                event_type=TraceEventType.MQ_PUBLISH,
-                payload_type=TracePayloadType.MQ_MESSAGE,
-                payload=payload,
-                sink=persist_trace_batch,
-                attributes={"routing_key": routing_key, "message_id": message_id},
-            ):
-                await self._exchange.publish(
-                    aio_pika.Message(
-                        body=payload.encode("utf-8"),
-                        content_type="application/json",
-                        delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-                        message_id=message_id,
-                        timestamp=datetime.now(UTC),
-                        headers=propagation_headers(),
-                    ),
-                    routing_key=routing_key,
-                )
-        except Exception as exc:
-            raise DependencyUnavailableError(
-                message="消息投递失败",
-                detail=type(exc).__name__,
-            ) from exc
-        return {
-            "message_id": message_id,
-            "routing_key": routing_key,
-        }
-
-    async def claim_outbound(
-        self,
-        *,
-        timeout_seconds: float,
-    ) -> dict[str, Any] | None:
-        """领取一条 Agent 出站消息，返回 Redis 租约回执。"""
-        claimed = await asyncio.to_thread(self._claim_from_relay)
-        if claimed is not None:
-            return claimed
-
-        await self.ensure_topology()
-        if self._outbound_queue is None:
-            raise DependencyUnavailableError(message="出站消息队列尚未初始化")
-
-        try:
-            incoming = await self._outbound_queue.get(
-                fail=False,
-                timeout=timeout_seconds,
-            )
-        except TimeoutError:
-            return None
-        except Exception as exc:
-            raise DependencyUnavailableError(
-                message="领取出站消息失败",
-                detail=type(exc).__name__,
-            ) from exc
-        if incoming is None:
-            return None
-
-        receipt_id = str(uuid.uuid4())
-        try:
-            payload = incoming.body.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            await incoming.reject(requeue=False)
-            raise ValidationError(
-                message="消息体必须使用 UTF-8 编码",
-            ) from exc
-
-        relay_payload = {
-            "payload": payload,
-            "routing_key": incoming.routing_key,
-            "upstream_message_id": incoming.message_id,
-            "received_at": datetime.now(UTC).isoformat(),
-            "trace_id": self._message_header(incoming.headers, "X-Trace-Id"),
-            "parent_span_id": self._message_header(
-                incoming.headers,
-                "X-Parent-Span-Id",
-            ),
-        }
-        try:
-            await asyncio.to_thread(
-                self._redis.enqueue_relay_message,
-                message_key=f"{self._message_key_prefix}{receipt_id}",
-                ready_key=self._ready_key,
-                receipt_id=receipt_id,
-                payload=relay_payload,
-                ttl_seconds=settings.message_relay_ttl_seconds,
-            )
-        except Exception:
-            await incoming.nack(requeue=True)
-            raise
-
-        await incoming.ack()
-        claimed = await asyncio.to_thread(self._claim_from_relay)
-        if claimed is None:
-            raise DependencyUnavailableError(
-                message="消息已转存但暂时无法领取",
-            )
-        return claimed
-
-    def ack_outbound(self, receipt_id: str) -> dict[str, str]:
-        """确认消息已由网关成功处理。"""
-        acknowledged = self._redis.ack_relay_message(
-            receipt_id=receipt_id,
-            processing_key=self._processing_key,
-            attempts_key=self._attempts_key,
-            message_key_prefix=self._message_key_prefix,
-        )
-        if not acknowledged:
-            raise ResourceNotFoundError(
-                message="消息回执不存在或租约已失效",
-            )
-        return {"receipt_id": receipt_id, "status": "acknowledged"}
-
-    def nack_outbound(self, receipt_id: str) -> dict[str, str]:
-        """处理失败时释放租约，使消息可以再次投递。"""
-        released = self._redis.nack_relay_message(
-            receipt_id=receipt_id,
-            ready_key=self._ready_key,
-            processing_key=self._processing_key,
-            message_key_prefix=self._message_key_prefix,
-        )
-        if not released:
-            raise ResourceNotFoundError(
-                message="消息回执不存在或租约已失效",
-            )
-        return {"receipt_id": receipt_id, "status": "requeued"}
-
     async def close(self) -> None:
-        """关闭 backend-data 持有的 RabbitMQ 连接。"""
+        """关闭 backend-data 持有的 RabbitMQ 连接。
+
+        保留原因：``app/main.py`` lifespan shutdown 调用本方法释放连接，
+        避免进程退出时连接泄漏。
+        """
         async with self._connect_lock:
             connection = self._connection
             self._connection = None
@@ -288,6 +155,13 @@ class MessageBrokerService:
                 await connection.close()
 
     def _claim_from_relay(self) -> dict[str, Any] | None:
+        """从 Redis relay 队列领取一条消息（带租约）。
+
+        保留原因：当前无调用方（原 ``claim_outbound`` 公开方法已删），
+        但保留了完整的 Redis 可靠消息租约实现（ready/processing/attempts/
+        dead-letter 四级流转），作为后续若重新引入基于 Redis 的出站消息
+        兜底机制（如 DLQ 重试、限流退避）时的参考模板。
+        """
         return self._redis.claim_relay_message(
             ready_key=self._ready_key,
             processing_key=self._processing_key,
@@ -328,6 +202,12 @@ class MessageBrokerService:
 
     @staticmethod
     def _validate_routing_segment(value: str, *, field_name: str) -> None:
+        """校验 routing_key 片段格式。
+
+        保留原因：当前无调用方（原 ``publish_inbound`` 公开方法已删），
+        但保留了 routing_key 校验逻辑，作为后续若重新引入 HTTP 入站
+        端点时的复用模板。
+        """
         if not ROUTING_SEGMENT_PATTERN.fullmatch(value):
             raise ValidationError(
                 message=(f"{field_name} 仅允许 1-64 位英文、数字、下划线和短横线")
@@ -338,7 +218,12 @@ class MessageBrokerService:
         headers: dict[str, Any] | None,
         name: str,
     ) -> str | None:
-        """兼容 aio-pika 字符串或字节消息头。"""
+        """兼容 aio-pika 字符串或字节消息头。
+
+        保留原因：当前无调用方（原 ``publish_inbound`` 公开方法已删），
+        但保留了 aio-pika header 容错解析逻辑，作为后续若重新引入
+        消息头处理逻辑时的复用模板。
+        """
         if not headers:
             return None
         value = headers.get(name) or headers.get(name.lower())

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Popconfirm, Table, Tag, message } from 'antd';
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { deleteBot, fetchBots, type BotItem } from './api/bot-api';
+import { deleteBot, fetchBots, type BotItem } from '@/api/bot-api';
 import SystemPage from '@/components/system-page/SystemPage';
 import { getRequestErrorMessage } from '@/utils/request';
 import BotFormModal from './components/BotFormModal';
@@ -112,6 +112,26 @@ export default function BotManagement(): React.ReactElement {
           <Tag color="warning">TEST</Tag>
         );
       },
+    },
+    {
+      title: '关联 Agent',
+      key: 'agent_name',
+      render: (_: unknown, record: BotItem) => {
+        if (!record.agent_id) {
+          return <span style={{ color: '#8c8c8c' }}>-</span>;
+        }
+        return (
+          <Tag color="purple">
+            {record.agent_name || record.agent_id}
+          </Tag>
+        );
+      },
+    },
+    {
+      title: '创建者',
+      dataIndex: 'created_by_name',
+      key: 'created_by_name',
+      render: (name: string | null) => name || '系统',
     },
     {
       title: '创建时间',

@@ -9,6 +9,7 @@ import Login from './pages/login/Login';
 import { PageLoading } from './components/page-loading/PageLoading';
 import { PERMISSION_CODE } from './constants/access-control';
 import {
+  AgentManagement,
   BotManagement,
   DataPlatformDashboard,
   DataPlatformDataItems,
@@ -137,6 +138,14 @@ export const router = createBrowserRouter([
         element: withPermission(
           <BotManagement />,
           [PERMISSION_CODE.BOT_MANAGE],
+        ),
+      },
+      // 数字员工-Agent管理
+      {
+        path: 'digital-employee/agents',
+        element: withPermission(
+          <AgentManagement />,
+          [PERMISSION_CODE.AGENT_MANAGE],
         ),
       },
     ],

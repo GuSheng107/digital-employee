@@ -67,47 +67,10 @@ manager: BotManager = BotManager()
 
 
 async def _outbound_relay_loop() -> None:
-    """经 data-client 长轮询领取消息，并按处理结果 ACK/NACK。"""
+    """基于 share 包的 rabbitmq-client 原生 AMQP 监听并处理出站消息。"""
     from src.core.hub import hub
 
-    while True:
-        receipt_id: str | None = None
-        finalized = False
-        try:
-            claimed = await message_bus_client.claim()
-            if claimed is None:
-                continue
-            raw_receipt = claimed.get("receipt_id")
-            payload = claimed.get("payload")
-            if not isinstance(raw_receipt, str) or not isinstance(payload, str):
-                raise ValueError("backend-data 返回了无效消息租约")
-            receipt_id = raw_receipt
-            trace_id = parse_uuid(claimed.get("trace_id"))
-            parent_span_id = parse_uuid(claimed.get("parent_span_id"))
-            trace_token = None
-            if trace_id is not None and parent_span_id is not None:
-                trace_token = bind_trace_context(
-                    TraceContext(trace_id=trace_id, span_id=parent_span_id)
-                )
-            try:
-                delivered = await hub.consume_outbound_payload(payload)
-                if delivered:
-                    await message_bus_client.acknowledge(receipt_id)
-                else:
-                    await message_bus_client.reject(receipt_id)
-            finally:
-                if trace_token is not None:
-                    reset_trace_context(trace_token)
-            finalized = True
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("[MESSAGE-RELAY] 消息领取失败")
-            message_bus_client.is_available = False
-            if receipt_id is not None and not finalized:
-                with suppress(Exception):
-                    await message_bus_client.reject(receipt_id)
-            await asyncio.sleep(message_bus_client.retry_seconds)
+    await message_bus_client.start_consumer(hub.consume_outbound_payload)
 
 
 @asynccontextmanager
@@ -115,18 +78,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """FastAPI 生命周期管理上下文。
 
     启动时完成以下初始化序列：
-    1. 经 data-client 要求 backend-data 核验消息拓扑。
-    2. 从配置文件加载机器人并注入主事件循环。
-    3. 启动 share 消息租约轮询与 Watchdog 守护线程。
+    1. 通过 share 包中的 rabbitmq-client 建立原生 AMQP 消息拓扑。
+    2. 从数据库加载机器人并注入主事件循环。
+    3. 启动异步 AMQP 消息消费者与 Watchdog 守护线程。
     """
-    # 1. backend-data 是唯一消息基础设施持有者；网关只检查 share 契约。
+    # 1. 建立 RabbitMQ AMQP 原生连接与消息拓扑
     try:
         await message_bus_client.ensure_ready()
-        logger.info("[MESSAGE-RELAY] backend-data 消息能力已就绪。")
+        logger.info("[MESSAGE-RELAY] RabbitMQ 原生 AMQP 消息能力已就绪。")
     except Exception as exc:
         logger.error(
-            "[MESSAGE-RELAY] backend-data 消息能力暂不可用 ({})。"
-            "网关将保留 Test 模式并在后台重试。",
+            "[MESSAGE-RELAY] RabbitMQ 消息能力暂不可用 ({})。"
+            "网关将在后台持续尝试重连。",
             exc,
         )
 
@@ -135,7 +98,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     manager.load_from_database()
     manager.inject_main_loop_to_all(main_loop)
 
-    # 3. 启动消息租约轮询和 Watchdog
+    # 3. 启动 AMQP 出站消息消费者和 Watchdog
     relay_task = asyncio.create_task(_outbound_relay_loop())
     manager.start_watchdog()
     try:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-import json
 from collections.abc import Awaitable, Callable, Iterable
 from datetime import UTC, datetime
 from typing import Any
@@ -58,7 +57,6 @@ DEFAULT_EXCLUDED_PATH_PREFIXES = (
     "/health",
     "/assets",
 )
-MQ_OUTBOUND_CLAIM_PATH = "/api/v1/infrastructure/message-broker/outbound/claim"
 
 
 class TraceMiddleware:
@@ -168,15 +166,10 @@ class TraceMiddleware:
                 response_body=bytes(response_body),
                 response_headers=response_headers,
             )
-            if not self._is_empty_message_poll(
-                path=str(scope.get("path", "")),
-                response_body=bytes(response_body),
-                response_content_type=response_headers.get("content-type", ""),
-            ):
-                try:
-                    await self.sink(batch)
-                except Exception:
-                    pass
+            try:
+                await self.sink(batch)
+            except Exception:
+                pass
             reset_trace_capture(capture_token)
             reset_trace_context(context_token)
 
@@ -184,24 +177,6 @@ class TraceMiddleware:
         return path.startswith(self.ingest_path_prefix) or any(
             path.startswith(prefix) for prefix in self.excluded_path_prefixes
         )
-
-    @staticmethod
-    def _is_empty_message_poll(
-        *,
-        path: str,
-        response_body: bytes,
-        response_content_type: str,
-    ) -> bool:
-        """空 MQ 长轮询不产生日志，实际领取到消息时仍完整记录。"""
-        if path != MQ_OUTBOUND_CLAIM_PATH or "application/json" not in (
-            response_content_type.lower()
-        ):
-            return False
-        try:
-            body = json.loads(response_body)
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            return False
-        return isinstance(body, dict) and body.get("data") is None
 
     @staticmethod
     def _headers(scope: Scope) -> dict[str, str]:

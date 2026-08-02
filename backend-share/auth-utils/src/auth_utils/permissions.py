@@ -16,4 +16,5 @@ class PermissionCode(StrEnum):
     DATA_PLATFORM_DATA_ITEMS = "admin:data_platform:data_items"
     DATA_PLATFORM_CONFIG = "admin:data_platform:config"
     BOT_MANAGE = "admin:bot:manage"
+    AGENT_MANAGE = "admin:agent:manage"
     OBSERVABILITY_LOG_VIEW = "admin:observability:log:view"

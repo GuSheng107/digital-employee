@@ -22,10 +22,13 @@ router = APIRouter()
 def list_bots(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    created_by: int | None = Query(default=None),
 ) -> dict:
-    """分页查询 Bot 列表（app_secret 脱敏）。"""
+    """分页查询 Bot 列表（app_secret 脱敏，支持按 created_by 隔离筛选）。"""
     service = BotService()
-    return success_response(service.list_bots(page=page, page_size=page_size))
+    return success_response(
+        service.list_bots(page=page, page_size=page_size, created_by=created_by)
+    )
 
 
 @router.get("/active", response_model=ApiResponse)
@@ -33,6 +36,13 @@ def list_active_bots() -> dict:
     """查询全部活跃 Bot（含 app_secret 明文，仅限内部服务调用）。"""
     service = BotService()
     return success_response(service.list_active_bots())
+
+
+@router.get("/{bot_id}", response_model=ApiResponse)
+def get_bot(bot_id: str) -> dict:
+    """获取单条 Bot 详情。"""
+    service = BotService()
+    return success_response(service.get_bot(bot_id=bot_id))
 
 
 @router.post("", response_model=ApiResponse)
@@ -46,6 +56,8 @@ def create_bot(payload: CreateBotRequest) -> dict:
         app_id=payload.app_id,
         app_secret=payload.app_secret,
         mode=payload.mode,
+        agent_id=payload.agent_id,
+        created_by=payload.created_by,
     )
     return success_response(result)
 

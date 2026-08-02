@@ -747,69 +747,6 @@ class DataClient:
         ).split(";", 1)[0]
         return response.content, content_type
 
-    async def ensure_message_broker(self) -> dict[str, Any]:
-        """要求 backend-data 建立并核验消息拓扑。"""
-        return await self._async_request_dict(
-            "POST",
-            "/api/v1/infrastructure/message-broker/topology",
-        )
-
-    async def publish_inbound_message(
-        self,
-        *,
-        platform: str,
-        bot_id: str,
-        payload: str,
-    ) -> dict[str, Any]:
-        """通过 backend-data 发布网关入站消息。"""
-        return await self._async_request_dict(
-            "POST",
-            "/api/v1/infrastructure/message-broker/inbound",
-            json={
-                "platform": platform,
-                "bot_id": bot_id,
-                "payload": payload,
-            },
-        )
-
-    async def claim_outbound_message(
-        self,
-        *,
-        timeout_seconds: float,
-    ) -> dict[str, Any] | None:
-        """从 backend-data 领取带租约的出站消息。"""
-        value = await self._async_request(
-            "GET",
-            "/api/v1/infrastructure/message-broker/outbound/claim",
-            params={"timeout_seconds": timeout_seconds},
-            timeout=max(self._timeout, timeout_seconds + 5.0),
-        )
-        if value is None:
-            return None
-        return self._ensure_dict(value)
-
-    async def acknowledge_outbound_message(
-        self,
-        receipt_id: str,
-    ) -> dict[str, Any]:
-        """确认出站消息处理成功。"""
-        return await self._async_request_dict(
-            "POST",
-            "/api/v1/infrastructure/message-broker/outbound/ack",
-            json={"receipt_id": receipt_id},
-        )
-
-    async def reject_outbound_message(
-        self,
-        receipt_id: str,
-    ) -> dict[str, Any]:
-        """释放出站消息租约以便重试。"""
-        return await self._async_request_dict(
-            "POST",
-            "/api/v1/infrastructure/message-broker/outbound/nack",
-            json={"receipt_id": receipt_id},
-        )
-
     def reset_identity_rate_limit(
         self,
         *,
@@ -885,17 +822,30 @@ class DataClient:
 
     # ── Bot 管理 ──────────────────────────────────
 
-    def list_bots(self, *, page: int, page_size: int) -> dict[str, Any]:
-        """分页查询 Bot 列表。"""
+    def list_bots(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        created_by: int | None = None,
+    ) -> dict[str, Any]:
+        """分页查询 Bot 列表（支持按 created_by 筛选）。"""
+        params: dict[str, Any] = {"page": page, "page_size": page_size}
+        if created_by is not None:
+            params["created_by"] = created_by
         return self._request_dict(
             "GET",
             "/api/v1/bots",
-            params={"page": page, "page_size": page_size},
+            params=params,
         )
 
     def list_active_bots(self) -> list[dict[str, Any]]:
         """查询全部活跃 Bot（含 app_secret 明文）。"""
         return self._request_list("GET", "/api/v1/bots/active")
+
+    def get_bot(self, *, bot_id: str) -> dict[str, Any]:
+        """获取单个 Bot 详情。"""
+        return self._request_dict("GET", f"/api/v1/bots/{bot_id}")
 
     def create_bot(
         self,
@@ -906,19 +856,26 @@ class DataClient:
         app_id: str,
         app_secret: str,
         mode: str = "test",
+        agent_id: str | None = None,
+        created_by: int | None = None,
     ) -> dict[str, Any]:
         """创建 Bot。"""
+        payload: dict[str, Any] = {
+            "bot_id": bot_id,
+            "name": name,
+            "platform": platform,
+            "app_id": app_id,
+            "app_secret": app_secret,
+            "mode": mode,
+        }
+        if agent_id is not None:
+            payload["agent_id"] = agent_id
+        if created_by is not None:
+            payload["created_by"] = created_by
         return self._request_dict(
             "POST",
             "/api/v1/bots",
-            json={
-                "bot_id": bot_id,
-                "name": name,
-                "platform": platform,
-                "app_id": app_id,
-                "app_secret": app_secret,
-                "mode": mode,
-            },
+            json=payload,
         )
 
     def update_bot(self, *, bot_id: str, **fields: Any) -> dict[str, Any]:
@@ -934,6 +891,66 @@ class DataClient:
         return self._request_dict(
             "DELETE",
             f"/api/v1/bots/{bot_id}",
+        )
+
+    # ── Agent 管理 ─────────────────────────────────
+
+    def list_agents(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        created_by: int | None = None,
+    ) -> dict[str, Any]:
+        """分页查询 Agent 列表。"""
+        params: dict[str, Any] = {"page": page, "page_size": page_size}
+        if created_by is not None:
+            params["created_by"] = created_by
+        return self._request_dict(
+            "GET",
+            "/api/v1/agents",
+            params=params,
+        )
+
+    def get_agent(self, *, agent_id: str) -> dict[str, Any]:
+        """获取单个 Agent 详情。"""
+        return self._request_dict("GET", f"/api/v1/agents/{agent_id}")
+
+    def create_agent(
+        self,
+        *,
+        agent_id: str,
+        name: str,
+        status: int = 1,
+        created_by: int | None = None,
+    ) -> dict[str, Any]:
+        """创建 Agent。"""
+        payload: dict[str, Any] = {
+            "agent_id": agent_id,
+            "name": name,
+            "status": status,
+        }
+        if created_by is not None:
+            payload["created_by"] = created_by
+        return self._request_dict(
+            "POST",
+            "/api/v1/agents",
+            json=payload,
+        )
+
+    def update_agent(self, *, agent_id: str, **fields: Any) -> dict[str, Any]:
+        """更新 Agent 配置。"""
+        return self._request_dict(
+            "POST",
+            f"/api/v1/agents/{agent_id}",
+            json=fields,
+        )
+
+    def delete_agent(self, agent_id: str) -> dict[str, Any]:
+        """软删除 Agent。"""
+        return self._request_dict(
+            "DELETE",
+            f"/api/v1/agents/{agent_id}",
         )
 
     def close(self) -> None:

@@ -56,6 +56,7 @@ Thumbs.db
 data/
 logs/
 *.log
+*.sql
 .attachments/
 .pytest_cache/
 .config.toml.lock

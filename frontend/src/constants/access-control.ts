@@ -21,6 +21,7 @@ interface PermissionCodeMap {
   DATA_PLATFORM_DATA_ITEMS: string;
   DATA_PLATFORM_CONFIG: string;
   BOT_MANAGE: string;
+  AGENT_MANAGE: string;
   OBSERVABILITY_LOG_VIEW: string;
 }
 
@@ -51,6 +52,7 @@ export const PERMISSION_CODE: Readonly<PermissionCodeMap> = Object.freeze({
   DATA_PLATFORM_DATA_ITEMS: 'admin:data_platform:data_items',
   DATA_PLATFORM_CONFIG: 'admin:data_platform:config',
   BOT_MANAGE: 'admin:bot:manage',
+  AGENT_MANAGE: 'admin:agent:manage',
   OBSERVABILITY_LOG_VIEW: 'admin:observability:log:view',
 });
 
