@@ -3,7 +3,7 @@
 除本服务外，其他后端不得导入这些模型或直接访问 PostgreSQL。
 """
 
-from app.models.agent import Agent, BotAgent
+from app.models.agent import Agent
 from app.models.bot import Bot, BotCallPermission, UserBot
 from app.models.data_item import DataItem
 from app.models.menu import Menu, RoleMenu
@@ -22,7 +22,6 @@ from app.models.user_permission import UserMenu, UserPermission
 __all__ = [
     "Agent",
     "Bot",
-    "BotAgent",
     "BotCallPermission",
     "DataItem",
     "Menu",

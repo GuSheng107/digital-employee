@@ -19,6 +19,7 @@ from observability import (
     trace_operation,
 )
 from pydantic import ValidationError
+from rabbitmq_client import ConsumerResult
 
 from src.core.schemas import (
     MessageContent,
@@ -96,14 +97,17 @@ class MessageHub:
                     ]
                     await self.process_outbound(reply_err)
 
-    async def consume_outbound_payload(self, payload_json: str) -> bool:
+    async def consume_outbound_payload(self, payload_json: str) -> ConsumerResult:
         """解析 backend-data 领取的消息并转交出站切面。
 
         Args:
             payload_json: 标准消息 JSON。
 
         Returns:
-            是否完成解析和平台发送，用于决定 ACK 或 NACK。
+            :class:`ConsumerResult`，决定 SDK 侧 ACK/RETRY/DLQ 路由：
+            - 消息格式校验失败 → :data:`ConsumerResult.DLQ`（不可重试）
+            - 其他异常 → :data:`ConsumerResult.DLQ`（与 SDK 侧异常处理一致）
+            - 正常路径透传 :meth:`process_outbound` 的返回值
         """
         async with trace_operation(
             service=TraceService.BACKEND_GATEWAY,
@@ -119,12 +123,13 @@ class MessageHub:
                 std_msg = StandardMessage.model_validate_json(payload_json)
                 return await self.process_outbound(std_msg)
             except ValidationError:
-                return False
+                # 消息格式错误，重试无意义，直接进 DLQ
+                return ConsumerResult.DLQ
             except Exception:
                 logger.exception("[HUB] consume_outbound_payload 解析或投递失败")
-                return False
+                return ConsumerResult.DLQ
 
-    async def process_outbound(self, msg: StandardMessage) -> bool:
+    async def process_outbound(self, msg: StandardMessage) -> ConsumerResult:
         """【出站总出口】反归一化发送（承接测试与生产汇流）。
 
         查找对应 Bot 实例及其适配器，调用适配器的 send_message 方法
@@ -132,16 +137,23 @@ class MessageHub:
 
         Args:
             msg: 出站的标准归一化消息体。
+
+        Returns:
+            :class:`ConsumerResult`：
+            - 配置缺失（get_bot_func 未注册 / Bot 不存在 / adapter 缺失）→
+              :data:`ConsumerResult.DLQ`，重试无意义
+            - IM 平台发送失败 → :data:`ConsumerResult.RETRY`，可能瞬时故障
+            - 发送成功 → :data:`ConsumerResult.ACK`
         """
         if not self.get_bot_func:
-            return False
+            return ConsumerResult.DLQ
 
         bot_instance = self.get_bot_func(msg.bot_id)
         if bot_instance is None:
-            return False
+            return ConsumerResult.DLQ
 
         if not hasattr(bot_instance, "adapter") or bot_instance.adapter is None:
-            return False
+            return ConsumerResult.DLQ
         try:
             async with trace_operation(
                 service=TraceService.BACKEND_GATEWAY,
@@ -155,10 +167,11 @@ class MessageHub:
                 attributes={"platform": msg.platform, "bot_id": msg.bot_id},
             ):
                 bot_instance.adapter.send_message(msg)
-            return True
+            return ConsumerResult.ACK
         except Exception:
+            # IM 平台发送失败：可能是网络抖动、限流、鉴权过期等，可重试
             logger.exception("[HUB] process_outbound 消息发送失败")
-            return False
+            return ConsumerResult.RETRY
 
     async def _mock_agent_process(self, msg: StandardMessage) -> None:
         """【保留核心项】纯异步非阻塞本地业务模拟。

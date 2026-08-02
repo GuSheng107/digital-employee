@@ -747,69 +747,6 @@ class DataClient:
         ).split(";", 1)[0]
         return response.content, content_type
 
-    async def ensure_message_broker(self) -> dict[str, Any]:
-        """要求 backend-data 建立并核验消息拓扑。"""
-        return await self._async_request_dict(
-            "POST",
-            "/api/v1/infrastructure/message-broker/topology",
-        )
-
-    async def publish_inbound_message(
-        self,
-        *,
-        platform: str,
-        bot_id: str,
-        payload: str,
-    ) -> dict[str, Any]:
-        """通过 backend-data 发布网关入站消息。"""
-        return await self._async_request_dict(
-            "POST",
-            "/api/v1/infrastructure/message-broker/inbound",
-            json={
-                "platform": platform,
-                "bot_id": bot_id,
-                "payload": payload,
-            },
-        )
-
-    async def claim_outbound_message(
-        self,
-        *,
-        timeout_seconds: float,
-    ) -> dict[str, Any] | None:
-        """从 backend-data 领取带租约的出站消息。"""
-        value = await self._async_request(
-            "GET",
-            "/api/v1/infrastructure/message-broker/outbound/claim",
-            params={"timeout_seconds": timeout_seconds},
-            timeout=max(self._timeout, timeout_seconds + 5.0),
-        )
-        if value is None:
-            return None
-        return self._ensure_dict(value)
-
-    async def acknowledge_outbound_message(
-        self,
-        receipt_id: str,
-    ) -> dict[str, Any]:
-        """确认出站消息处理成功。"""
-        return await self._async_request_dict(
-            "POST",
-            "/api/v1/infrastructure/message-broker/outbound/ack",
-            json={"receipt_id": receipt_id},
-        )
-
-    async def reject_outbound_message(
-        self,
-        receipt_id: str,
-    ) -> dict[str, Any]:
-        """释放出站消息租约以便重试。"""
-        return await self._async_request_dict(
-            "POST",
-            "/api/v1/infrastructure/message-broker/outbound/nack",
-            json={"receipt_id": receipt_id},
-        )
-
     def reset_identity_rate_limit(
         self,
         *,

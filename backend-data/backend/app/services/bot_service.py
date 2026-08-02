@@ -25,6 +25,12 @@ from app.models.bot import Bot
 from app.models.user import User
 from sqlalchemy import func
 
+# 可空字段白名单：这些字段允许显式传入 None 来置空（与“未传字段”区分，
+# 后者由 ``model_dump(exclude_unset=True)`` 在路由层过滤掉）。
+# 命中白名单的字段即便值为 None 也会 ``setattr``；其他字段维持
+# ``value is not None`` 的旧语义，避免必填字段（如 app_secret）被误传 null 落库。
+NULLABLE_FIELDS: frozenset[str] = frozenset({"agent_id"})
+
 
 def _bot_to_dict(
     bot: Bot,
@@ -209,8 +215,12 @@ class BotService:
                     message=f"Bot '{bot_id}' 不存在",
                 )
             for key, value in fields.items():
-                if value is not None and hasattr(bot, key):
-                    setattr(bot, key, encrypt(value) if key == "app_secret" else value)
+                if not hasattr(bot, key):
+                    continue
+                if value is None and key not in NULLABLE_FIELDS:
+                    # 非白名单字段跳过 None，避免必填字段被误传 null 落库
+                    continue
+                setattr(bot, key, encrypt(value) if key == "app_secret" else value)
             session.commit()
             session.refresh(bot)
             return _bot_to_dict(bot, mask_secret=True)

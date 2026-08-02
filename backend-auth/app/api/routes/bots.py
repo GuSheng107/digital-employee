@@ -85,6 +85,7 @@ def create_bot(
         app_id=payload.app_id,
         app_secret=payload.app_secret,
         mode=payload.mode,
+        agent_id=payload.agent_id,
         created_by=current_user.id,
     )
     return success_response(result)

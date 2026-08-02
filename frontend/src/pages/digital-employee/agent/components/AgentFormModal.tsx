@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Form, Input, Modal, Select, message } from 'antd';
-import { createAgent, updateAgent, type AgentItem, type CreateAgentPayload, type UpdateAgentPayload } from '../api/agent-api';
+import { createAgent, updateAgent, type AgentItem, type CreateAgentPayload, type UpdateAgentPayload } from '@/api/agent-api';
 import { getRequestErrorMessage } from '@/utils/request';
 
 interface AgentFormModalProps {

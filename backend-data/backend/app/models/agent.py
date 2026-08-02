@@ -54,18 +54,3 @@ class Agent(Base):
 
     def __repr__(self) -> str:
         return f"<Agent id={self.id} agent_id={self.agent_id!r}>"
-
-
-class BotAgent(Base):
-    """Bot→Agent 可见性映射表（多对多）。"""
-
-    __tablename__ = "bot_agents"
-
-    bot_id: Mapped[int] = mapped_column(
-        ForeignKey("bots.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    agent_id: Mapped[int] = mapped_column(
-        ForeignKey("agents.id", ondelete="CASCADE"),
-        primary_key=True,
-    )

@@ -118,7 +118,6 @@ class Settings(BaseSettings):
     message_lease_seconds: int = 60
     message_max_delivery_attempts: int = 5
     message_dead_letter_limit: int = 1000
-    message_poll_timeout_seconds: float = 20.0
 
     minio_endpoint: str = "127.0.0.1:9000"
     minio_access_key: str = Field(default="", repr=False)

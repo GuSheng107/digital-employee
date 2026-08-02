@@ -15,6 +15,12 @@ from app.core.database import DatabaseRole, get_database_client
 from app.models.agent import Agent
 from app.models.user import User
 
+# 可空字段白名单：与 bot_service 对称定义。当前 Agent 的可更新字段
+# （name / status）均不允许置空，故为空集；保留此结构是为了在未来新增
+# 可空字段（如 description、parent_agent_id 等）时无需重构 update 逻辑，
+# 只需把字段名加入此集合即可。
+NULLABLE_FIELDS: frozenset[str] = frozenset()
+
 
 def _agent_to_dict(
     agent: Agent,
@@ -135,8 +141,11 @@ class AgentService:
             if agent is None:
                 raise ResourceNotFoundError(message=f"Agent '{agent_id}' 不存在")
             for key, value in fields.items():
-                if value is not None and hasattr(agent, key):
-                    setattr(agent, key, value)
+                if not hasattr(agent, key):
+                    continue
+                if value is None and key not in NULLABLE_FIELDS:
+                    continue
+                setattr(agent, key, value)
             session.commit()
             session.refresh(agent)
             return _agent_to_dict(agent)

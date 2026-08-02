@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Form, Input, Modal, Select, message } from 'antd';
-import { createBot, updateBot, type BotItem, type CreateBotPayload, type UpdateBotPayload } from '../api/bot-api';
-import { fetchAgents, type AgentItem } from '../../agent/api/agent-api';
+import { createBot, updateBot, type BotItem, type CreateBotPayload, type UpdateBotPayload } from '@/api/bot-api';
+import { fetchAgents, type AgentItem } from '@/api/agent-api';
 import { getRequestErrorMessage } from '@/utils/request';
 
 interface BotFormModalProps {

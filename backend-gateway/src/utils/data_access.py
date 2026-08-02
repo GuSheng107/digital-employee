@@ -7,13 +7,13 @@ Redis、MinIO 或 RabbitMQ 的驱动、连接、拓扑和凭证。
 from __future__ import annotations
 
 import os
+from collections.abc import Awaitable, Callable
 from io import BytesIO
 from typing import Any
 
 from data_client import DataClient, get_data_client
-from rabbitmq_client import RabbitMQClient, get_rabbitmq_client
+from rabbitmq_client import ConsumerResult, RabbitMQClient, get_rabbitmq_client
 
-DEFAULT_MESSAGE_POLL_SECONDS = 20.0
 DEFAULT_DATA_RETRY_SECONDS = 5.0
 DEFAULT_STORAGE_OBJECT_MAX_SIZE_BYTES = 20 * 1024 * 1024
 
@@ -125,7 +125,7 @@ class GatewayMessageBusClient:
 
     async def start_consumer(
         self,
-        callback: Any,
+        callback: Callable[[str], Awaitable[ConsumerResult]],
     ) -> None:
         """启动出站消息 AMQP 监听消费者。"""
         await self._get_mq_client().start_outbound_consumer(callback)

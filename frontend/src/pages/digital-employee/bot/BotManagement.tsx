@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Popconfirm, Table, Tag, message } from 'antd';
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { deleteBot, fetchBots, type BotItem } from './api/bot-api';
+import { deleteBot, fetchBots, type BotItem } from '@/api/bot-api';
 import SystemPage from '@/components/system-page/SystemPage';
 import { getRequestErrorMessage } from '@/utils/request';
 import BotFormModal from './components/BotFormModal';
