@@ -13,16 +13,20 @@ import {
   type UserInfo,
 } from '@/api/auth-api';
 import {
+  appendTraceId,
   getRequestErrorMessage,
   HttpError,
   isServiceUnavailableError,
 } from '@/utils/request';
 
-/** 认证服务暂时不可用时的统一提示文案。
+/** 认证服务暂时不可用时的统一基础文案（不含 traceId）。
  *
- * 导出常量便于 MainContent 等组件精确匹配该场景，避免用模糊的字符串
- * 包含判断区分错误类型。 */
+ * 实际展示时通过 appendTraceId 追加 traceId。组件判别场景请使用
+ * profileErrorKind 而非字符串匹配，避免文案调整或追加 traceId 后分支失效。 */
 export const AUTH_SERVICE_UNAVAILABLE_MESSAGE = '认证服务暂时不可用，请稍后重试';
+
+/** 用户资料加载失败的错误种类，供 UI 按结构化标记分支展示。 */
+export type ProfileErrorKind = 'service-unavailable' | 'business';
 
 interface AuthState {
   /** 是否已登录 */
@@ -37,6 +41,8 @@ interface AuthState {
   profileLoading: boolean;
   /** 用户资料异步加载失败时的可恢复错误。 */
   profileError: string | null;
+  /** 用户资料加载失败的错误种类，供 UI 按结构化标记分支展示（替代字符串匹配）。 */
+  profileErrorKind: ProfileErrorKind | null;
   /** 登录态恢复中（页面刷新时 restoreAuth 执行期间为 true，完成后置 false） */
   restoring: boolean;
   /** 当前用户可见的菜单树；空数组表示尚未加载或未授权。 */
@@ -106,6 +112,7 @@ export const useUserStore = create<AuthState>((set) => ({
   loading: false,
   profileLoading: false,
   profileError: null,
+  profileErrorKind: null,
   // 初始 true：AppInitializer 的 restoreAuth 完成前，RequireAuth 显示加载动画而非立即跳转登录页
   restoring: true,
   menus: [],
@@ -121,6 +128,7 @@ export const useUserStore = create<AuthState>((set) => ({
         loading: false,
         restoring: false,
         profileError: null,
+        profileErrorKind: null,
       });
       void useUserStore.getState().hydrateCurrentUser();
       return tokenPair;
@@ -147,6 +155,7 @@ export const useUserStore = create<AuthState>((set) => ({
         loading: false,
         profileLoading: false,
         profileError: null,
+        profileErrorKind: null,
       });
     } catch (error) {
       set({ loading: false });
@@ -169,6 +178,7 @@ export const useUserStore = create<AuthState>((set) => ({
         menus: [],
         profileLoading: false,
         profileError: null,
+        profileErrorKind: null,
       });
     }
   },
@@ -190,6 +200,7 @@ export const useUserStore = create<AuthState>((set) => ({
       restoring: false,
       profileLoading: true,
       profileError: null,
+      profileErrorKind: null,
     });
     try {
       const info = await fetchCurrentUserOnce();
@@ -201,6 +212,7 @@ export const useUserStore = create<AuthState>((set) => ({
         restoring: false,
         profileLoading: false,
         profileError: null,
+        profileErrorKind: null,
       });
     } catch (error) {
       if (isAuthenticationFailure(error)) {
@@ -213,18 +225,21 @@ export const useUserStore = create<AuthState>((set) => ({
           menus: [],
           profileLoading: false,
           profileError: null,
+          profileErrorKind: null,
         });
         return;
       }
       // 服务不可用（连接被拒绝/超时/5xx 网关错误）：保留登录态，提示重试，
       // 避免后端短暂不可用时把已登录用户踢回登录页。
       const serviceDown = isServiceUnavailableError(error);
+      const traceId = error instanceof HttpError ? error.traceId : undefined;
       set({
         restoring: false,
         isAuthenticated: true,
         profileLoading: false,
+        profileErrorKind: serviceDown ? 'service-unavailable' : 'business',
         profileError: serviceDown
-          ? AUTH_SERVICE_UNAVAILABLE_MESSAGE
+          ? appendTraceId(AUTH_SERVICE_UNAVAILABLE_MESSAGE, traceId)
           : getRequestErrorMessage(error, '用户信息加载失败，请稍后重试'),
       });
     }
@@ -239,12 +254,13 @@ export const useUserStore = create<AuthState>((set) => ({
       menus: [],
       profileLoading: false,
       profileError: null,
+      profileErrorKind: null,
     });
   },
 
   reloadMenus: async () => {
     // 菜单/权限变更后，重新拉取 /auth/me 刷新本地缓存的菜单树与权限码
-    set({ profileLoading: true, profileError: null });
+    set({ profileLoading: true, profileError: null, profileErrorKind: null });
     try {
       const info = await fetchCurrentUserOnce();
       set({
@@ -253,6 +269,7 @@ export const useUserStore = create<AuthState>((set) => ({
         menus: info.menus ?? [],
         profileLoading: false,
         profileError: null,
+        profileErrorKind: null,
       });
     } catch (error) {
       set({ profileLoading: false });
@@ -265,7 +282,7 @@ export const useUserStore = create<AuthState>((set) => ({
     if (currentState.profileLoading || currentState.userInfo) {
       return;
     }
-    set({ profileLoading: true, profileError: null });
+    set({ profileLoading: true, profileError: null, profileErrorKind: null });
     try {
       const info = await fetchCurrentUserOnce();
       set({
@@ -274,6 +291,7 @@ export const useUserStore = create<AuthState>((set) => ({
         menus: info.menus ?? [],
         profileLoading: false,
         profileError: null,
+        profileErrorKind: null,
       });
     } catch (error) {
       if (isAuthenticationFailure(error)) {
@@ -285,14 +303,17 @@ export const useUserStore = create<AuthState>((set) => ({
           menus: [],
           profileLoading: false,
           profileError: null,
+          profileErrorKind: null,
         });
         return;
       }
       const serviceDown = isServiceUnavailableError(error);
+      const traceId = error instanceof HttpError ? error.traceId : undefined;
       set({
         profileLoading: false,
+        profileErrorKind: serviceDown ? 'service-unavailable' : 'business',
         profileError: serviceDown
-          ? AUTH_SERVICE_UNAVAILABLE_MESSAGE
+          ? appendTraceId(AUTH_SERVICE_UNAVAILABLE_MESSAGE, traceId)
           : getRequestErrorMessage(error, '用户信息加载失败，请稍后重试'),
       });
     }

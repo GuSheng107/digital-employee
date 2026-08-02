@@ -6,7 +6,7 @@ import axios, {
 } from 'axios';
 import { createTraceHeaders, TRACE_ID_HEADER } from './trace-context';
 
-/** HTTP 错误：保留 status/data/config/code/traceId 等结构化字段，便于调用方按状态码分支处理 */
+/** HTTP 错误：保留 status/data/config/code/traceId/networkError 等结构化字段，便于调用方按状态码分支处理 */
 export class HttpError extends Error {
   readonly status?: number;
   readonly code?: string;
@@ -14,6 +14,13 @@ export class HttpError extends Error {
   readonly config?: unknown;
   /** 本次请求的 traceId，便于联调 debug 与日志查询页定位 */
   readonly traceId?: string;
+  /** 是否为网络层失败（无 HTTP 响应：连接被拒绝/DNS 失败/超时无响应）。
+   *
+   * 用于区分“服务不可达（可重试）”与“业务失败（HTTP 200 + success:false，
+   * status 同样为 undefined）”——后者不应被判为服务不可用，否则用户会卡在
+   * 伪登录态死循环（如“用户已被禁用”永远重试不成功）。
+   */
+  readonly networkError?: boolean;
 
   constructor(
     message: string,
@@ -23,6 +30,7 @@ export class HttpError extends Error {
       data?: unknown;
       config?: unknown;
       traceId?: string;
+      networkError?: boolean;
     } = {},
   ) {
     super(message);
@@ -32,6 +40,7 @@ export class HttpError extends Error {
     this.data = opts.data;
     this.config = opts.config;
     this.traceId = opts.traceId;
+    this.networkError = opts.networkError;
   }
 }
 
@@ -53,10 +62,17 @@ function readHeader(headers: unknown, name: string): string | undefined {
     }
     return undefined;
   }
-  // 普通对象：按小写 key 读取
-  const lower = (headers as Record<string, unknown>)[name.toLowerCase()];
-  if (typeof lower === 'string' && lower.trim()) {
-    return lower.trim();
+  // 普通对象：遍历 key 做大小写不敏感匹配，兼容未归一化的 header 字典
+  const target = name.toLowerCase();
+  const record = headers as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (key.toLowerCase() === target) {
+      const value = record[key];
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+      return undefined;
+    }
   }
   return undefined;
 }
@@ -185,7 +201,7 @@ export abstract class BaseRequest {
       (error) => Promise.reject(error),
     );
 
-    // 响应拦截：normalize HTTP 错误为 HttpError（保留 status/code/data/config/traceId），
+    // 响应拦截：normalize HTTP 错误为 HttpError（保留 status/code/data/config/traceId/networkError），
     // 不展示错误（不耦合 UI 库），调用方在 catch 中自行展示
     this.instance.interceptors.response.use(
       (response: AxiosResponse) => response,
@@ -195,9 +211,13 @@ export abstract class BaseRequest {
           return recoveredResponse;
         }
         const { message, status, code, data, config } = this.buildHttpError(error);
+        // 网络层失败：axios 错误无 response 字段（连接被拒绝/DNS 失败/超时无响应）。
+        // 业务失败（HTTP 200 + success:false）在 unwrapResponse 中抛出，不走拦截器，
+        // 其 networkError 保持 undefined，从而不会被 isServiceUnavailableError 误判。
+        const networkError = !hasField(error, 'response');
         const traceId = extractTraceId(error);
         return Promise.reject(
-          new HttpError(message, { status, code, data, config, traceId }),
+          new HttpError(message, { status, code, data, config, traceId, networkError }),
         );
       },
     );
@@ -313,9 +333,14 @@ export abstract class BaseRequest {
 /** 判断是否为服务不可用类错误。
  *
  * 覆盖两种场景：
- *   - 网络层失败（连接被拒绝/DNS 失败/超时无响应）：HttpError.status 为
- *     undefined，axios 错误未携带 HTTP 响应；
+ *   - 网络层失败（连接被拒绝/DNS 失败/超时无响应）：HttpError.networkError
+ *     为 true（由响应拦截器在 axios 错误无 response 时设置）；
  *   - 网关类 5xx（502/503/504）：上游服务或网关自身不可用。
+ *
+ * 不再用 `status === undefined` 判定网络层失败——业务失败（HTTP 200 +
+ * success:false）在 unwrapResponse 中抛出的 HttpError 同样 status 为
+ * undefined，但 networkError 为 undefined，从而不会误命中本函数，避免
+ * “用户已被禁用”等业务错误陷入伪登录态死循环。
  *
  * 调用方据此区分“服务暂时不可用（可重试）”与“业务返回的错误（如 403）”，
  * 避免在后端短暂不可用时把已登录用户重定向回登录页。
@@ -325,7 +350,7 @@ export function isServiceUnavailableError(error: unknown): boolean {
     return false;
   }
   return (
-    error.status === undefined
+    error.networkError === true
     || error.status === 502
     || error.status === 503
     || error.status === 504
@@ -353,8 +378,12 @@ export function getRequestErrorMessage(error: unknown, fallback = '请求失败'
   return error instanceof Error ? error.message : fallback;
 }
 
-/** 在错误文案末尾追加 traceId；无 traceId 时原样返回。 */
-function appendTraceId(message: string, traceId: string | undefined): string {
+/** 在错误文案末尾追加 traceId；无 traceId 时原样返回。
+ *
+ * 导出供 store 在“服务不可用”等固定基础文案场景也保留 traceId，确保最需要
+ * 排查的网络层失败场景（响应头缺失，traceId 来自前端请求头）也能反馈线索。
+ */
+export function appendTraceId(message: string, traceId: string | undefined): string {
   if (!traceId) {
     return message;
   }
