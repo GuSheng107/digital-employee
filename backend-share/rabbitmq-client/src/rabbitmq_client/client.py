@@ -23,17 +23,19 @@ from observability import (
 )
 
 DEFAULT_RABBITMQ_URL = "amqp://guest:guest@127.0.0.1:5672/"
-EXCHANGE_NAME = "digital_employee.events"
-INBOUND_QUEUE_NAME = "inbound_queue"
-OUTBOUND_QUEUE_NAME = "outbound_queue"
-INBOUND_ROUTING_KEY = "inbound.message"
-OUTBOUND_ROUTING_KEY = "outbound.message"
+# 以下拓扑名称从 Nacos 配置（经环境变量注入）读取，backend-data 为统一声明者。
+# share 包通过幂等 declare 获取本地引用，不自主声明拓扑。
+EXCHANGE_NAME = os.getenv("RABBITMQ_EXCHANGE", "digital_employee.events")
+INBOUND_QUEUE_NAME = os.getenv("RABBITMQ_INBOUND_QUEUE", "inbound_queue")
+OUTBOUND_QUEUE_NAME = os.getenv("RABBITMQ_OUTBOUND_QUEUE", "outbound_queue")
+INBOUND_ROUTING_KEY = os.getenv("RABBITMQ_INBOUND_ROUTING_KEY", "inbound.message")
+OUTBOUND_ROUTING_KEY = os.getenv("RABBITMQ_OUTBOUND_ROUTING_KEY", "outbound.message")
 
 # 死信拓扑：DLX 采用 direct 类型，DLQ 与 outbound_queue 同 routing_key 绑定。
 # 消费者手动控制 ACK/RETRY/DLQ 三态，不依赖队列级 x-dead-letter-exchange 自动转投，
 # 便于在死信消息中附加原因、保留原始 retry_count。
-DLX_NAME = "digital_employee.dlx"
-DLQ_NAME = "outbound_dlq"
+DLX_NAME = os.getenv("RABBITMQ_DLX", "digital_employee.dlx")
+DLQ_NAME = os.getenv("RABBITMQ_DLQ", "outbound_dlq")
 DLQ_ROUTING_KEY = OUTBOUND_ROUTING_KEY
 
 # 重试上限：超过后转发 DLQ。IM 平台瞬时故障通常几秒到几分钟恢复，5 次重试可覆盖大多数场景。

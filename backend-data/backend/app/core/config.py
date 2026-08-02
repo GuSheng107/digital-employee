@@ -64,6 +64,8 @@ def _adapt_nacos_to_backend_data_env() -> None:
     # Redis 已匹配（REDIS_HOST/REDIS_PORT/REDIS_PASSWORD），无需转换
     # RabbitMQ 仅由 backend-data 持有连接与拓扑配置。
     nacos_adapter.compose_rabbitmq_url()
+    # RabbitMQ 拓扑名称：Nacos 拍平的 RABBITMQ_EXCHANGE / INBOUND_QUEUE / OUTBOUND_QUEUE
+    # / ROUTING_KEY / DLX / DLQ 等字段名与 settings 完全一致，无需适配转换。
 
 
 class Settings(BaseSettings):
@@ -133,12 +135,21 @@ class Settings(BaseSettings):
         default="amqp://guest:guest@127.0.0.1:5672/",
         repr=False,
     )
-    rabbitmq_exchange: str = "bot.topic.exchange"
-    rabbitmq_inbound_queue: str = "q_inbound_to_agent"
-    rabbitmq_outbound_queue: str = "q_outbound_to_gateway"
-    rabbitmq_inbound_publish_prefix: str = "msg.inbound"
-    rabbitmq_inbound_routing_key: str = "msg.inbound.#"
-    rabbitmq_outbound_routing_key: str = "msg.outbound.#"
+    # Topic 交换机名称（backend-data 统一声明，share 包幂等获取引用）
+    rabbitmq_exchange: str = "digital_employee.events"
+    # 上行（终端 -> 系统）入站消息队列
+    rabbitmq_inbound_queue: str = "inbound_queue"
+    # 下行（系统 -> 终端）出站消息队列
+    rabbitmq_outbound_queue: str = "outbound_queue"
+    # 入站消息路由键
+    rabbitmq_inbound_routing_key: str = "inbound.message"
+    # 出站消息路由键
+    rabbitmq_outbound_routing_key: str = "outbound.message"
+    # 死信交换机名称（Direct 类型）
+    rabbitmq_dlx: str = "digital_employee.dlx"
+    # 死信队列名称
+    rabbitmq_dlq: str = "outbound_dlq"
+    # 消费者预取计数
     rabbitmq_prefetch_count: int = 20
 
     cors_origins: str = "http://127.0.0.1:5173,http://localhost:5173"

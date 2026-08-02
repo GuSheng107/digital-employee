@@ -31,10 +31,17 @@ configure_business_observability()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # 启动时自动声明 RabbitMQ 拓扑（Exchange + Queue + DLX/DLQ）
+    # 确保其他服务（如 backend-gateway）启动前拓扑已就绪。
+    mq_service = get_message_broker_service()
+    try:
+        await mq_service.ensure_topology()
+    except Exception:
+        logger.exception("RabbitMQ 拓扑声明失败，请检查 RabbitMQ 服务状态")
     try:
         yield
     finally:
-        await get_message_broker_service().close()
+        await mq_service.close()
         close_auth_client()
 
 
