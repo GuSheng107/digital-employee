@@ -6,16 +6,24 @@ import axios, {
 } from 'axios';
 import { createTraceHeaders, TRACE_ID_HEADER } from './trace-context';
 
-/** HTTP 错误：保留 status/data/config/code 等结构化字段，便于调用方按状态码分支处理 */
+/** HTTP 错误：保留 status/data/config/code/traceId 等结构化字段，便于调用方按状态码分支处理 */
 export class HttpError extends Error {
   readonly status?: number;
   readonly code?: string;
   readonly data?: unknown;
   readonly config?: unknown;
+  /** 本次请求的 traceId，便于联调 debug 与日志查询页定位 */
+  readonly traceId?: string;
 
   constructor(
     message: string,
-    opts: { status?: number; code?: string; data?: unknown; config?: unknown } = {},
+    opts: {
+      status?: number;
+      code?: string;
+      data?: unknown;
+      config?: unknown;
+      traceId?: string;
+    } = {},
   ) {
     super(message);
     this.name = 'HttpError';
@@ -23,12 +31,58 @@ export class HttpError extends Error {
     this.code = opts.code;
     this.data = opts.data;
     this.config = opts.config;
+    this.traceId = opts.traceId;
   }
 }
 
 /** 响应体形状探测：是否包含指定字段 */
 function hasField<T extends string>(body: unknown, field: T): body is Record<T, unknown> {
   return body != null && typeof body === 'object' && field in body;
+}
+
+/** 从 AxiosHeaders（支持 .get()）或普通对象中读取指定头，大小写不敏感。 */
+function readHeader(headers: unknown, name: string): string | undefined {
+  if (headers == null || typeof headers !== 'object') {
+    return undefined;
+  }
+  // AxiosHeaders 实例：.get() 内部已做大小写归一
+  if ('get' in headers && typeof (headers as { get: unknown }).get === 'function') {
+    const value = (headers as { get: (n: string) => unknown }).get(name);
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+    return undefined;
+  }
+  // 普通对象：按小写 key 读取
+  const lower = (headers as Record<string, unknown>)[name.toLowerCase()];
+  if (typeof lower === 'string' && lower.trim()) {
+    return lower.trim();
+  }
+  return undefined;
+}
+
+/** 从 axios 错误中提取 traceId。
+ *
+ * 优先读响应头（后端 TraceMiddleware 回写的 X-Trace-Id）；
+ * 网络层失败无响应时回退读请求头（前端 createTraceHeaders 生成的值），
+ * 保证即使后端不可达也能拿到 traceId 供日志排查。
+ */
+function extractTraceId(error: unknown): string | undefined {
+  if (!(error instanceof Error)) {
+    return undefined;
+  }
+  if (hasField(error, 'response')) {
+    const response = error.response as { headers?: unknown } | undefined;
+    const responseTraceId = readHeader(response?.headers, TRACE_ID_HEADER);
+    if (responseTraceId) {
+      return responseTraceId;
+    }
+  }
+  if (hasField(error, 'config')) {
+    const config = error.config as { headers?: unknown } | undefined;
+    return readHeader(config?.headers, TRACE_ID_HEADER);
+  }
+  return undefined;
 }
 
 /** 从 unknown 响应体中安全读取 string 类型 message 字段 */
@@ -131,7 +185,7 @@ export abstract class BaseRequest {
       (error) => Promise.reject(error),
     );
 
-    // 响应拦截：normalize HTTP 错误为 HttpError（保留 status/code/data/config），
+    // 响应拦截：normalize HTTP 错误为 HttpError（保留 status/code/data/config/traceId），
     // 不展示错误（不耦合 UI 库），调用方在 catch 中自行展示
     this.instance.interceptors.response.use(
       (response: AxiosResponse) => response,
@@ -141,7 +195,10 @@ export abstract class BaseRequest {
           return recoveredResponse;
         }
         const { message, status, code, data, config } = this.buildHttpError(error);
-        return Promise.reject(new HttpError(message, { status, code, data, config }));
+        const traceId = extractTraceId(error);
+        return Promise.reject(
+          new HttpError(message, { status, code, data, config, traceId }),
+        );
       },
     );
   }
@@ -224,14 +281,15 @@ export abstract class BaseRequest {
 
   /**
    * 业务响应解包：校验 isSuccess，提取 data。
-   * 业务失败时抛 HttpError（携带 code/message/data），调用方可在 catch 中
-   * 通过 error.code 做差异化处理（如 RATE_LIMIT_EXCEEDED 显示倒计时）。
+   * 业务失败时抛 HttpError（携带 code/message/data/traceId），调用方可在
+   * catch 中通过 error.code 做差异化处理（如 RATE_LIMIT_EXCEEDED 显示倒计时）。
    */
-  protected unwrapResponse<T>(body: unknown): T {
+  protected unwrapResponse<T>(body: unknown, responseHeaders?: unknown): T {
     if (!this.isSuccess(body)) {
       throw new HttpError(this.getErrorMessage(body), {
         code: this.getErrorCode(body),
         data: body,
+        traceId: readHeader(responseHeaders, TRACE_ID_HEADER),
       });
     }
     return this.extractData(body) as T;
@@ -240,15 +298,15 @@ export abstract class BaseRequest {
   // ── 类型化包装方法 ──────────────────────────────
 
   get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    return this.instance.get(url, config).then((res) => this.unwrapResponse<T>(res.data));
+    return this.instance.get(url, config).then((res) => this.unwrapResponse<T>(res.data, res.headers));
   }
 
   post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
-    return this.instance.post(url, data, config).then((res) => this.unwrapResponse<T>(res.data));
+    return this.instance.post(url, data, config).then((res) => this.unwrapResponse<T>(res.data, res.headers));
   }
 
   delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    return this.instance.delete(url, config).then((res) => this.unwrapResponse<T>(res.data));
+    return this.instance.delete(url, config).then((res) => this.unwrapResponse<T>(res.data, res.headers));
   }
 }
 
@@ -279,17 +337,28 @@ export function isServiceUnavailableError(error: unknown): boolean {
  * 如果是 HttpError 且携带业务码，返回 `[CODE] message` 格式；
  * 否则返回纯 message。这样前端 message.error 能直接显示业务码+原因，
  * 便于用户定位问题（如 [PERMISSION_DENIED] 无权限访问）。
+ *
+ * 当 HttpError 携带 traceId 时，统一在末尾追加 `（traceId: xxx）`，
+ * 方便用户把提示反馈给开发人员后，在日志查询页按 traceId 精确定位链路。
  */
 export function getRequestErrorMessage(error: unknown, fallback = '请求失败'): string {
   if (error instanceof HttpError) {
     const nestedCode = readNestedErrorCode(error.data);
     const errorCode = error.code ?? nestedCode;
-    if (errorCode) {
-      return `[${errorCode}] ${error.message}`;
-    }
-    return error.message;
+    const baseMessage = errorCode
+      ? `[${errorCode}] ${error.message}`
+      : error.message;
+    return appendTraceId(baseMessage, error.traceId);
   }
   return error instanceof Error ? error.message : fallback;
+}
+
+/** 在错误文案末尾追加 traceId；无 traceId 时原样返回。 */
+function appendTraceId(message: string, traceId: string | undefined): string {
+  if (!traceId) {
+    return message;
+  }
+  return `${message}（traceId: ${traceId}）`;
 }
 
 /** 从统一 429 响应的 data.detail 中读取服务端限流剩余秒数。 */
