@@ -34,3 +34,7 @@ export const BotManagement = lazy(
 export const AgentManagement = lazy(
   () => import('@/pages/digital-employee/agent/AgentManagement'),
 );
+
+// 动态路由兜底：将所有未匹配静态路由的路径交给 DynamicPage，
+// 后者根据 /auth/me 菜单树中的 component 字段 + 组件注册表解析页面。
+export const DynamicPage = lazy(() => import('@/pages/dynamic-page/DynamicPage'));

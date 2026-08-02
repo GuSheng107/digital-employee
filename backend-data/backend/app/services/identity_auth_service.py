@@ -513,8 +513,14 @@ class IdentityAuthService:
 
         此兜底逻辑仅在角色/菜单配置缺失时触发，确保登录后不会出现
         空白侧边栏。正常配置下不会被调用。
+
+        一次性查询所有可见菜单并在内存中追溯父目录链，避免逐层查询
+        产生的 N+1 问题；同时保留各菜单原有的 permission 字段，避免
+        兜底场景下权限隔离被弱化。
         """
-        profile_menu = self._session.execute(
+        _MAX_FALLBACK_DEPTH = 50
+        # 一次查询所有可见菜单，在内存中追溯父链，规避 N+1 查询
+        menu_rows = self._session.execute(
             select(
                 Menu.id,
                 Menu.parent_id,
@@ -527,80 +533,51 @@ class IdentityAuthService:
                 Menu.sort,
                 Menu.visible,
             ).where(
-                Menu.path == USER_PROFILE_ROUTE_PATH,
                 Menu.deleted_at.is_(None),
                 Menu.visible.is_(True),
             )
-        ).mappings().one_or_none()
+        ).mappings().all()
+        menu_map = {int(row["id"]): row for row in menu_rows}
+        # 定位个人信息页
+        profile_menu = next(
+            (row for row in menu_rows if row["path"] == USER_PROFILE_ROUTE_PATH),
+            None,
+        )
         if profile_menu is None:
             return {}
-        result: dict[int, dict[str, int | str | bool | None]] = {
-            int(profile_menu["id"]): {
-                "id": int(profile_menu["id"]),
-                "parent_id": int(profile_menu["parent_id"]),
-                "menu_type": int(profile_menu["menu_type"]),
-                "title": str(profile_menu["title"]),
-                "path": str(profile_menu["path"]) if profile_menu["path"] is not None else None,
+        # 向上追溯父目录链，双重防护：深度上限 + visited 集合防环
+        result: dict[int, dict[str, int | str | bool | None]] = {}
+        current = profile_menu
+        visited: set[int] = set()
+        depth = 0
+        while current is not None and depth < _MAX_FALLBACK_DEPTH:
+            depth += 1
+            menu_id = int(current["id"])
+            if menu_id in visited:
+                break
+            visited.add(menu_id)
+            result[menu_id] = {
+                "id": menu_id,
+                "parent_id": int(current["parent_id"]),
+                "menu_type": int(current["menu_type"]),
+                "title": str(current["title"]),
+                "path": str(current["path"]) if current["path"] is not None else None,
                 "component": (
-                    str(profile_menu["component"])
-                    if profile_menu["component"] is not None
+                    str(current["component"])
+                    if current["component"] is not None
                     else None
                 ),
-                "icon": str(profile_menu["icon"]) if profile_menu["icon"] is not None else None,
-                "permission": None,
-                "sort": int(profile_menu["sort"]),
+                "icon": str(current["icon"]) if current["icon"] is not None else None,
+                "permission": (
+                    str(current["permission"])
+                    if current["permission"] is not None
+                    else None
+                ),
+                "sort": int(current["sort"]),
                 "visible": True,
             }
-        }
-        # 向上追溯父目录链，双重防护：深度上限 + visited 集合防环
-        parent_id = int(profile_menu["parent_id"])
-        depth = 0
-        _MAX_FALLBACK_DEPTH = 50
-        visited: set[int] = {int(profile_menu["id"])}
-        while parent_id and depth < _MAX_FALLBACK_DEPTH:
-            depth += 1
-            if parent_id in visited:
-                break
-            visited.add(parent_id)
-            parent = self._session.execute(
-                select(
-                    Menu.id,
-                    Menu.parent_id,
-                    Menu.menu_type,
-                    Menu.title,
-                    Menu.path,
-                    Menu.component,
-                    Menu.icon,
-                    Menu.permission,
-                    Menu.sort,
-                    Menu.visible,
-                ).where(
-                    Menu.id == parent_id,
-                    Menu.deleted_at.is_(None),
-                    Menu.visible.is_(True),
-                )
-            ).mappings().one_or_none()
-            if parent is None:
-                break
-            pid = int(parent["id"])
-            if pid not in result:
-                result[pid] = {
-                    "id": pid,
-                    "parent_id": int(parent["parent_id"]),
-                    "menu_type": int(parent["menu_type"]),
-                    "title": str(parent["title"]),
-                    "path": str(parent["path"]) if parent["path"] is not None else None,
-                    "component": (
-                        str(parent["component"])
-                        if parent["component"] is not None
-                        else None
-                    ),
-                    "icon": str(parent["icon"]) if parent["icon"] is not None else None,
-                    "permission": None,
-                    "sort": int(parent["sort"]),
-                    "visible": True,
-                }
-            parent_id = int(parent["parent_id"])
+            parent_id = int(current["parent_id"])
+            current = menu_map.get(parent_id) if parent_id else None
         return result
 
     @staticmethod

@@ -1,4 +1,4 @@
-import { Component, Suspense, useMemo, type ReactNode } from 'react';
+import { Component, Suspense, useMemo, type ComponentType, type ReactNode } from 'react';
 import { useLocation, Navigate } from 'react-router';
 import { Result, Button, Typography } from 'antd';
 import { useUserStore } from '@/store/user-store';
@@ -47,6 +47,22 @@ interface ErrorBoundaryState {
 }
 
 /**
+ * 递归查找目录节点下第一个拥有路由 path 的叶子菜单路径。
+ *
+ * 目录节点本身没有页面组件，需逐层下钻直到找到 menu_type !== 1 的子菜单，
+ * 避免目录下第一个子菜单仍是目录时形成连续重定向。带深度上限防护。
+ */
+function findFirstLeafPath(node: MenuNode, depth: number = 0): string | null {
+  if (depth > MAX_MENU_DEPTH) return null;
+  if (node.menu_type !== 1 && node.path != null) return node.path;
+  for (const child of node.children ?? []) {
+    const leaf = findFirstLeafPath(child, depth + 1);
+    if (leaf) return leaf;
+  }
+  return null;
+}
+
+/**
  * 动态懒加载页面的错误捕获边界。
  *
  * React.lazy 在 chunk 加载失败（如部署后 hash 变更导致 404）时会 reject，
@@ -86,6 +102,31 @@ class ErrorBoundary extends Component<
   }
 }
 
+/**
+ * 渲染已解析的动态懒加载组件。
+ *
+ * 抽出独立组件以规避 react-hooks 规则对「在 render 中直接渲染变量组件」的误判：
+ * 组件引用实际来自模块级 REGISTRY，并非每次渲染创建。
+ */
+function ResolvedPage({
+  component: PageComponent,
+  permission,
+}: {
+  component: ComponentType;
+  permission?: string | null;
+}): React.ReactElement {
+  const content = (
+    <Suspense fallback={<PageLoading label="正在加载页面" />}>
+      <PageComponent />
+    </Suspense>
+  );
+  // 菜单绑定了权限码时，加权限守卫
+  if (permission) {
+    return <RequirePermission required={[permission]}>{content}</RequirePermission>;
+  }
+  return content;
+}
+
 /** 动态路由兜底页面（真实渲染逻辑），由 ErrorBoundary 包裹使用。 */
 function DynamicPageInner(): React.ReactElement {
   const location = useLocation();
@@ -103,11 +144,11 @@ function DynamicPageInner(): React.ReactElement {
 
   const { node } = result;
 
-  // 目录节点有子菜单但没有页面组件 → 重定向到第一个子菜单
-  if (node.menu_type === 1 && node.children?.length) {
-    const firstChild = node.children[0];
-    if (firstChild?.path != null) {
-      return <Navigate to={firstChild.path} replace />;
+  // 目录节点 → 递归下钻到第一个叶子菜单，避免连续重定向
+  if (node.menu_type === 1) {
+    const leafPath = findFirstLeafPath(node);
+    if (leafPath) {
+      return <Navigate to={leafPath} replace />;
     }
   }
 
@@ -115,21 +156,7 @@ function DynamicPageInner(): React.ReactElement {
   const PageComponent = resolveComponent(node.component);
 
   if (PageComponent) {
-    const content = (
-      <Suspense fallback={<PageLoading label="正在加载页面" />}>
-        <PageComponent />
-      </Suspense>
-    );
-
-    // 菜单绑定了权限码时，加权限守卫
-    if (node.permission) {
-      return (
-        <RequirePermission required={[node.permission]}>
-          {content}
-        </RequirePermission>
-      );
-    }
-    return content;
+    return <ResolvedPage component={PageComponent} permission={node.permission} />;
   }
 
   // 无匹配组件 → 建设中占位

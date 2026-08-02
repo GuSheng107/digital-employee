@@ -8,9 +8,18 @@ import { lazy, type ComponentType } from 'react';
  *
  * 通过 Vite 的 ``import.meta.glob`` 在构建时扫描，无需手动注册。
  * 在菜单管理页面新增菜单时，只需创建目录和 ``index.tsx`` 即可。
+ *
+ * glob 采用显式层级而非 ``**`` 递归，避免误匹配 ``components/``、
+ * ``hooks/`` 等页面内私有目录下的 ``index.tsx``。当前页面最深 4 层
+ * （如 ``system/user/permission``），按需扩展即可。
  */
 const modules = import.meta.glob<{ default: ComponentType<Record<string, never>> }>(
-  '@/pages/**/index.tsx',
+  [
+    '@/pages/*/index.tsx',
+    '@/pages/*/*/index.tsx',
+    '@/pages/*/*/*/index.tsx',
+    '@/pages/*/*/*/*/index.tsx',
+  ],
 );
 
 type LazyPage = React.LazyExoticComponent<ComponentType<Record<string, never>>>;

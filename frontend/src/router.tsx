@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router';
 import Layout from './components/Layout';
 import AppInitializer from './components/app-initializer/AppInitializer';
@@ -14,6 +14,7 @@ import {
   DataPlatformDashboard,
   DataPlatformDataItems,
   DataPlatformSystemConfig,
+  DynamicPage,
   InviteCode,
   LogQuery,
   MenuManagement,
@@ -22,10 +23,6 @@ import {
   UserProfile,
   UserRegister,
 } from './router/lazy-pages';
-
-// 动态路由兜底：将所有未匹配静态路由的路径交给 DynamicPage，
-// 后者根据 /auth/me 菜单树中的 component 字段 + 组件注册表解析页面。
-const DynamicPage = lazy(() => import('@/pages/dynamic-page/DynamicPage'));
 
 // 懒加载页面统一 fallback
 const LazyFallback = <PageLoading />;
