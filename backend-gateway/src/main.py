@@ -26,6 +26,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
+from nacos_client import adapter as nacos_adapter
 from nacos_client import NacosClient
 from observability import (
     TraceContext,
@@ -51,13 +52,11 @@ from src.utils.observability import export_trace_batch
 def _load_service_configuration() -> None:
     """加载本地和 Nacos 服务配置；基础设施凭证不由网关适配。"""
     load_dotenv()
-    try:
-        nacos_client = NacosClient.from_env_optional()
-        if nacos_client is not None:
-            nacos_client.load_to_environ()
-    except Exception:
-        logger.exception("[BOOTSTRAP] Nacos 配置加载失败，将使用本地 .env 配置启动")
-        return
+    nacos_client = NacosClient.from_env_required()
+    nacos_client.load_to_environ()
+    # gateway.port / cors_origins（顶层）拍平后为 GATEWAY_PORT / CORS_ORIGINS，无需适配
+    # data.base_url -> DATA_BASE_URL -> BACKEND_DATA_BASE_URL
+    nacos_adapter.copy_overwrite("DATA_BASE_URL", "BACKEND_DATA_BASE_URL")
 
 
 _load_service_configuration()

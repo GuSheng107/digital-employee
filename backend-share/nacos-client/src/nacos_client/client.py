@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 import os
+import sys
 from typing import Any
 
 import httpx
@@ -166,6 +167,76 @@ class NacosClient:
             return cls.from_env(default_data_id, default_namespace)
         except Exception:  # noqa: BLE001
             return None
+
+    @classmethod
+    def from_env_required(
+        cls,
+        default_data_id: str | None = None,
+        default_namespace: str = "dev",
+    ) -> "NacosClient":
+        """from_env 的强制版本：Nacos 不可用时打印提示并退出程序。
+
+        与 from_env（抛异常）和 from_env_optional（返回 None）不同，
+        本方法在以下情况均直接退出：
+        1. NACOS_* 环境变量缺失
+        2. Nacos 服务端不可达或登录失败
+        3. Nacos 返回空配置或配置解析失败
+
+        Raises:
+            SystemExit: 始终通过 sys.exit(1) 退出，不会返回。
+        """
+        namespace = os.getenv("NACOS_NAMESPACE", default_namespace)
+        data_id = (
+            os.getenv("NACOS_DATA_ID")
+            or default_data_id
+            or f"{namespace}.yaml"
+        )
+        server_addr = os.getenv("NACOS_SERVER_ADDR")
+        username = os.getenv("NACOS_USERNAME")
+        password = os.getenv("NACOS_PASSWORD")
+
+        missing = []
+        if not server_addr:
+            missing.append("NACOS_SERVER_ADDR")
+        if not username:
+            missing.append("NACOS_USERNAME")
+        if not password:
+            missing.append("NACOS_PASSWORD")
+        if missing:
+            print(
+                f"[FATAL] Nacos 环境变量缺失: {', '.join(missing)}。\n"
+                "请在 .env 或系统环境变量中配置 NACOS_* 系列变量，"
+                "确保 Nacos 配置中心可用。",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        timeout = float(os.getenv("NACOS_TIMEOUT", "5.0"))
+        group = os.getenv("NACOS_GROUP", "DEFAULT_GROUP")
+        scheme = os.getenv("NACOS_SCHEME", "http")
+        client = cls(
+            server_addr=server_addr,
+            username=username,
+            password=password,
+            namespace=namespace,
+            data_id=data_id,
+            group=group,
+            timeout=timeout,
+            scheme=scheme,
+        )
+
+        # 预检：尝试拉取配置，失败则退出
+        config = client.fetch_config()
+        if not config:
+            print(
+                f"[FATAL] Nacos 配置拉取失败（服务器: {server_addr}, "
+                f"dataId: {data_id}, namespace: {namespace}）。\n"
+                "请检查 Nacos 服务是否正常运行，以及配置项是否存在。",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        return client
 
     def _login(self) -> str | None:
         """登录 Nacos 拿 accessToken。

@@ -23,18 +23,10 @@ from observability import (
 )
 
 DEFAULT_RABBITMQ_URL = "amqp://guest:guest@127.0.0.1:5672/"
-EXCHANGE_NAME = "digital_employee.events"
-INBOUND_QUEUE_NAME = "inbound_queue"
-OUTBOUND_QUEUE_NAME = "outbound_queue"
-INBOUND_ROUTING_KEY = "inbound.message"
-OUTBOUND_ROUTING_KEY = "outbound.message"
-
-# 死信拓扑：DLX 采用 direct 类型，DLQ 与 outbound_queue 同 routing_key 绑定。
-# 消费者手动控制 ACK/RETRY/DLQ 三态，不依赖队列级 x-dead-letter-exchange 自动转投，
-# 便于在死信消息中附加原因、保留原始 retry_count。
-DLX_NAME = "digital_employee.dlx"
-DLQ_NAME = "outbound_dlq"
-DLQ_ROUTING_KEY = OUTBOUND_ROUTING_KEY
+# 注意：拓扑名称（EXCHANGE_NAME 等）不在此处定义，而是在 RabbitMQClient.__init__
+# 中通过 os.getenv 延迟读取。原因是 Nacos 配置在模块导入之后才注入 os.environ
+# （见 main.py _load_service_configuration），若在此处固化会导致 Nacos 配置
+# 不生效，share 包与 backend-data 引用不同拓扑、消息丢失。
 
 # 重试上限：超过后转发 DLQ。IM 平台瞬时故障通常几秒到几分钟恢复，5 次重试可覆盖大多数场景。
 MAX_RETRY_COUNT = 5
@@ -72,6 +64,17 @@ class RabbitMQClient:
 
     def __init__(self, amqp_url: str | None = None) -> None:
         self.amqp_url = amqp_url or os.getenv("RABBITMQ_URL", DEFAULT_RABBITMQ_URL)
+        # 拓扑名称延迟读取：在 __init__ 中通过 os.getenv 读取，此时 Nacos 配置
+        # 已通过 _load_service_configuration() 注入 os.environ，确保 Nacos 配置生效。
+        # 若 Nacos 未配置，使用默认值（与 backend-data Settings 默认值一致）。
+        self.exchange_name = os.getenv("RABBITMQ_EXCHANGE", "digital_employee.events")
+        self.inbound_queue_name = os.getenv("RABBITMQ_INBOUND_QUEUE", "inbound_queue")
+        self.outbound_queue_name = os.getenv("RABBITMQ_OUTBOUND_QUEUE", "outbound_queue")
+        self.inbound_routing_key = os.getenv("RABBITMQ_self.inbound_routing_key", "inbound.message")
+        self.outbound_routing_key = os.getenv("RABBITMQ_self.outbound_routing_key", "outbound.message")
+        self.dlx_name = os.getenv("RABBITMQ_DLX", "digital_employee.dlx")
+        self.dlq_name = os.getenv("RABBITMQ_DLQ", "outbound_dlq")
+        self.dlq_routing_key = self.outbound_routing_key
         self._connection: aio_pika.RobustConnection | None = None
         self._channel: aio_pika.RobustChannel | None = None
         self._exchange: aio_pika.RobustExchange | None = None
@@ -102,50 +105,50 @@ class RabbitMQClient:
 
         # 声明 Topic 交换机
         self._exchange = await self._channel.declare_exchange(
-            EXCHANGE_NAME,
+            self.exchange_name,
             type=aio_pika.ExchangeType.TOPIC,
             durable=True,
         )
 
         # 声明并绑定入站与出站队列
         self._inbound_queue = await self._channel.declare_queue(
-            INBOUND_QUEUE_NAME,
+            self.inbound_queue_name,
             durable=True,
         )
-        await self._inbound_queue.bind(self._exchange, routing_key=INBOUND_ROUTING_KEY)
+        await self._inbound_queue.bind(self._exchange, routing_key=self.inbound_routing_key)
 
         self._outbound_queue = await self._channel.declare_queue(
-            OUTBOUND_QUEUE_NAME,
+            self.outbound_queue_name,
             durable=True,
         )
-        await self._outbound_queue.bind(self._exchange, routing_key=OUTBOUND_ROUTING_KEY)
+        await self._outbound_queue.bind(self._exchange, routing_key=self.outbound_routing_key)
 
         # 声明死信拓扑：DLX (direct) + DLQ，与 outbound_queue 共用 routing_key。
         # 消费者手动控制 DLQ 路由（见 start_outbound_consumer），不依赖队列级
         # x-dead-letter-exchange 自动转投，便于在死信消息中附加原因元信息。
         self._dlx = await self._channel.declare_exchange(
-            DLX_NAME,
+            self.dlx_name,
             type=aio_pika.ExchangeType.DIRECT,
             durable=True,
         )
         self._dlq_queue = await self._channel.declare_queue(
-            DLQ_NAME,
+            self.dlq_name,
             durable=True,
         )
-        await self._dlq_queue.bind(self._dlx, routing_key=DLQ_ROUTING_KEY)
+        await self._dlq_queue.bind(self._dlx, routing_key=self.dlq_routing_key)
 
         self.is_available = True
         logger.info(
             "[RABBITMQ-CLIENT] 消息拓扑建立成功 (exchange={}, dlx={}, dlq={})",
-            EXCHANGE_NAME,
-            DLX_NAME,
-            DLQ_NAME,
+            self.exchange_name,
+            self.dlx_name,
+            self.dlq_name,
         )
         return {
             "connected": True,
-            "exchange": EXCHANGE_NAME,
-            "dlx": DLX_NAME,
-            "dlq": DLQ_NAME,
+            "exchange": self.exchange_name,
+            "dlx": self.dlx_name,
+            "dlq": self.dlq_name,
         }
 
     async def publish_inbound(
@@ -180,9 +183,9 @@ class RabbitMQClient:
             },
         )
 
-        await self._exchange.publish(amqp_message, routing_key=INBOUND_ROUTING_KEY)
+        await self._exchange.publish(amqp_message, routing_key=self.inbound_routing_key)
         self.is_available = True
-        return {"status": "published", "routing_key": INBOUND_ROUTING_KEY}
+        return {"status": "published", "routing_key": self.inbound_routing_key}
 
     async def start_outbound_consumer(
         self,
@@ -316,7 +319,7 @@ class RabbitMQClient:
             correlation_id=message.correlation_id,
             message_id=message.message_id,
         )
-        await self._dlx.publish(dlq_message, routing_key=DLQ_ROUTING_KEY)
+        await self._dlx.publish(dlq_message, routing_key=self.dlq_routing_key)
         logger.warning(
             "[RABBITMQ-CLIENT] 消息已转 DLQ (reason={}, retry_count={}, body_len={})",
             reason,
@@ -346,7 +349,7 @@ class RabbitMQClient:
             correlation_id=message.correlation_id,
             message_id=message.message_id,
         )
-        await self._exchange.publish(retry_message, routing_key=OUTBOUND_ROUTING_KEY)
+        await self._exchange.publish(retry_message, routing_key=self.outbound_routing_key)
         logger.info(
             "[RABBITMQ-CLIENT] 消息重试投递 (retry_count={}/{})",
             retry_count,

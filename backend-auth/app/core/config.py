@@ -29,9 +29,15 @@ def _load_nacos_config_to_environ() -> None:
     except ImportError:
         return  # nacos-client 未安装，仅本地开发场景
 
-    client = NacosClient.from_env_optional()
-    if client is not None:
-        client.load_to_environ()
+    client = NacosClient.from_env_required()
+    client.load_to_environ()
+    # Ports: Nacos 的 auth.port -> AUTH_PORT -> APP_PORT
+    from nacos_client import adapter as nacos_adapter
+
+    nacos_adapter.copy_overwrite("AUTH_PORT", "APP_PORT")
+    # data.base_url -> DATA_BASE_URL -> BACKEND_DATA_BASE_URL
+    nacos_adapter.copy_overwrite("DATA_BASE_URL", "BACKEND_DATA_BASE_URL")
+    # gateway.base_url 拍平后为 GATEWAY_BASE_URL，与 settings.gateway_base_url 一致，无需适配
 
 
 class Settings(BaseSettings):
