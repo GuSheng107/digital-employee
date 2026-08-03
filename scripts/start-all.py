@@ -351,6 +351,40 @@ def _wait_for_health(service: ServiceSpec, process: subprocess.Popen[bytes]) -> 
     raise RuntimeError(f"{service.name} 健康检查超时：{service.health_url}")
 
 
+def _verify_service_dependencies() -> None:
+    """验证 backend-data 的核心依赖（DB、Redis、MinIO）连通性。
+
+    通过无认证的 /ready 端点检查，不依赖 API Key。
+    MQ 拓扑已在 backend-data lifespan 中自动声明，无需额外验收。
+    """
+    ready_url = "http://127.0.0.1:8010/api/v1/health/ready"
+    try:
+        status, body = _request_endpoint(
+            EndpointCheck(
+                name="Backend Data readiness",
+                url=ready_url,
+                headers={},
+            )
+        )
+    except (OSError, URLError) as exc:
+        raise RuntimeError(f"依赖验收失败：{ready_url}") from exc
+    if not 200 <= status < 400:
+        raise RuntimeError(f"依赖验收返回 HTTP {status}：{ready_url}")
+    if not isinstance(body, dict) or body.get("success") is not True:
+        raise RuntimeError("依赖验收未返回成功响应")
+    data = body.get("data")
+    if not isinstance(data, dict):
+        raise RuntimeError("依赖验收响应中缺少 data 字段")
+    failed = [
+        name
+        for name, status_data in data.items()
+        if not isinstance(status_data, dict) or status_data.get("ok") is not True
+    ]
+    if failed:
+        raise RuntimeError(f"存在未就绪依赖：{', '.join(failed)}")
+    LOGGER.info("所有依赖验收通过")
+
+
 def main() -> int:
     """清理旧进程，按依赖顺序启动并验证全部服务。"""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -361,6 +395,7 @@ def main() -> int:
             LOGGER.info("正在启动 %s...", service.name)
             process = _start_service(service)
             _wait_for_health(service, process)
+        _verify_service_dependencies()
     except (OSError, RuntimeError) as exc:
         LOGGER.error("一键启动失败：%s", exc)
         try:

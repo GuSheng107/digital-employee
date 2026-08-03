@@ -227,7 +227,7 @@ if __name__ == "__main__":
 import asyncio
 import json
 import aio_pika
-from rabbitmq_client import get_rabbitmq_client, EXCHANGE_NAME, OUTBOUND_ROUTING_KEY
+from rabbitmq_client import get_rabbitmq_client
 
 async def publish_outbound_reply(bot_id: str, platform: str, reply_text: str):
     mq_client = get_rabbitmq_client()
@@ -249,7 +249,7 @@ async def publish_outbound_reply(bot_id: str, platform: str, reply_text: str):
     )
     
     # 直接发布到 Topic Exchange，路由键为 outbound.message
-    await mq_client._exchange.publish(amqp_message, routing_key=OUTBOUND_ROUTING_KEY)
+    await mq_client._exchange.publish(amqp_message, routing_key=mq_client.outbound_routing_key)
     print(f"[Agent] 下行回复已成功写入 outbound_queue")
 
 # 运行示例
@@ -397,3 +397,51 @@ if __name__ == "__main__":
 
 1. **发布时自动注入**：`publish_inbound` 会自动提取当前线程/协程的 `TraceContext`，并将 `X-Trace-Id` 与 `X-Span-Id` 写入 AMQP 消息 Header 和 Payload。
 2. **消费时自动还原**：`start_outbound_consumer` 收到消息后，会自动从 Header 中解析 `TraceContext` 并绑定到当前消费协程上下文，确保应用全链路日志可追踪查询。
+
+---
+
+## 7. 部署迁移指南：拓扑名称变更
+
+### 变更内容
+
+本次重构将 RabbitMQ 拓扑名称全部更换，旧拓扑变为孤儿资源：
+
+| 元素 | 旧名称 | 新名称 |
+| :--- | :--- | :--- |
+| Exchange | `bot.topic.exchange` | `digital_employee.events` |
+| Inbound Queue | `q_inbound_to_agent` | `inbound_queue` |
+| Outbound Queue | `q_outbound_to_gateway` | `outbound_queue` |
+| Inbound Routing Key | `msg.inbound.#` | `inbound.message` |
+| Outbound Routing Key | `msg.outbound.#` | `outbound.message` |
+| DLX | —（新增） | `digital_employee.dlx` |
+| DLQ | —（新增） | `outbound_dlq` |
+
+### 迁移步骤
+
+1. **部署新代码前**，检查旧队列中是否有未消费的消息：
+   ```bash
+   # 通过 RabbitMQ Management UI 或 rabbitmqctl 查看
+   rabbitmqctl list_queues name messages
+   # 重点关注 q_inbound_to_agent 和 q_outbound_to_gateway
+   ```
+
+2. **如有积压消息**，先手动消费或转存，再部署新代码。
+
+3. **部署新代码后**，确认新拓扑已创建：
+   ```bash
+   curl http://127.0.0.1:8010/api/v1/health/ready
+   ```
+   响应中应包含 `exchange: digital_employee.events`、`dlx: digital_employee.dlx` 等新拓扑信息。
+
+4. **确认正常运行后**，清理旧拓扑：
+   ```bash
+   rabbitmqctl delete_queue q_inbound_to_agent
+   rabbitmqctl delete_queue q_outbound_to_gateway
+   rabbitmqctl delete_exchange bot.topic.exchange
+   ```
+
+### 注意事项
+
+- 旧队列中的消息**不会自动迁移**到新队列，需在部署前手动处理。
+- `inbound_queue` 尚无消费者，积压不影响功能。
+- `outbound_queue` 旧消息若未处理完，部署新代码后 gateway 只消费新队列，旧消息需手动处理。

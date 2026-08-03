@@ -11,6 +11,21 @@ from contextlib import suppress
 from typing import Any
 
 import lark_oapi as lark
+
+# 版本守卫：本模块的 monkey-patch 针对 lark-oapi 1.4.x 设计，
+# 升级主版本时需重新验证 _patch_receive_message_loop_once 和
+# _patch_ws_card_callback 是否仍然有效。
+try:
+    from importlib.metadata import version as _pkg_version
+
+    _LARK_OAPI_MAJOR = int(_pkg_version("lark-oapi").split(".")[0])
+except Exception:
+    _LARK_OAPI_MAJOR = 1  # 无法获取版本时默认允许
+if _LARK_OAPI_MAJOR != 1:
+    raise RuntimeError(
+        f"lark-oapi 主版本不兼容：当前 {_LARK_OAPI_MAJOR}.x，"
+        "本模块的 monkey-patch 仅适配 1.x 系列"
+    )
 from lark_oapi.event.callback.model.p2_card_action_trigger import (
     P2CardActionTrigger,
     P2CardActionTriggerResponse,
