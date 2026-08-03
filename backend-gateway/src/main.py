@@ -66,10 +66,22 @@ manager: BotManager = BotManager()
 
 
 async def _outbound_relay_loop() -> None:
-    """基于 share 包的 rabbitmq-client 原生 AMQP 监听并处理出站消息。"""
+    """基于 share 包的 rabbitmq-client 原生 AMQP 监听并处理出站消息。
+
+    同时启动普通出站队列和 VIP 出站队列两个消费者，共用同一个 channel。
+    """
     from src.core.hub import hub
 
-    await message_bus_client.start_consumer(hub.consume_outbound_payload)
+    # 同时启动普通和 VIP 两个消费者（共享同一个 AMQP channel）
+    async with asyncio.TaskGroup() as tg:
+        tg.create_task(
+            message_bus_client.start_consumer(hub.consume_outbound_payload, vip=False),
+            name="normal_outbound_consumer",
+        )
+        tg.create_task(
+            message_bus_client.start_consumer(hub.consume_outbound_payload, vip=True),
+            name="vip_outbound_consumer",
+        )
 
 
 @asynccontextmanager

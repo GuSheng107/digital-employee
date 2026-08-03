@@ -100,6 +100,7 @@ class BotManager:
                     app_id=bot_dict.get("app_id", ""),
                     app_secret=bot_dict.get("app_secret", ""),
                     mode=bot_dict.get("mode", "test"),
+                    creator_vip_level=bot_dict.get("creator_vip_level", 0),
                 )
                 self.add_or_update_bot(bot_cfg)
             except (KeyError, ValidationError) as exc:

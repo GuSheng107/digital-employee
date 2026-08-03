@@ -113,12 +113,21 @@ class GatewayMessageBusClient:
         platform: str,
         bot_id: str,
         payload: str,
+        vip: bool = False,
     ) -> dict[str, Any]:
-        """直接将上行消息发布至 RabbitMQ 入站队列。"""
+        """直接将上行消息发布至 RabbitMQ 入站队列。
+
+        Args:
+            platform: IM 平台类型。
+            bot_id: Bot 实例 ID。
+            payload: 消息 JSON 字符串。
+            vip: 是否为 VIP 消息。True 时发布到 VIP 入站队列，否则发布到普通入站队列。
+        """
         result = await self._get_mq_client().publish_inbound(
             platform=platform,
             bot_id=bot_id,
             payload=payload,
+            vip=vip,
         )
         self.is_available = True
         return result
@@ -126,9 +135,16 @@ class GatewayMessageBusClient:
     async def start_consumer(
         self,
         callback: Callable[[str], Awaitable[ConsumerResult]],
+        *,
+        vip: bool = False,
     ) -> None:
-        """启动出站消息 AMQP 监听消费者。"""
-        await self._get_mq_client().start_outbound_consumer(callback)
+        """启动出站消息 AMQP 监听消费者。
+
+        Args:
+            callback: 消费回调，入参为字符串 Payload，返回 :class:`ConsumerResult`。
+            vip: 是否消费 VIP 出站队列。True 消费 vip_outbound_queue，False 消费 normal_outbound_queue。
+        """
+        await self._get_mq_client().start_outbound_consumer(callback, vip=vip)
 
     async def close(self) -> None:
         self.is_available = False

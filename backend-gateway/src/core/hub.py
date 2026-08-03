@@ -9,6 +9,7 @@ import asyncio
 from collections.abc import Callable
 from typing import Any
 
+from auth_utils import is_business_vip_level
 from loguru import logger
 from observability import (
     SpanKind,
@@ -81,11 +82,14 @@ class MessageHub:
                 asyncio.create_task(self._mock_agent_process(msg))
             elif mode == "prod":
                 payload = msg.model_dump_json()
+                # 根据 Bot 创建者的 VIP 等级决定消息路由
+                is_vip = is_business_vip_level(getattr(bot_instance, "creator_vip_level", 0))
                 try:
                     await message_bus_client.publish(
                         platform=msg.platform,
                         bot_id=msg.bot_id,
                         payload=payload,
+                        vip=is_vip,
                     )
                 except Exception:
                     reply_err = msg.model_copy(deep=True)

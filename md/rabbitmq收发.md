@@ -13,13 +13,15 @@
 | `backend-data` | 直连 `aio-pika==9.6.2`（非 share 包） | **拓扑统一声明者** | **活跃** — 在 lifespan 启动时自动调用 `ensure_topology()` 声明 `digital_employee.events` 全套拓扑（含 DLX/DLQ），同时保留 `POST /message-broker/topology` 端点供启动验证 |
 | `backend-agent` | 未引入 | 无 | **未接入** — 当前无 RabbitMQ 依赖，inbound_queue 消息暂无人消费；outbound_queue 消息由 backend-gateway 的 Test 模式（内存 Mock）模拟回复 |
 
-### 当前消息流拓扑
+### 当前消息流拓扑（VIP 队列分流）
 
 ```mermaid
 graph TB
     subgraph Gateway [backend-gateway]
-        GW_PUB["发布上行消息 publish_inbound"]
-        GW_SUB["监听下行消息 start_outbound_consumer"]
+        HUB["hub.process_inbound<br/>检查 bot.creator_vip_level"]
+        GW_PUB["发布上行消息 publish_inbound(vip=True/False)"]
+        GW_SUB_N["消费 normal_outbound_queue"]
+        GW_SUB_V["消费 vip_outbound_queue"]
     end
 
     subgraph ShareSDK ["backend-share/rabbitmq-client"]
@@ -29,48 +31,65 @@ graph TB
 
     subgraph DataPlatform [backend-data]
         MBS["MessageBrokerService<br/>拓扑统一声明者"]
+        LB["list_active_bots<br/>返回 creator_vip_level"]
         LIFECYCLE["lifespan 启动 → ensure_topology"]
         HTTP_EP["POST /message-broker/topology<br/>供 start-all.py 验证"]
     end
 
     subgraph RabbitMQ ["RabbitMQ Broker"]
         EXCHANGE["Exchange: digital_employee.events"]
-        IN_Q["(Queue: inbound_queue)"]
-        OUT_Q["(Queue: outbound_queue)"]
-        DLX["(DLX: digital_employee.dlx)"]
-        DLQ["(Queue: outbound_dlq)"]
+        N_IN_Q["(Queue: normal_inbound_queue)"]
+        N_OUT_Q["(Queue: normal_outbound_queue)"]
+        V_IN_Q["(Queue: vip_inbound_queue)"]
+        V_OUT_Q["(Queue: vip_outbound_queue)"]
+        N_DLX["(DLX: digital_employee.dlx)"]
+        N_DLQ["(Queue: outbound_dlq)"]
+        V_DLX["(DLX: digital_employee.vip.dlx)"]
+        V_DLQ["(Queue: vip_outbound_dlq)"]
     end
 
     subgraph Nacos ["Nacos 配置中心"]
-        NACOS["dev.yaml / prod.yaml<br/>rabbitmq: { exchange, queues, dlx, dlq, ... }"]
+        NACOS["dev.yaml / prod.yaml<br/>rabbitmq: { normal, vip, dlx, ... }"]
     end
 
     NACOS -->|load_to_environ| ENV
+    LB -->|"creator_vip_level"| HUB
     LIFECYCLE -->|"1. 启动时自动声明"| MBS
     HTTP_EP -->|"2. 验证时声明"| MBS
     MBS -->|"3. 创建全套拓扑"| EXCHANGE
-    MBS -->|"3. 创建入站队列"| IN_Q
-    MBS -->|"3. 创建出站队列"| OUT_Q
-    MBS -->|"3. 创建死信拓扑"| DLX
+    MBS -->|"3. 创建普通入站队列"| N_IN_Q
+    MBS -->|"3. 创建普通出站队列"| N_OUT_Q
+    MBS -->|"3. 创建 VIP 入站队列"| V_IN_Q
+    MBS -->|"3. 创建 VIP 出站队列"| V_OUT_Q
+    MBS -->|"3. 创建普通死信拓扑"| N_DLX
+    MBS -->|"3. 创建 VIP 死信拓扑"| V_DLX
 
-    GW_PUB -->|"4. AMQP 直连"| EXCHANGE
-    EXCHANGE -->|"5. routing_key: inbound.message"| IN_Q
-    IN_Q -.->|"6. 暂无消费者"| X_NO_CONSUMER["（待 backend-agent 接入）"]
+    HUB -->|"4. 判断 VIP 等级"| GW_PUB
+    GW_PUB -->|"5. vip=True → vip.inbound.message"| EXCHANGE
+    GW_PUB -->|"5. vip=False → normal.inbound.message"| EXCHANGE
+    EXCHANGE -->|"6. normal.inbound.message"| N_IN_Q
+    EXCHANGE -->|"6. vip.inbound.message"| V_IN_Q
+    N_IN_Q -.->|"7. 暂无消费者"| X_NO_CON["（待 backend-agent 接入）"]
+    V_IN_Q -.->|"7. 暂无消费者"| X_NO_VIP["（待 backend-agent 接入）"]
 
-    GW_SUB -->|"7. 消费 outbound_queue"| OUT_Q
-    OUT_Q -->|"8. 三态路由"| GW_SUB
-    GW_SUB -->|"9. ACK"| OUT_Q
-    GW_SUB -->|"10. RETRY 上限后"| DLX
-    DLX -->|"11. direct"| DLQ
+    GW_SUB_N -->|"8. 消费 normal_outbound_queue"| N_OUT_Q
+    GW_SUB_V -->|"8. 消费 vip_outbound_queue"| V_OUT_Q
+    N_OUT_Q -->|"9. 三态路由"| GW_SUB_N
+    V_OUT_Q -->|"9. 三态路由"| GW_SUB_V
+    GW_SUB_N -->|"10. RETRY 上限后"| N_DLX
+    GW_SUB_V -->|"10. RETRY 上限后"| V_DLX
+    N_DLX -->|"11. direct"| N_DLQ
+    V_DLX -->|"11. direct"| V_DLQ
 ```
 
 ### 关键说明
 
-1. **`backend-data` 是 RabbitMQ 拓扑的统一声明者**：在 lifespan 启动时自动调用 `ensure_topology()` 创建 `digital_employee.events` 全套拓扑（Exchange、inbound_queue、outbound_queue、DLX、DLQ），同时保留 `POST /message-broker/topology` 端点供 `start-all.py` 启动验证。
+1. **`backend-data` 是 RabbitMQ 拓扑的统一声明者**：在 lifespan 启动时自动调用 `ensure_topology()` 创建 `digital_employee.events` 全套拓扑（Exchange、normal_inbound_queue、normal_outbound_queue、vip_inbound_queue、vip_outbound_queue、DLX、DLQ、VIP DLX、VIP DLQ），同时保留 `POST /message-broker/topology` 端点供 `start-all.py` 启动验证。
 2. **`backend-gateway` 是当前唯一活跃的 AMQP 收发参与者**：同时扮演上行消息发布者（`publish_inbound`）和下行消息消费者（`start_outbound_consumer`）。拓扑名称通过 `backend-share/rabbitmq-client` 的 `os.getenv` 从 Nacos 注入的环境变量读取，幂等 declare 获取本地引用，不自主声明拓扑。
-3. **`inbound_queue` 尚无消费者**：`backend-agent` 尚未接入 RabbitMQ，网关发布的上行消息目前积压在队列中。Bot 在 Test 模式下通过内存 Mock 模拟回复，不依赖 MQ。
-4. **拓扑名称通过 Nacos 统一配置**：`dev.yaml`/`prod.yaml` 中 `rabbitmq` 嵌套段定义全套拓扑名称，经 `NacosClient.load_to_environ()` 拍平后注入环境变量，`backend-data` 的 `Settings` 和 `share` 包的 `RabbitMQClient` 均从此读取。
-5. **DLQ 死信拓扑由 `backend-data` 一并声明**：`digital_employee.dlx`（direct）+ `outbound_dlq`，支持三态消费路由（ACK/RETRY/DLQ）。
+3. **VIP 队列分流**：Gateway 在 `hub.process_inbound` 中根据 Bot 创建者的 `creator_vip_level` 判断是否 VIP，VIP 消息走 `vip.inbound.message` 路由键，普通消息走 `normal.inbound.message` 路由键。Gateway 同时启动两个消费者，分别消费 `normal_outbound_queue` 和 `vip_outbound_queue`。
+4. **`inbound_queue` 尚无消费者**：`backend-agent` 尚未接入 RabbitMQ，网关发布的上行消息目前积压在队列中。Bot 在 Test 模式下通过内存 Mock 模拟回复，不依赖 MQ。
+5. **拓扑名称通过 Nacos 统一配置**：`dev.yaml`/`prod.yaml` 中 `rabbitmq` 嵌套段定义全套拓扑名称，经 `NacosClient.load_to_environ()` 拍平后注入环境变量，`backend-data` 的 `Settings` 和 `share` 包的 `RabbitMQClient` 均从此读取。
+6. **DLQ 死信拓扑独立**：普通消息和 VIP 消息各有独立的死信拓扑。普通死信：`digital_employee.dlx` + `outbound_dlq`；VIP 死信：`digital_employee.vip.dlx` + `vip_outbound_dlq`。
 
 ---
 
@@ -79,10 +98,14 @@ graph TB
 | 元素类型 | 名称 | 类型 / 属性 | 说明 |
 | :--- | :--- | :--- | :--- |
 | **Exchange** | `digital_employee.events` | `Topic` (Durable) | 系统全局事件交换机（由 backend-data 统一声明） |
-| **Inbound Queue** | `inbound_queue` | Durable | 上行（终端 -> 系统）入站消息队列，Routing Key: `inbound.message` |
-| **Outbound Queue** | `outbound_queue` | Durable | 下行（系统 -> 终端）出站消息队列，Routing Key: `outbound.message` |
-| **DLX** | `digital_employee.dlx` | `Direct` (Durable) | 死信交换机，接收超限重试的消息 |
-| **DLQ** | `outbound_dlq` | Durable | 死信队列，绑定 DLX，Routing Key: `outbound.message` |
+| **Normal Inbound Queue** | `normal_inbound_queue` | Durable | 普通用户上行（终端 -> 系统）入站消息队列，Routing Key: `normal.inbound.message` |
+| **Normal Outbound Queue** | `normal_outbound_queue` | Durable | 普通用户下行（系统 -> 终端）出站消息队列，Routing Key: `normal.outbound.message` |
+| **VIP Inbound Queue** | `vip_inbound_queue` | Durable | VIP 用户上行入站消息队列，Routing Key: `vip.inbound.message` |
+| **VIP Outbound Queue** | `vip_outbound_queue` | Durable | VIP 用户下行出站消息队列，Routing Key: `vip.outbound.message` |
+| **Normal DLX** | `digital_employee.dlx` | `Direct` (Durable) | 普通死信交换机，接收超限重试的普通消息 |
+| **Normal DLQ** | `outbound_dlq` | Durable | 普通死信队列，绑定 DLX，Routing Key: `normal.outbound.message` |
+| **VIP DLX** | `digital_employee.vip.dlx` | `Direct` (Durable) | VIP 死信交换机，接收超限重试的 VIP 消息 |
+| **VIP DLQ** | `vip_outbound_dlq` | Durable | VIP 死信队列，绑定 VIP DLX，Routing Key: `vip.outbound.message` |
 
 ---
 
@@ -94,6 +117,8 @@ graph TB
 
 ```yaml
 rabbitmq:
+  # RabbitMQ 连接 URL（完整格式，含凭证）
+  url: "amqp://guest:guest@127.0.0.1:5672/"
   # RabbitMQ 服务地址
   host: 127.0.0.1
   # AMQP 协议端口
@@ -106,23 +131,32 @@ rabbitmq:
   password: guest
   # Topic 交换机名称（backend-data 统一声明，share 包幂等获取引用）
   exchange: digital_employee.events
-  # 上行（终端 -> 系统）入站消息队列
-  inbound_queue: inbound_queue
-  # 下行（系统 -> 终端）出站消息队列
-  outbound_queue: outbound_queue
-  # 入站消息路由键
-  inbound_routing_key: inbound.message
-  # 出站消息路由键
-  outbound_routing_key: outbound.message
-  # 死信交换机名称（Direct 类型）
+
+  # ── 普通队列 ──
+  normal_inbound_queue: normal_inbound_queue
+  normal_outbound_queue: normal_outbound_queue
+  normal_inbound_routing_key: normal.inbound.message
+  normal_outbound_routing_key: normal.outbound.message
+
+  # ── VIP 队列 ──
+  vip_inbound_queue: vip_inbound_queue
+  vip_outbound_queue: vip_outbound_queue
+  vip_inbound_routing_key: vip.inbound.message
+  vip_outbound_routing_key: vip.outbound.message
+
+  # ── 普通死信拓扑 ──
   dlx: digital_employee.dlx
-  # 死信队列名称
   dlq: outbound_dlq
+
+  # ── VIP 死信拓扑（独立） ──
+  vip_dlx: digital_employee.vip.dlx
+  vip_dlq: vip_outbound_dlq
+
   # 消费者预取计数
   prefetch_count: 20
 ```
 
-> 上述配置经 `NacosClient.load_to_environ()` 拍平后注入环境变量（`RABBITMQ_HOST`、`RABBITMQ_EXCHANGE`、`RABBITMQ_INBOUND_QUEUE` 等），`backend-data` 的 `Settings` 和 `share` 包的 `RabbitMQClient` 均从此读取。
+> 上述配置经 `NacosClient.load_to_environ()` 拍平后注入环境变量（`RABBITMQ_URL`、`RABBITMQ_EXCHANGE`、`RABBITMQ_NORMAL_INBOUND_QUEUE`、`RABBITMQ_VIP_INBOUND_QUEUE` 等），`backend-data` 的 `Settings` 和 `share` 包的 `RabbitMQClient` 均从此读取。
 
 ### 服务启动并自动注入 Nacos 配置流程
 
@@ -288,6 +322,70 @@ if __name__ == "__main__":
     pass
 ```
 
+### 示例 5：网关 VIP 消息路由发布 (Publish Inbound with VIP Flag)
+
+网关根据 Bot 创建者的 VIP 等级决定消息路由，VIP 消息走独立队列：
+
+```python
+import asyncio
+from auth_utils import is_business_vip_level
+from rabbitmq_client import get_rabbitmq_client
+
+async def handle_inbound_with_vip(
+    bot_instance: Any,
+    platform: str,
+    bot_id: str,
+    raw_payload: str,
+):
+    # 1. 判断 Bot 创建者是否为 VIP
+    is_vip = is_business_vip_level(getattr(bot_instance, "creator_vip_level", 0))
+
+    # 2. 发布时传入 vip 参数
+    mq_client = get_rabbitmq_client()
+    result = await mq_client.publish_inbound(
+        platform=platform,
+        bot_id=bot_id,
+        payload=raw_payload,
+        vip=is_vip,
+    )
+    print(f"消息发布完成: vip={is_vip}, routing_key={result['routing_key']}")
+
+# asyncio.run(handle_inbound_with_vip(bot, "feishu", "bot_123", '{"text": "你好"}'))
+```
+
+### 示例 6：Gateway 同时监听普通和 VIP 出站队列
+
+Gateway 启动时同时启动两个消费者，分别消费普通和 VIP 出站队列：
+
+```python
+import asyncio
+from rabbitmq_client import get_rabbitmq_client, ConsumerResult
+
+async def send_to_open_platform(payload: str) -> ConsumerResult:
+    """出站消息消费回调，VIP 和普通消息共用同一回调逻辑。"""
+    print(f"[Gateway] 收到下行消息: {payload}")
+    # 推送逻辑...
+    return ConsumerResult.ACK
+
+async def start_gateway_listeners():
+    mq_client = get_rabbitmq_client()
+
+    # 同时启动普通和 VIP 两个消费者
+    async with asyncio.TaskGroup() as tg:
+        tg.create_task(
+            mq_client.start_outbound_consumer(send_to_open_platform, vip=False),
+            name="normal_consumer",
+        )
+        tg.create_task(
+            mq_client.start_outbound_consumer(send_to_open_platform, vip=True),
+            name="vip_consumer",
+        )
+
+if __name__ == "__main__":
+    # asyncio.run(start_gateway_listeners())
+    pass
+```
+
 ---
 
 ## 5. backend-gateway 收发消息 JSON 现场报文示例 (StandardMessage)
@@ -402,19 +500,28 @@ if __name__ == "__main__":
 
 ## 7. 部署迁移指南：拓扑名称变更
 
-### 变更内容
+> **`inbound_queue` / `outbound_queue` → `normal_inbound_queue` / `normal_outbound_queue` 迁移已完成。**
+> 当前代码和 Nacos 配置已全部使用新名称，旧队列 `inbound_queue` / `outbound_queue` 不再使用，如仍存在需手动清理。
 
-本次重构将 RabbitMQ 拓扑名称全部更换，旧拓扑变为孤儿资源：
+### 本次变更内容（VIP 队列分流）
 
-| 元素 | 旧名称 | 新名称 |
-| :--- | :--- | :--- |
-| Exchange | `bot.topic.exchange` | `digital_employee.events` |
-| Inbound Queue | `q_inbound_to_agent` | `inbound_queue` |
-| Outbound Queue | `q_outbound_to_gateway` | `outbound_queue` |
-| Inbound Routing Key | `msg.inbound.#` | `inbound.message` |
-| Outbound Routing Key | `msg.outbound.#` | `outbound.message` |
-| DLX | —（新增） | `digital_employee.dlx` |
-| DLQ | —（新增） | `outbound_dlq` |
+本次重构新增了 VIP 队列分流，并统一了普通队列命名前缀。以下为完整的历史迁移对照：
+
+| 元素 | 历史名称 | 当前名称 | 说明 |
+| :--- | :--- | :--- | :--- |
+| Exchange | `bot.topic.exchange` | `digital_employee.events` | 已迁移完成 |
+| Normal Inbound Queue | `q_inbound_to_agent` → `inbound_queue` | `normal_inbound_queue` | **已迁移完成** |
+| Normal Outbound Queue | `q_outbound_to_gateway` → `outbound_queue` | `normal_outbound_queue` | **已迁移完成** |
+| Normal Inbound Routing Key | `msg.inbound.#` → `inbound.message` | `normal.inbound.message` | **已迁移完成** |
+| Normal Outbound Routing Key | `msg.outbound.#` → `outbound.message` | `normal.outbound.message` | **已迁移完成** |
+| Normal DLX | —（新增） | `digital_employee.dlx` | 已迁移完成 |
+| Normal DLQ | —（新增） | `outbound_dlq` | 已迁移完成 |
+| VIP Inbound Queue | — | `vip_inbound_queue` | **新增** |
+| VIP Outbound Queue | — | `vip_outbound_queue` | **新增** |
+| VIP Inbound Routing Key | — | `vip.inbound.message` | **新增** |
+| VIP Outbound Routing Key | — | `vip.outbound.message` | **新增** |
+| VIP DLX | — | `digital_employee.vip.dlx` | **新增** |
+| VIP DLQ | — | `vip_outbound_dlq` | **新增** |
 
 ### 迁移步骤
 
@@ -431,7 +538,7 @@ if __name__ == "__main__":
    ```bash
    curl http://127.0.0.1:8010/api/v1/health/ready
    ```
-   响应中应包含 `exchange: digital_employee.events`、`dlx: digital_employee.dlx` 等新拓扑信息。
+   响应中应包含 `exchange: digital_employee.events`、`normal_inbound_queue: normal_inbound_queue`、`vip_inbound_queue: vip_inbound_queue`、`vip_dlx: digital_employee.vip.dlx` 等新拓扑信息。
 
 4. **确认正常运行后**，清理旧拓扑：
    ```bash
@@ -443,5 +550,10 @@ if __name__ == "__main__":
 ### 注意事项
 
 - 旧队列中的消息**不会自动迁移**到新队列，需在部署前手动处理。
+- `inbound_queue` / `outbound_queue` 的迁移已完成，如 RabbitMQ 中仍存在这两个旧队列，需手动清理：
+  ```bash
+  rabbitmqctl delete_queue inbound_queue
+  rabbitmqctl delete_queue outbound_queue
+  ```
 - `inbound_queue` 尚无消费者，积压不影响功能。
-- `outbound_queue` 旧消息若未处理完，部署新代码后 gateway 只消费新队列，旧消息需手动处理。
+- `normal_outbound_queue` / `vip_outbound_queue` 旧消息若未处理完，部署新代码后 gateway 只消费新队列，旧消息需手动处理。

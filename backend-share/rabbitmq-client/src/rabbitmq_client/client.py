@@ -1,6 +1,7 @@
 """原生 RabbitMQ 异步 AMQP 客户端 (基于 aio-pika)。
 
 提供连接管理、拓扑自动创建、网关消息发布与下行消息监听消费功能。
+支持普通队列与 VIP 队列分流。
 """
 
 from __future__ import annotations
@@ -68,20 +69,39 @@ class RabbitMQClient:
         # 已通过 _load_service_configuration() 注入 os.environ，确保 Nacos 配置生效。
         # 若 Nacos 未配置，使用默认值（与 backend-data Settings 默认值一致）。
         self.exchange_name = os.getenv("RABBITMQ_EXCHANGE", "digital_employee.events")
-        self.inbound_queue_name = os.getenv("RABBITMQ_INBOUND_QUEUE", "inbound_queue")
-        self.outbound_queue_name = os.getenv("RABBITMQ_OUTBOUND_QUEUE", "outbound_queue")
-        self.inbound_routing_key = os.getenv("RABBITMQ_self.inbound_routing_key", "inbound.message")
-        self.outbound_routing_key = os.getenv("RABBITMQ_self.outbound_routing_key", "outbound.message")
+        # ── 普通队列 ──
+        self.normal_inbound_queue_name = os.getenv("RABBITMQ_NORMAL_INBOUND_QUEUE", "normal_inbound_queue")
+        self.normal_outbound_queue_name = os.getenv("RABBITMQ_NORMAL_OUTBOUND_QUEUE", "normal_outbound_queue")
+        self.normal_inbound_routing_key = os.getenv("RABBITMQ_NORMAL_INBOUND_ROUTING_KEY", "normal.inbound.message")
+        self.normal_outbound_routing_key = os.getenv("RABBITMQ_NORMAL_OUTBOUND_ROUTING_KEY", "normal.outbound.message")
+        # ── VIP 队列 ──
+        self.vip_inbound_queue_name = os.getenv("RABBITMQ_VIP_INBOUND_QUEUE", "vip_inbound_queue")
+        self.vip_outbound_queue_name = os.getenv("RABBITMQ_VIP_OUTBOUND_QUEUE", "vip_outbound_queue")
+        self.vip_inbound_routing_key = os.getenv("RABBITMQ_VIP_INBOUND_ROUTING_KEY", "vip.inbound.message")
+        self.vip_outbound_routing_key = os.getenv("RABBITMQ_VIP_OUTBOUND_ROUTING_KEY", "vip.outbound.message")
+        # ── 普通死信 ──
         self.dlx_name = os.getenv("RABBITMQ_DLX", "digital_employee.dlx")
         self.dlq_name = os.getenv("RABBITMQ_DLQ", "outbound_dlq")
-        self.dlq_routing_key = self.outbound_routing_key
+        self.dlq_routing_key = self.normal_outbound_routing_key
+        # ── VIP 死信 ──
+        self.vip_dlx_name = os.getenv("RABBITMQ_VIP_DLX", "digital_employee.vip.dlx")
+        self.vip_dlq_name = os.getenv("RABBITMQ_VIP_DLQ", "vip_outbound_dlq")
+        self.vip_dlq_routing_key = self.vip_outbound_routing_key
+
         self._connection: aio_pika.RobustConnection | None = None
         self._channel: aio_pika.RobustChannel | None = None
         self._exchange: aio_pika.RobustExchange | None = None
+        # 普通队列引用
+        self._normal_inbound_queue: aio_pika.RobustQueue | None = None
+        self._normal_outbound_queue: aio_pika.RobustQueue | None = None
+        # VIP 队列引用
+        self._vip_inbound_queue: aio_pika.RobustQueue | None = None
+        self._vip_outbound_queue: aio_pika.RobustQueue | None = None
+        # 死信交换机引用
         self._dlx: aio_pika.RobustExchange | None = None
-        self._inbound_queue: aio_pika.RobustQueue | None = None
-        self._outbound_queue: aio_pika.RobustQueue | None = None
         self._dlq_queue: aio_pika.RobustQueue | None = None
+        self._vip_dlx: aio_pika.RobustExchange | None = None
+        self._vip_dlq_queue: aio_pika.RobustQueue | None = None
         self.is_available: bool = False
 
     async def connect(self) -> None:
@@ -99,7 +119,7 @@ class RabbitMQClient:
             raise
 
     async def ensure_topology(self) -> dict[str, Any]:
-        """建立并确认 RabbitMQ Exchange 与 Queue 拓扑。"""
+        """建立并确认 RabbitMQ Exchange 与 Queue 拓扑（含普通+VIP 队列及死信）。"""
         await self.connect()
         assert self._channel is not None
 
@@ -110,22 +130,35 @@ class RabbitMQClient:
             durable=True,
         )
 
-        # 声明并绑定入站与出站队列
-        self._inbound_queue = await self._channel.declare_queue(
-            self.inbound_queue_name,
+        # ── 普通入站队列 ──
+        self._normal_inbound_queue = await self._channel.declare_queue(
+            self.normal_inbound_queue_name,
             durable=True,
         )
-        await self._inbound_queue.bind(self._exchange, routing_key=self.inbound_routing_key)
+        await self._normal_inbound_queue.bind(self._exchange, routing_key=self.normal_inbound_routing_key)
 
-        self._outbound_queue = await self._channel.declare_queue(
-            self.outbound_queue_name,
+        # ── 普通出站队列 ──
+        self._normal_outbound_queue = await self._channel.declare_queue(
+            self.normal_outbound_queue_name,
             durable=True,
         )
-        await self._outbound_queue.bind(self._exchange, routing_key=self.outbound_routing_key)
+        await self._normal_outbound_queue.bind(self._exchange, routing_key=self.normal_outbound_routing_key)
 
-        # 声明死信拓扑：DLX (direct) + DLQ，与 outbound_queue 共用 routing_key。
-        # 消费者手动控制 DLQ 路由（见 start_outbound_consumer），不依赖队列级
-        # x-dead-letter-exchange 自动转投，便于在死信消息中附加原因元信息。
+        # ── VIP 入站队列 ──
+        self._vip_inbound_queue = await self._channel.declare_queue(
+            self.vip_inbound_queue_name,
+            durable=True,
+        )
+        await self._vip_inbound_queue.bind(self._exchange, routing_key=self.vip_inbound_routing_key)
+
+        # ── VIP 出站队列 ──
+        self._vip_outbound_queue = await self._channel.declare_queue(
+            self.vip_outbound_queue_name,
+            durable=True,
+        )
+        await self._vip_outbound_queue.bind(self._exchange, routing_key=self.vip_outbound_routing_key)
+
+        # ── 普通死信拓扑：DLX (direct) + DLQ ──
         self._dlx = await self._channel.declare_exchange(
             self.dlx_name,
             type=aio_pika.ExchangeType.DIRECT,
@@ -137,18 +170,36 @@ class RabbitMQClient:
         )
         await self._dlq_queue.bind(self._dlx, routing_key=self.dlq_routing_key)
 
+        # ── VIP 死信拓扑：独立 DLX (direct) + DLQ ──
+        self._vip_dlx = await self._channel.declare_exchange(
+            self.vip_dlx_name,
+            type=aio_pika.ExchangeType.DIRECT,
+            durable=True,
+        )
+        self._vip_dlq_queue = await self._channel.declare_queue(
+            self.vip_dlq_name,
+            durable=True,
+        )
+        await self._vip_dlq_queue.bind(self._vip_dlx, routing_key=self.vip_dlq_routing_key)
+
         self.is_available = True
         logger.info(
-            "[RABBITMQ-CLIENT] 消息拓扑建立成功 (exchange={}, dlx={}, dlq={})",
+            "[RABBITMQ-CLIENT] 消息拓扑建立成功 (exchange={}, normal_dlx={}, vip_dlx={})",
             self.exchange_name,
             self.dlx_name,
-            self.dlq_name,
+            self.vip_dlx_name,
         )
         return {
             "connected": True,
             "exchange": self.exchange_name,
+            "normal_inbound_queue": self.normal_inbound_queue_name,
+            "normal_outbound_queue": self.normal_outbound_queue_name,
+            "vip_inbound_queue": self.vip_inbound_queue_name,
+            "vip_outbound_queue": self.vip_outbound_queue_name,
             "dlx": self.dlx_name,
             "dlq": self.dlq_name,
+            "vip_dlx": self.vip_dlx_name,
+            "vip_dlq": self.vip_dlq_name,
         }
 
     async def publish_inbound(
@@ -157,12 +208,22 @@ class RabbitMQClient:
         platform: str,
         bot_id: str,
         payload: str,
+        vip: bool = False,
     ) -> dict[str, Any]:
-        """将网关上行消息直接发布至 RabbitMQ 入站队列。"""
+        """将网关上行消息发布至 RabbitMQ 入站队列。
+
+        Args:
+            platform: IM 平台类型。
+            bot_id: Bot 实例 ID。
+            payload: 消息 JSON 字符串。
+            vip: 是否为 VIP 消息。True 时发布到 VIP 入站队列，否则发布到普通入站队列。
+        """
         await self.connect()
         if self._exchange is None:
             await self.ensure_topology()
         assert self._exchange is not None
+
+        routing_key = self.vip_inbound_routing_key if vip else self.normal_inbound_routing_key
 
         current_ctx = current_trace_context()
         message_body = {
@@ -183,13 +244,15 @@ class RabbitMQClient:
             },
         )
 
-        await self._exchange.publish(amqp_message, routing_key=self.inbound_routing_key)
+        await self._exchange.publish(amqp_message, routing_key=routing_key)
         self.is_available = True
-        return {"status": "published", "routing_key": self.inbound_routing_key}
+        return {"status": "published", "routing_key": routing_key, "vip": vip}
 
     async def start_outbound_consumer(
         self,
         callback: Callable[[str], Awaitable[ConsumerResult]],
+        *,
+        vip: bool = False,
     ) -> None:
         """持续消费出站队列；根据回调返回的 :class:`ConsumerResult` 路由消息。
 
@@ -205,16 +268,32 @@ class RabbitMQClient:
 
         Args:
             callback: 消费回调，入参为字符串 Payload，返回 :class:`ConsumerResult`。
+            vip: 是否消费 VIP 出站队列。True 消费 vip_outbound_queue，False 消费 normal_outbound_queue。
         """
         await self.connect()
-        if self._outbound_queue is None or self._dlx is None:
+        queue_name = "vip" if vip else "normal"
+        if vip:
+            target_queue = self._vip_outbound_queue
+            target_dlx = self._vip_dlx
+        else:
+            target_queue = self._normal_outbound_queue
+            target_dlx = self._dlx
+
+        if target_queue is None or target_dlx is None:
             await self.ensure_topology()
-        assert self._outbound_queue is not None
-        assert self._dlx is not None
+            if vip:
+                target_queue = self._vip_outbound_queue
+                target_dlx = self._vip_dlx
+            else:
+                target_queue = self._normal_outbound_queue
+                target_dlx = self._dlx
 
-        logger.info("[RABBITMQ-CLIENT] 启动出站消息 AMQP 监听消费者...")
+        assert target_queue is not None
+        assert target_dlx is not None
 
-        async with self._outbound_queue.iterator() as queue_iter:
+        logger.info("[RABBITMQ-CLIENT] 启动 {} 出站消息 AMQP 监听消费者...", queue_name)
+
+        async with target_queue.iterator() as queue_iter:
             async for message in queue_iter:
                 trace_token = None
                 try:
@@ -231,20 +310,22 @@ class RabbitMQClient:
                         )
 
                     result = await callback(payload)
-                    await self._route_message(message, result, reason=None)
+                    await self._route_message(message, result, reason=None, vip=vip)
                 except Exception as exc:
-                    logger.exception("[RABBITMQ-CLIENT] 处理出站消息异常: {}", exc)
+                    logger.exception("[RABBITMQ-CLIENT] 处理 {} 出站消息异常: {}", queue_name, exc)
                     # 异常视为不可重试失败，避免 nack(requeue=True) 触发无限重试
                     try:
                         await self._route_message(
                             message,
                             ConsumerResult.DLQ,
                             reason=f"consumer_exception:{type(exc).__name__}",
+                            vip=vip,
                         )
                     except Exception:
                         # DLQ 也失败的最后兜底：丢弃消息，避免阻塞队列
                         logger.exception(
-                            "[RABBITMQ-CLIENT] DLQ 转投也失败，消息将被丢弃: {}",
+                            "[RABBITMQ-CLIENT] {} DLQ 转投也失败，消息将被丢弃: {}",
+                            queue_name,
                             message.body[:200],
                         )
                         await message.nack(requeue=False)
@@ -258,6 +339,7 @@ class RabbitMQClient:
         result: ConsumerResult,
         *,
         reason: str | None,
+        vip: bool = False,
     ) -> None:
         """根据 :class:`ConsumerResult` 路由消息到 ACK / RETRY / DLQ。
 
@@ -265,13 +347,14 @@ class RabbitMQClient:
             message: 待处理的 AMQP 消息。
             result: 回调返回的处理结果。
             reason: 死信原因（仅 DLQ 路径使用），用于附加到死信消息 header 便于排查。
+            vip: 是否为 VIP 消息，影响 DLQ 和重试的目标。
         """
         if result is ConsumerResult.ACK:
             await message.ack()
             return
 
         if result is ConsumerResult.DLQ:
-            await self._publish_to_dlq(message, reason=reason or "callback_marked_dlq")
+            await self._publish_to_dlq(message, reason=reason or "callback_marked_dlq", vip=vip)
             await message.ack()
             return
 
@@ -279,18 +362,20 @@ class RabbitMQClient:
         retry_count = _read_retry_count(message.headers)
         if retry_count >= MAX_RETRY_COUNT:
             logger.warning(
-                "[RABBITMQ-CLIENT] 消息重试次数达上限 {}，转 DLQ (retry_count={})",
+                "[RABBITMQ-CLIENT] 消息重试次数达上限 {}，转 {} DLQ (retry_count={})",
                 MAX_RETRY_COUNT,
+                "vip" if vip else "normal",
                 retry_count,
             )
             await self._publish_to_dlq(
                 message,
                 reason=reason or f"retry_exhausted:{retry_count}",
+                vip=vip,
             )
             await message.ack()
             return
 
-        await self._republish_for_retry(message, retry_count + 1)
+        await self._republish_for_retry(message, retry_count + 1, vip=vip)
         await message.ack()
 
     async def _publish_to_dlq(
@@ -298,13 +383,27 @@ class RabbitMQClient:
         message: aio_pika.IncomingMessage,
         *,
         reason: str,
+        vip: bool = False,
     ) -> None:
         """将原消息转发至 DLQ，附加死信原因与原 retry_count。
 
         保留原 body、trace headers，附加 ``x-dead-letter-reason`` 与原
         ``x-retry-count``，便于 DLQ 消费端排查。
+
+        Args:
+            message: 待转 DLQ 的消息。
+            reason: 死信原因。
+            vip: 是否为 VIP 消息。True 时转发到 VIP DLQ，否则转发到普通 DLQ。
         """
-        assert self._dlx is not None
+        if vip:
+            assert self._vip_dlx is not None
+            dlx = self._vip_dlx
+            dlq_rk = self.vip_dlq_routing_key
+        else:
+            assert self._dlx is not None
+            dlx = self._dlx
+            dlq_rk = self.dlq_routing_key
+
         headers = dict(message.headers or {})
         headers[DEAD_LETTER_REASON_HEADER] = reason
         # 保留原 retry_count 便于排查，不再递增
@@ -319,9 +418,11 @@ class RabbitMQClient:
             correlation_id=message.correlation_id,
             message_id=message.message_id,
         )
-        await self._dlx.publish(dlq_message, routing_key=self.dlq_routing_key)
+        await dlx.publish(dlq_message, routing_key=dlq_rk)
+        level = "VIP" if vip else "NORMAL"
         logger.warning(
-            "[RABBITMQ-CLIENT] 消息已转 DLQ (reason={}, retry_count={}, body_len={})",
+            "[RABBITMQ-CLIENT] {} 消息已转 DLQ (reason={}, retry_count={}, body_len={})",
+            level,
             reason,
             retry_count,
             len(message.body),
@@ -331,13 +432,21 @@ class RabbitMQClient:
         self,
         message: aio_pika.IncomingMessage,
         retry_count: int,
+        *,
+        vip: bool = False,
     ) -> None:
         """递增 ``x-retry-count`` 后重新 publish 到原 exchange，触发重试。
 
         采用「重发 + ACK 原消息」而非 ``nack(requeue=True)``：后者无法修改 header，
         无法跟踪重试次数。
+
+        Args:
+            message: 待重试的消息。
+            retry_count: 新的重试次数。
+            vip: 是否为 VIP 消息。True 时使用 VIP 出站路由键，否则使用普通出站路由键。
         """
         assert self._exchange is not None
+        routing_key = self.vip_outbound_routing_key if vip else self.normal_outbound_routing_key
         headers = dict(message.headers or {})
         headers[RETRY_COUNT_HEADER] = retry_count
 
@@ -349,9 +458,11 @@ class RabbitMQClient:
             correlation_id=message.correlation_id,
             message_id=message.message_id,
         )
-        await self._exchange.publish(retry_message, routing_key=self.outbound_routing_key)
+        await self._exchange.publish(retry_message, routing_key=routing_key)
+        level = "VIP" if vip else "NORMAL"
         logger.info(
-            "[RABBITMQ-CLIENT] 消息重试投递 (retry_count={}/{})",
+            "[RABBITMQ-CLIENT] {} 消息重试投递 (retry_count={}/{})",
+            level,
             retry_count,
             MAX_RETRY_COUNT,
         )
