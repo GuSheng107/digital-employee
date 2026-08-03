@@ -1,0 +1,14 @@
+.container {
+  padding: 16px;
+}
+
+.content {
+  display: flex;
+  width: 100%;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

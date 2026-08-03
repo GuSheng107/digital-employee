@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "skills": {
+    "grill-me": {
+      "name": "追问我",
+      "zip_url": "https://api.skillhub.cn/api/v1/download?slug=grill-me",
+      "source": "community",
+      "version": "1.0.0",
+      "installedAt": "2026-07-26T14:58:15Z"
+    }
+  }
+}
