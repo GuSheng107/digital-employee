@@ -90,6 +90,7 @@ class BotService:
                     Bot,
                     func.coalesce(User.nickname, User.username).label("creator_name"),
                     func.coalesce(Agent.name, Bot.agent_id).label("agent_name"),
+                    User.vip_level,
                 )
                 .outerjoin(User, Bot.created_by == User.id)
                 .outerjoin(Agent, Bot.agent_id == Agent.agent_id)
@@ -110,8 +111,9 @@ class BotService:
                     mask_secret=True,
                     created_by_name=creator_name,
                     agent_name=agent_name,
+                    creator_vip_level=vip_level,
                 )
-                for bot, creator_name, agent_name in rows
+                for bot, creator_name, agent_name, vip_level in rows
             ]
             return {
                 "items": items,
@@ -128,6 +130,7 @@ class BotService:
                     Bot,
                     func.coalesce(User.nickname, User.username).label("creator_name"),
                     func.coalesce(Agent.name, Bot.agent_id).label("agent_name"),
+                    User.vip_level,
                 )
                 .outerjoin(User, Bot.created_by == User.id)
                 .outerjoin(Agent, Bot.agent_id == Agent.agent_id)
@@ -136,12 +139,13 @@ class BotService:
             )
             if row is None:
                 raise ResourceNotFoundError(message=f"Bot '{bot_id}' 不存在")
-            bot, creator_name, agent_name = row
+            bot, creator_name, agent_name, vip_level = row
             return _bot_to_dict(
                 bot,
                 mask_secret=True,
                 created_by_name=creator_name,
                 agent_name=agent_name,
+                creator_vip_level=vip_level,
             )
 
     def list_active_bots(self) -> list[dict[str, Any]]:
