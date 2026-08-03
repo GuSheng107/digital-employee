@@ -103,20 +103,26 @@ class RabbitMQClient:
         self._vip_dlx: aio_pika.RobustExchange | None = None
         self._vip_dlq_queue: aio_pika.RobustQueue | None = None
         self.is_available: bool = False
+        # 连接建立锁，防止并发 TaskGroup 启动时竞态重复创建连接
+        self._connect_lock: asyncio.Lock = asyncio.Lock()
 
     async def connect(self) -> None:
         """建立异步 AMQP Robust 连接与 Channel。"""
         if self._connection is not None and not self._connection.is_closed:
             return
-        try:
-            self._connection = await aio_pika.connect_robust(self.amqp_url)
-            self._channel = await self._connection.channel()
-            self.is_available = True
-            logger.info("[RABBITMQ-CLIENT] 成功建立 RabbitMQ 异步连接")
-        except Exception as exc:
-            self.is_available = False
-            logger.error("[RABBITMQ-CLIENT] RabbitMQ 连接建立失败: {}", exc)
-            raise
+        async with self._connect_lock:
+            # 双重检查：获取锁后再次确认连接尚未建立
+            if self._connection is not None and not self._connection.is_closed:
+                return
+            try:
+                self._connection = await aio_pika.connect_robust(self.amqp_url)
+                self._channel = await self._connection.channel()
+                self.is_available = True
+                logger.info("[RABBITMQ-CLIENT] 成功建立 RabbitMQ 异步连接")
+            except Exception as exc:
+                self.is_available = False
+                logger.error("[RABBITMQ-CLIENT] RabbitMQ 连接建立失败: {}", exc)
+                raise
 
     async def ensure_topology(self) -> dict[str, Any]:
         """建立并确认 RabbitMQ Exchange 与 Queue 拓扑（含普通+VIP 队列及死信）。"""
