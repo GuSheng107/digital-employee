@@ -19,6 +19,9 @@ class BotConfig(BaseModel):
     mode: Literal["test", "prod"] = Field(
         default="test", description="运行模式：test（内存模拟）或 prod（MQ生产投递）"
     )
+    creator_vip_level: int = Field(
+        default=0, description="Bot 创建者的 VIP 等级（0 表示普通用户，用于 MQ 消息路由）"
+    )
 
 
 class BotConfigRequest(BaseModel):

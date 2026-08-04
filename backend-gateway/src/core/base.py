@@ -46,6 +46,8 @@ class BaseBot(abc.ABC):
         self._last_error: str | None = None
         # 运行模式收敛到基类：避免子类遗漏导致 hub 回落到默认 test 模式。
         self.mode: str = config.get("mode", "test")
+        # Bot 创建者的 VIP 等级（0 普通用户，1-9 业务 VIP），用于 MQ 消息 VIP 路由
+        self.creator_vip_level: int = config.get("creator_vip_level", 0)
 
         # Watchdog 退避状态：_restart_count 记录连续崩溃重启次数，
         # _last_restart_ts 记录最近一次重启时间戳，用于计算退避等待。

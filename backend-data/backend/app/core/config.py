@@ -142,18 +142,22 @@ class Settings(BaseSettings):
     )
     # Topic 交换机名称（backend-data 统一声明，share 包幂等获取引用）
     rabbitmq_exchange: str = "digital_employee.events"
-    # 上行（终端 -> 系统）入站消息队列
-    rabbitmq_inbound_queue: str = "inbound_queue"
-    # 下行（系统 -> 终端）出站消息队列
-    rabbitmq_outbound_queue: str = "outbound_queue"
-    # 入站消息路由键
-    rabbitmq_inbound_routing_key: str = "inbound.message"
-    # 出站消息路由键
-    rabbitmq_outbound_routing_key: str = "outbound.message"
-    # 死信交换机名称（Direct 类型）
+    # ── 普通队列 ──
+    rabbitmq_normal_inbound_queue: str = "normal_inbound_queue"
+    rabbitmq_normal_outbound_queue: str = "normal_outbound_queue"
+    rabbitmq_normal_inbound_routing_key: str = "normal.inbound.message"
+    rabbitmq_normal_outbound_routing_key: str = "normal.outbound.message"
+    # ── VIP 队列 ──
+    rabbitmq_vip_inbound_queue: str = "vip_inbound_queue"
+    rabbitmq_vip_outbound_queue: str = "vip_outbound_queue"
+    rabbitmq_vip_inbound_routing_key: str = "vip.inbound.message"
+    rabbitmq_vip_outbound_routing_key: str = "vip.outbound.message"
+    # ── 普通死信拓扑 ──
     rabbitmq_dlx: str = "digital_employee.dlx"
-    # 死信队列名称
     rabbitmq_dlq: str = "outbound_dlq"
+    # ── VIP 死信拓扑 ──
+    rabbitmq_vip_dlx: str = "digital_employee.vip.dlx"
+    rabbitmq_vip_dlq: str = "vip_outbound_dlq"
     # 消费者预取计数
     rabbitmq_prefetch_count: int = 20
 

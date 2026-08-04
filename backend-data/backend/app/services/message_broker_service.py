@@ -42,10 +42,18 @@ class MessageBrokerService:
         self._connection: AbstractRobustConnection | None = None
         self._channel: AbstractRobustChannel | None = None
         self._exchange: AbstractExchange | None = None
-        self._inbound_queue: AbstractRobustQueue | None = None
-        self._outbound_queue: AbstractRobustQueue | None = None
+        # 普通队列
+        self._normal_inbound_queue: AbstractRobustQueue | None = None
+        self._normal_outbound_queue: AbstractRobustQueue | None = None
+        # VIP 队列
+        self._vip_inbound_queue: AbstractRobustQueue | None = None
+        self._vip_outbound_queue: AbstractRobustQueue | None = None
+        # 普通死信
         self._dlx: AbstractExchange | None = None
         self._dlq_queue: AbstractRobustQueue | None = None
+        # VIP 死信
+        self._vip_dlx: AbstractExchange | None = None
+        self._vip_dlq_queue: AbstractRobustQueue | None = None
         self._connect_lock = asyncio.Lock()
 
     async def ensure_topology(self) -> dict[str, Any]:
@@ -53,10 +61,14 @@ class MessageBrokerService:
 
         拓扑结构：
         - ``digital_employee.events``（Topic Exchange，Durable）
-          - ``inbound_queue``，绑定 routing_key ``inbound.message``
-          - ``outbound_queue``，绑定 routing_key ``outbound.message``
-        - ``digital_employee.dlx``（Direct Exchange，Durable，死信交换机）
-          - ``outbound_dlq``，绑定 routing_key ``outbound.message``
+          - ``normal_inbound_queue``，绑定 routing_key ``normal.inbound.message``
+          - ``normal_outbound_queue``，绑定 routing_key ``normal.outbound.message``
+          - ``vip_inbound_queue``，绑定 routing_key ``vip.inbound.message``
+          - ``vip_outbound_queue``，绑定 routing_key ``vip.outbound.message``
+        - ``digital_employee.dlx``（Direct Exchange，Durable，普通死信）
+          - ``outbound_dlq``，绑定 routing_key ``normal.outbound.message``
+        - ``digital_employee.vip.dlx``（Direct Exchange，Durable，VIP 死信）
+          - ``vip_outbound_dlq``，绑定 routing_key ``vip.outbound.message``
 
         Returns:
             拓扑状态字典，包含 connected、exchange、dlx、dlq 等字段。
@@ -86,27 +98,47 @@ class MessageBrokerService:
                     durable=True,
                 )
 
-                # 声明并绑定入站队列
-                inbound_queue = await channel.declare_queue(
-                    settings.rabbitmq_inbound_queue,
+                # ── 普通入站队列 ──
+                normal_inbound_queue = await channel.declare_queue(
+                    settings.rabbitmq_normal_inbound_queue,
                     durable=True,
                 )
-                await inbound_queue.bind(
+                await normal_inbound_queue.bind(
                     exchange,
-                    routing_key=settings.rabbitmq_inbound_routing_key,
+                    routing_key=settings.rabbitmq_normal_inbound_routing_key,
                 )
 
-                # 声明并绑定出站队列
-                outbound_queue = await channel.declare_queue(
-                    settings.rabbitmq_outbound_queue,
+                # ── 普通出站队列 ──
+                normal_outbound_queue = await channel.declare_queue(
+                    settings.rabbitmq_normal_outbound_queue,
                     durable=True,
                 )
-                await outbound_queue.bind(
+                await normal_outbound_queue.bind(
                     exchange,
-                    routing_key=settings.rabbitmq_outbound_routing_key,
+                    routing_key=settings.rabbitmq_normal_outbound_routing_key,
                 )
 
-                # 声明死信拓扑：DLX (direct) + DLQ，与 outbound_queue 共用 routing_key
+                # ── VIP 入站队列 ──
+                vip_inbound_queue = await channel.declare_queue(
+                    settings.rabbitmq_vip_inbound_queue,
+                    durable=True,
+                )
+                await vip_inbound_queue.bind(
+                    exchange,
+                    routing_key=settings.rabbitmq_vip_inbound_routing_key,
+                )
+
+                # ── VIP 出站队列 ──
+                vip_outbound_queue = await channel.declare_queue(
+                    settings.rabbitmq_vip_outbound_queue,
+                    durable=True,
+                )
+                await vip_outbound_queue.bind(
+                    exchange,
+                    routing_key=settings.rabbitmq_vip_outbound_routing_key,
+                )
+
+                # ── 普通死信拓扑：DLX (direct) + DLQ ──
                 dlx = await channel.declare_exchange(
                     settings.rabbitmq_dlx,
                     aio_pika.ExchangeType.DIRECT,
@@ -118,7 +150,22 @@ class MessageBrokerService:
                 )
                 await dlq_queue.bind(
                     dlx,
-                    routing_key=settings.rabbitmq_outbound_routing_key,
+                    routing_key=settings.rabbitmq_normal_outbound_routing_key,
+                )
+
+                # ── VIP 死信拓扑：独立 DLX (direct) + DLQ ──
+                vip_dlx = await channel.declare_exchange(
+                    settings.rabbitmq_vip_dlx,
+                    aio_pika.ExchangeType.DIRECT,
+                    durable=True,
+                )
+                vip_dlq_queue = await channel.declare_queue(
+                    settings.rabbitmq_vip_dlq,
+                    durable=True,
+                )
+                await vip_dlq_queue.bind(
+                    vip_dlx,
+                    routing_key=settings.rabbitmq_vip_outbound_routing_key,
                 )
 
             except Exception as exc:
@@ -131,10 +178,14 @@ class MessageBrokerService:
             self._connection = connection
             self._channel = channel
             self._exchange = exchange
-            self._inbound_queue = inbound_queue
-            self._outbound_queue = outbound_queue
+            self._normal_inbound_queue = normal_inbound_queue
+            self._normal_outbound_queue = normal_outbound_queue
+            self._vip_inbound_queue = vip_inbound_queue
+            self._vip_outbound_queue = vip_outbound_queue
             self._dlx = dlx
             self._dlq_queue = dlq_queue
+            self._vip_dlx = vip_dlx
+            self._vip_dlq_queue = vip_dlq_queue
             return self._topology_status()
 
     async def close(self) -> None:
@@ -147,10 +198,14 @@ class MessageBrokerService:
             self._connection = None
             self._channel = None
             self._exchange = None
-            self._inbound_queue = None
-            self._outbound_queue = None
+            self._normal_inbound_queue = None
+            self._normal_outbound_queue = None
+            self._vip_inbound_queue = None
+            self._vip_outbound_queue = None
             self._dlx = None
             self._dlq_queue = None
+            self._vip_dlx = None
+            self._vip_dlq_queue = None
             if connection is not None and not connection.is_closed:
                 await connection.close()
 
@@ -161,20 +216,28 @@ class MessageBrokerService:
             and self._channel is not None
             and not self._channel.is_closed
             and self._exchange is not None
-            and self._inbound_queue is not None
-            and self._outbound_queue is not None
+            and self._normal_inbound_queue is not None
+            and self._normal_outbound_queue is not None
+            and self._vip_inbound_queue is not None
+            and self._vip_outbound_queue is not None
             and self._dlx is not None
             and self._dlq_queue is not None
+            and self._vip_dlx is not None
+            and self._vip_dlq_queue is not None
         )
 
     def _topology_status(self) -> dict[str, Any]:
         return {
             "connected": self._is_ready(),
             "exchange": settings.rabbitmq_exchange,
-            "inbound_queue": settings.rabbitmq_inbound_queue,
-            "outbound_queue": settings.rabbitmq_outbound_queue,
+            "normal_inbound_queue": settings.rabbitmq_normal_inbound_queue,
+            "normal_outbound_queue": settings.rabbitmq_normal_outbound_queue,
+            "vip_inbound_queue": settings.rabbitmq_vip_inbound_queue,
+            "vip_outbound_queue": settings.rabbitmq_vip_outbound_queue,
             "dlx": settings.rabbitmq_dlx,
             "dlq": settings.rabbitmq_dlq,
+            "vip_dlx": settings.rabbitmq_vip_dlx,
+            "vip_dlq": settings.rabbitmq_vip_dlq,
         }
 
     async def _reset_closed_handles(self) -> None:
@@ -182,10 +245,14 @@ class MessageBrokerService:
         self._connection = None
         self._channel = None
         self._exchange = None
-        self._inbound_queue = None
-        self._outbound_queue = None
+        self._normal_inbound_queue = None
+        self._normal_outbound_queue = None
+        self._vip_inbound_queue = None
+        self._vip_outbound_queue = None
         self._dlx = None
         self._dlq_queue = None
+        self._vip_dlx = None
+        self._vip_dlq_queue = None
         if connection is not None and not connection.is_closed:
             await connection.close()
 
@@ -199,3 +266,4 @@ def get_message_broker_service() -> MessageBrokerService:
     if _message_broker_service is None:
         _message_broker_service = MessageBrokerService()
     return _message_broker_service
+

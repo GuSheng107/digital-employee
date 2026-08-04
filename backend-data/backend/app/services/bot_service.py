@@ -38,6 +38,7 @@ def _bot_to_dict(
     mask_secret: bool = False,
     created_by_name: str | None = None,
     agent_name: str | None = None,
+    creator_vip_level: int | None = None,
 ) -> dict[str, Any]:
     """将 Bot ORM 对象转换为字典。
 
@@ -47,6 +48,7 @@ def _bot_to_dict(
             解密后的明文（供 Gateway 使用）。
         created_by_name: 创建者的显示名称/用户名（联查时提供）。
         agent_name: 关联 Agent 的名称（联查时提供）。
+        creator_vip_level: 创建者的 VIP 等级（Gateway 路由用）。
     """
     return {
         "id": bot.id,
@@ -61,6 +63,7 @@ def _bot_to_dict(
         "agent_name": agent_name,
         "created_by": bot.created_by,
         "created_by_name": created_by_name,
+        "creator_vip_level": creator_vip_level or 0,
         "created_at": bot.created_at.isoformat() if bot.created_at else None,
         "updated_at": bot.updated_at.isoformat() if bot.updated_at else None,
     }
@@ -87,6 +90,7 @@ class BotService:
                     Bot,
                     func.coalesce(User.nickname, User.username).label("creator_name"),
                     func.coalesce(Agent.name, Bot.agent_id).label("agent_name"),
+                    User.vip_level,
                 )
                 .outerjoin(User, Bot.created_by == User.id)
                 .outerjoin(Agent, Bot.agent_id == Agent.agent_id)
@@ -107,8 +111,9 @@ class BotService:
                     mask_secret=True,
                     created_by_name=creator_name,
                     agent_name=agent_name,
+                    creator_vip_level=vip_level,
                 )
-                for bot, creator_name, agent_name in rows
+                for bot, creator_name, agent_name, vip_level in rows
             ]
             return {
                 "items": items,
@@ -125,6 +130,7 @@ class BotService:
                     Bot,
                     func.coalesce(User.nickname, User.username).label("creator_name"),
                     func.coalesce(Agent.name, Bot.agent_id).label("agent_name"),
+                    User.vip_level,
                 )
                 .outerjoin(User, Bot.created_by == User.id)
                 .outerjoin(Agent, Bot.agent_id == Agent.agent_id)
@@ -133,23 +139,31 @@ class BotService:
             )
             if row is None:
                 raise ResourceNotFoundError(message=f"Bot '{bot_id}' 不存在")
-            bot, creator_name, agent_name = row
+            bot, creator_name, agent_name, vip_level = row
             return _bot_to_dict(
                 bot,
                 mask_secret=True,
                 created_by_name=creator_name,
                 agent_name=agent_name,
+                creator_vip_level=vip_level,
             )
 
     def list_active_bots(self) -> list[dict[str, Any]]:
-        """查询全部启用的 Bot（Gateway 启动拉取用，含 app_secret 明文）。"""
+        """查询全部启用的 Bot（Gateway 启动拉取用，含 app_secret 明文及创建者 VIP 等级）。"""
         with self._db.session() as session:
-            bots = (
-                session.query(Bot)
+            rows = (
+                session.query(
+                    Bot,
+                    User.vip_level,
+                )
+                .outerjoin(User, Bot.created_by == User.id)
                 .filter(Bot.deleted_at.is_(None), Bot.status == 1)
                 .all()
             )
-            return [_bot_to_dict(b, mask_secret=False) for b in bots]
+            return [
+                _bot_to_dict(bot, mask_secret=False, creator_vip_level=vip_level)
+                for bot, vip_level in rows
+            ]
 
     def create_bot(
         self,
