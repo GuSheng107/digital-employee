@@ -85,7 +85,7 @@ class RabbitMQClient:
         self.dlq_routing_key = self.normal_outbound_routing_key
         # ── VIP 死信 ──
         self.vip_dlx_name = os.getenv("RABBITMQ_VIP_DLX", "digital_employee.vip.dlx")
-        self.vip_dlq_name = os.getenv("RABBITMQ_VIP_DLQ", "vip_outbound_dlq")
+        self.vip_dlq_name = os.getenv("RABBITMQ_VIP_DLQ", "outbound_vip_dlq")
         self.vip_dlq_routing_key = self.vip_outbound_routing_key
 
         self._connection: aio_pika.RobustConnection | None = None
