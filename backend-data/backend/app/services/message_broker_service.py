@@ -266,3 +266,4 @@ def get_message_broker_service() -> MessageBrokerService:
     if _message_broker_service is None:
         _message_broker_service = MessageBrokerService()
     return _message_broker_service
+

@@ -492,3 +492,4 @@ def get_rabbitmq_client() -> RabbitMQClient:
     if _global_rabbitmq_client is None:
         _global_rabbitmq_client = RabbitMQClient()
     return _global_rabbitmq_client
+
