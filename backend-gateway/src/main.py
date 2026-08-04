@@ -65,23 +65,39 @@ _load_service_configuration()
 manager: BotManager = BotManager()
 
 
-async def _outbound_relay_loop() -> None:
-    """基于 share 包的 rabbitmq-client 原生 AMQP 监听并处理出站消息。
+async def _run_outbound_consumer(vip: bool) -> None:
+    """运行单个出站消费者，异常隔离。
 
-    同时启动普通出站队列和 VIP 出站队列两个消费者，共用同一个 channel。
+    消费者内部异常被捕获记录，不传播到外层，确保一个消费者崩溃不影响另一个。
     """
     from src.core.hub import hub
 
-    # 同时启动普通和 VIP 两个消费者（共享同一个 AMQP channel）
-    async with asyncio.TaskGroup() as tg:
-        tg.create_task(
-            message_bus_client.start_consumer(hub.consume_outbound_payload, vip=False),
-            name="normal_outbound_consumer",
-        )
-        tg.create_task(
-            message_bus_client.start_consumer(hub.consume_outbound_payload, vip=True),
-            name="vip_outbound_consumer",
-        )
+    name = "VIP" if vip else "NORMAL"
+    try:
+        await message_bus_client.start_consumer(hub.consume_outbound_payload, vip=vip)
+    except asyncio.CancelledError:
+        logger.info("[MESSAGE-RELAY] {} 出站消费者已取消", name)
+        raise
+    except Exception as exc:
+        logger.exception("[MESSAGE-RELAY] {} 出站消费者异常退出: {}", name, exc)
+
+
+async def _outbound_relay_loop() -> None:
+    """同时启动普通和 VIP 两个出站消费者，互不干扰。
+
+    移除 TaskGroup 包装，改用独立 asyncio.create_task 分别运行，避免
+    一个消费者异常退出导致另一个被连带取消。
+    """
+    normal_task = asyncio.create_task(
+        _run_outbound_consumer(vip=False),
+        name="normal_outbound_consumer",
+    )
+    vip_task = asyncio.create_task(
+        _run_outbound_consumer(vip=True),
+        name="vip_outbound_consumer",
+    )
+    # 保持运行直到被取消；gather return_exceptions=True 确保异常不会传播
+    await asyncio.gather(normal_task, vip_task, return_exceptions=True)
 
 
 @asynccontextmanager
