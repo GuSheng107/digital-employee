@@ -143,55 +143,6 @@ export default function Register(): React.ReactElement {
 
         <div className={styles.fieldPair}>
           <Form.Item
-            name="password"
-            label={<span className={shell.formLabel}>密码</span>}
-            rules={[
-              { required: true, message: '请输入密码' },
-              {
-                pattern: PASSWORD_COMPLEXITY_PATTERN,
-                message: PASSWORD_COMPLEXITY_MESSAGE,
-              },
-            ]}
-            className={shell.formField}
-          >
-            <Input.Password
-              prefix={<LockOutlined className={shell.inputIcon} />}
-              placeholder="设置密码"
-              className={shell.formInput}
-              size="large"
-              autoComplete="new-password"
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="confirmPassword"
-            label={<span className={shell.formLabel}>确认密码</span>}
-            dependencies={['password']}
-            rules={[
-              { required: true, message: '请再次输入密码' },
-              ({ getFieldValue }) => ({
-                validator(_, value) {
-                  if (!value || getFieldValue('password') === value) {
-                    return Promise.resolve();
-                  }
-                  return Promise.reject(new Error('两次输入的密码不一致'));
-                },
-              }),
-            ]}
-            className={shell.formField}
-          >
-            <Input.Password
-              prefix={<LockOutlined className={shell.inputIcon} />}
-              placeholder="再次输入"
-              className={shell.formInput}
-              size="large"
-              autoComplete="new-password"
-            />
-          </Form.Item>
-        </div>
-
-        <div className={styles.fieldPair}>
-          <Form.Item
             name="email"
             label={<span className={shell.formLabel}>邮箱</span>}
             rules={[
@@ -238,6 +189,55 @@ export default function Register(): React.ReactElement {
               className={shell.formInput}
               size="large"
               autoComplete="tel"
+            />
+          </Form.Item>
+        </div>
+
+        <div className={styles.fieldPair}>
+          <Form.Item
+            name="password"
+            label={<span className={shell.formLabel}>密码</span>}
+            rules={[
+              { required: true, message: '请输入密码' },
+              {
+                pattern: PASSWORD_COMPLEXITY_PATTERN,
+                message: PASSWORD_COMPLEXITY_MESSAGE,
+              },
+            ]}
+            className={shell.formField}
+          >
+            <Input.Password
+              prefix={<LockOutlined className={shell.inputIcon} />}
+              placeholder="设置密码"
+              className={shell.formInput}
+              size="large"
+              autoComplete="new-password"
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="confirmPassword"
+            label={<span className={shell.formLabel}>确认密码</span>}
+            dependencies={['password']}
+            rules={[
+              { required: true, message: '请再次输入密码' },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || getFieldValue('password') === value) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error('两次输入的密码不一致'));
+                },
+              }),
+            ]}
+            className={shell.formField}
+          >
+            <Input.Password
+              prefix={<LockOutlined className={shell.inputIcon} />}
+              placeholder="再次输入"
+              className={shell.formInput}
+              size="large"
+              autoComplete="new-password"
             />
           </Form.Item>
         </div>
