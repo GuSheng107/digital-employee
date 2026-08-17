@@ -59,15 +59,15 @@ export default function AuthPageShell({
             <span className={styles.brandName}>{brandName}</span>
           </header>
 
+          <div className={styles.brandCopy}>
+            <h1 className={styles.brandTitle}>{brandTitle}</h1>
+            <p className={styles.brandSubtitle}>{brandSubtitle}</p>
+          </div>
+
           <div className={styles.heroVisual}>
             <div className={styles.heroGlow} />
             <img src={heroSrc} alt="" className={styles.heroArt} />
             <span className={styles.heroShadow} />
-          </div>
-
-          <div className={styles.brandCopy}>
-            <h1 className={styles.brandTitle}>{brandTitle}</h1>
-            <p className={styles.brandSubtitle}>{brandSubtitle}</p>
           </div>
 
           <footer className={styles.brandFooter}>
