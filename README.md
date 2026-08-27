@@ -223,4 +223,4 @@ npm run build
 
 ## 许可证
 
-[MIT License](LICENSE)
+[GNU Affero General Public License v3.0](LICENSE)（AGPL-3.0）。本项目保持开源，但任何对网络用户提供的修改版本也必须以 AGPL-3.0 公开全部源代码，以此阻止他人闭源拿本项目对外提供 SaaS / 商业服务。
