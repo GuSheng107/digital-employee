@@ -12,7 +12,9 @@ from auth_utils.domain import (
     AVATAR_CONTENT_TYPES,
     AVATAR_MAX_SIZE_BYTES,
     BUSINESS_VIP_LEVELS,
+    EXCLUSIVE_ROLE_CODES,
     FULL_ACCESS_ROLE_CODES,
+    IDENTITY_ROLE_CODES,
     INVITE_CODE_ALLOWED_PATTERN,
     INVITE_CODE_GENERATED_LENGTH,
     INVITE_CODE_MAX_LENGTH,
@@ -29,8 +31,13 @@ from auth_utils.domain import (
     detect_avatar_content_type,
     get_vip_display,
     is_business_vip_level,
+    validate_role_codes,
 )
-from auth_utils.permissions import PermissionCode
+from auth_utils.permissions import (
+    PERMISSION_CODE_PATTERN,
+    PermissionCode,
+    expand_manage_to_readonly,
+)
 
 __all__ = [
     "ADMIN_ROLE_CODES",
@@ -42,12 +49,15 @@ __all__ = [
     "AuthorizationError",
     "AuthServiceUnavailableError",
     "BUSINESS_VIP_LEVELS",
+    "EXCLUSIVE_ROLE_CODES",
     "FULL_ACCESS_ROLE_CODES",
+    "IDENTITY_ROLE_CODES",
     "INVITE_CODE_ALLOWED_PATTERN",
     "INVITE_CODE_GENERATED_LENGTH",
     "INVITE_CODE_MAX_LENGTH",
     "INVITE_CODE_MIN_LENGTH",
     "MenuType",
+    "PERMISSION_CODE_PATTERN",
     "PermissionCode",
     "PRIVILEGED_ROLE_CODES",
     "PROTECTED_ROLE_CODES",
@@ -58,6 +68,8 @@ __all__ = [
     "USER_PROFILE_ROUTE_PATH",
     "VipLevel",
     "detect_avatar_content_type",
+    "expand_manage_to_readonly",
     "get_vip_display",
     "is_business_vip_level",
+    "validate_role_codes",
 ]

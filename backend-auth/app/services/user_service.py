@@ -9,11 +9,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from api_common import InvalidCredentialsError, PermissionDeniedError
+from api_common import InvalidCredentialsError, PermissionDeniedError, ValidationError
 from auth_utils import (
     PROTECTED_ROLE_CODES,
     ROLE_CODE_MANAGER,
     ROLE_CODE_SUPER_ADMIN,
+    validate_role_codes,
 )
 from data_client import DataClient, get_data_client
 
@@ -52,6 +53,7 @@ class UserService:
             role_codes=requested_roles,
             actor_role_codes=actor_role_codes,
         )
+        self._ensure_exclusive_roles_valid(requested_roles)
         return self._data.create_user(
             username=username,
             password_hash=hash_password(password),
@@ -81,6 +83,7 @@ class UserService:
             role_codes=role_codes,
             actor_role_codes=actor_role_codes,
         )
+        self._ensure_exclusive_roles_valid(role_codes)
         return self._data.assign_user_roles(
             user_id=user_id,
             role_codes=role_codes,
@@ -196,6 +199,13 @@ class UserService:
             and ROLE_CODE_SUPER_ADMIN not in actor_role_codes
         ):
             raise PermissionDeniedError(message="仅超级管理员可以分配管理员角色")
+
+    @staticmethod
+    def _ensure_exclusive_roles_valid(role_codes: list[str]) -> None:
+        """校验身份角色互斥与独占角色规则（委托共享校验函数）。"""
+        error = validate_role_codes(role_codes)
+        if error is not None:
+            raise ValidationError(message=error)
 
     def reset_user_password(
         self,

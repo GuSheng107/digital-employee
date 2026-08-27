@@ -121,7 +121,10 @@ def require_permission(
 
         @router.get(
             "/users",
-            dependencies=[Depends(require_permission("user:read", "user:manage"))],
+            dependencies=[Depends(require_permission(
+                PermissionCode.USER_READONLY,
+                PermissionCode.USER_MANAGE,
+            ))],
         )
         def list_users(): ...
 

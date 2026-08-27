@@ -24,12 +24,13 @@ from app.models.agent import Agent
 from app.models.bot import Bot
 from app.models.user import User
 from sqlalchemy import func
+from sqlalchemy.orm import aliased
 
 # 可空字段白名单：这些字段允许显式传入 None 来置空（与“未传字段”区分，
 # 后者由 ``model_dump(exclude_unset=True)`` 在路由层过滤掉）。
 # 命中白名单的字段即便值为 None 也会 ``setattr``；其他字段维持
 # ``value is not None`` 的旧语义，避免必填字段（如 app_secret）被误传 null 落库。
-NULLABLE_FIELDS: frozenset[str] = frozenset({"agent_id"})
+NULLABLE_FIELDS: frozenset[str] = frozenset({"agent_id", "parent_bot_id"})
 
 
 def _bot_to_dict(
@@ -39,6 +40,7 @@ def _bot_to_dict(
     created_by_name: str | None = None,
     agent_name: str | None = None,
     creator_vip_level: int | None = None,
+    parent_bot_name: str | None = None,
 ) -> dict[str, Any]:
     """将 Bot ORM 对象转换为字典。
 
@@ -49,6 +51,7 @@ def _bot_to_dict(
         created_by_name: 创建者的显示名称/用户名（联查时提供）。
         agent_name: 关联 Agent 的名称（联查时提供）。
         creator_vip_level: 创建者的 VIP 等级（Gateway 路由用）。
+        parent_bot_name: 父级 Bot 的名称（联查时提供，表达部门隶属）。
     """
     return {
         "id": bot.id,
@@ -61,6 +64,8 @@ def _bot_to_dict(
         "status": bot.status,
         "agent_id": bot.agent_id,
         "agent_name": agent_name,
+        "parent_bot_id": bot.parent_bot_id,
+        "parent_bot_name": parent_bot_name,
         "created_by": bot.created_by,
         "created_by_name": created_by_name,
         "creator_vip_level": creator_vip_level or 0,
@@ -84,6 +89,7 @@ class BotService:
     ) -> dict[str, Any]:
         """分页查询未删除的 Bot 列表（前端管理页用，app_secret 脱敏，联查创建者）。"""
         offset = (page - 1) * page_size
+        parent_alias = aliased(Bot)
         with self._db.session() as session:
             query = (
                 session.query(
@@ -91,9 +97,11 @@ class BotService:
                     func.coalesce(User.nickname, User.username).label("creator_name"),
                     func.coalesce(Agent.name, Bot.agent_id).label("agent_name"),
                     User.vip_level,
+                    parent_alias.name.label("parent_bot_name"),
                 )
                 .outerjoin(User, Bot.created_by == User.id)
                 .outerjoin(Agent, Bot.agent_id == Agent.agent_id)
+                .outerjoin(parent_alias, Bot.parent_bot_id == parent_alias.id)
                 .filter(Bot.deleted_at.is_(None))
             )
             if created_by is not None:
@@ -112,8 +120,9 @@ class BotService:
                     created_by_name=creator_name,
                     agent_name=agent_name,
                     creator_vip_level=vip_level,
+                    parent_bot_name=parent_bot_name,
                 )
-                for bot, creator_name, agent_name, vip_level in rows
+                for bot, creator_name, agent_name, vip_level, parent_bot_name in rows
             ]
             return {
                 "items": items,
@@ -124,6 +133,7 @@ class BotService:
 
     def get_bot(self, *, bot_id: str) -> dict[str, Any]:
         """获取单个 Bot 详情。"""
+        parent_alias = aliased(Bot)
         with self._db.session() as session:
             row = (
                 session.query(
@@ -131,21 +141,24 @@ class BotService:
                     func.coalesce(User.nickname, User.username).label("creator_name"),
                     func.coalesce(Agent.name, Bot.agent_id).label("agent_name"),
                     User.vip_level,
+                    parent_alias.name.label("parent_bot_name"),
                 )
                 .outerjoin(User, Bot.created_by == User.id)
                 .outerjoin(Agent, Bot.agent_id == Agent.agent_id)
+                .outerjoin(parent_alias, Bot.parent_bot_id == parent_alias.id)
                 .filter(Bot.bot_id == bot_id, Bot.deleted_at.is_(None))
                 .first()
             )
             if row is None:
                 raise ResourceNotFoundError(message=f"Bot '{bot_id}' 不存在")
-            bot, creator_name, agent_name, vip_level = row
+            bot, creator_name, agent_name, vip_level, parent_bot_name = row
             return _bot_to_dict(
                 bot,
                 mask_secret=True,
                 created_by_name=creator_name,
                 agent_name=agent_name,
                 creator_vip_level=vip_level,
+                parent_bot_name=parent_bot_name,
             )
 
     def list_active_bots(self) -> list[dict[str, Any]]:
@@ -176,6 +189,7 @@ class BotService:
         mode: str = "test",
         agent_id: str | None = None,
         created_by: int | None = None,
+        parent_bot_id: int | None = None,
     ) -> dict[str, Any]:
         """创建 Bot。"""
         with self._db.session() as session:
@@ -189,6 +203,13 @@ class BotService:
                     message=f"Bot '{bot_id}' 已存在",
                 )
 
+            if parent_bot_id is not None:
+                parent = session.get(Bot, parent_bot_id)
+                if parent is None or parent.deleted_at is not None:
+                    raise ResourceNotFoundError(
+                        message=f"父级 Bot(id={parent_bot_id}) 不存在",
+                    )
+
             bot = Bot(
                 bot_id=bot_id,
                 name=name,
@@ -199,6 +220,7 @@ class BotService:
                 status=1,
                 agent_id=agent_id,
                 created_by=created_by,
+                parent_bot_id=parent_bot_id,
             )
             session.add(bot)
             session.commit()

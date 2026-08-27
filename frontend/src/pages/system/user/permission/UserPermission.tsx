@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Card,
-  Checkbox,
   Empty,
   Form,
   Input,
   Modal,
   Popconfirm,
   Radio,
+  Select,
   Space,
   Spin,
   Table,
@@ -40,11 +40,21 @@ import {
 } from '@/api/role-api';
 import { fetchMenus, type MenuItem } from '@/api/menu-api';
 import {
+  createPermission,
+  deletePermission,
+  fetchPermissions,
+  type CreatePermissionPayload,
+  type PermissionItem,
+} from '@/api/permission-api';
+import {
+  hasManagePermission,
+  PERMISSION_CODE,
   RESERVED_ROLE_CODES,
   ROLE_CODE,
 } from '@/constants/access-control';
 import { useUserStore } from '@/store/user-store';
 import { getRequestErrorMessage } from '@/utils/request';
+import { normalizeRoleCodes } from '@/utils/role-validation';
 import SystemPage from '@/components/system-page/SystemPage';
 import {
   createTablePagination,
@@ -110,10 +120,25 @@ interface RoleFormValues {
   description: string;
 }
 
+interface PermissionFormValues {
+  code: string;
+  name: string;
+  description: string;
+  module: string;
+}
+
 export default function UserPermission(): React.ReactElement {
-  const currentUserRoles = useUserStore((state) => state.userInfo?.roles ?? []);
-  const currentUserId = useUserStore((state) => state.userInfo?.id ?? null);
+  const currentUser = useUserStore((state) => state.userInfo);
+  const currentUserRoles = currentUser?.roles ?? [];
+  const currentUserId = currentUser?.id ?? null;
   const canManageManager = currentUserRoles.includes(ROLE_CODE.SUPER_ADMIN);
+  /** 是否可管理权限（拥有 manage 权限；仅 readonly 时隐藏写操作入口） */
+  const canManage = currentUser !== null
+    && hasManagePermission(
+      currentUser.roles,
+      currentUser.permissions,
+      PERMISSION_CODE.PERMISSION_MANAGE,
+    );
 
   // ── 左栏：用户角色分配 ──
   const [users, setUsers] = useState<UserListItem[]>([]);
@@ -146,6 +171,13 @@ export default function UserPermission(): React.ReactElement {
   const [editingRole, setEditingRole] = useState<RoleItem | null>(null);
   const [roleForm] = Form.useForm<RoleFormValues>();
   const [roleSubmitting, setRoleSubmitting] = useState<boolean>(false);
+
+  // ── 权限码管理弹窗 ──
+  const [permissionModalOpen, setPermissionModalOpen] = useState<boolean>(false);
+  const [permissions, setPermissions] = useState<PermissionItem[]>([]);
+  const [permissionsLoading, setPermissionsLoading] = useState<boolean>(false);
+  const [permissionSubmitting, setPermissionSubmitting] = useState<boolean>(false);
+  const [permissionForm] = Form.useForm<PermissionFormValues>();
 
   const menuTreeData = useMemo<TreeDataNode[]>(
     () => convertMenusToTreeData(allMenus),
@@ -393,6 +425,87 @@ export default function UserPermission(): React.ReactElement {
     }
   }
 
+  // ── 权限码管理 ──
+  async function loadPermissions(): Promise<void> {
+    setPermissionsLoading(true);
+    try {
+      const response = await fetchPermissions();
+      setPermissions(response);
+    } catch (error) {
+      message.error(getErrorMessage(error));
+    } finally {
+      setPermissionsLoading(false);
+    }
+  }
+
+  function openPermissionModal(): void {
+    permissionForm.resetFields();
+    setPermissionModalOpen(true);
+    void loadPermissions();
+  }
+
+  function closePermissionModal(): void {
+    setPermissionModalOpen(false);
+    permissionForm.resetFields();
+  }
+
+  async function handlePermissionSubmit(values: PermissionFormValues): Promise<void> {
+    setPermissionSubmitting(true);
+    try {
+      const payload: CreatePermissionPayload = {
+        code: values.code.trim(),
+        name: values.name.trim(),
+        description: values.description?.trim() || undefined,
+        module: values.module?.trim() || undefined,
+      };
+      await createPermission(payload);
+      message.success(`权限码创建成功：${payload.code}`);
+      permissionForm.resetFields();
+      await loadPermissions();
+    } catch (error) {
+      message.error(getErrorMessage(error));
+    } finally {
+      setPermissionSubmitting(false);
+    }
+  }
+
+  async function handleDeletePermission(record: PermissionItem): Promise<void> {
+    try {
+      await deletePermission(record.id);
+      message.success(`权限码 ${record.code} 已删除`);
+      await loadPermissions();
+    } catch (error) {
+      message.error(getErrorMessage(error));
+    }
+  }
+
+  const permissionColumns: ColumnsType<PermissionItem> = [
+    { title: '权限码', dataIndex: 'code', width: 220 },
+    { title: '名称', dataIndex: 'name', width: 140 },
+    { title: '模块', dataIndex: 'module', width: 120, render: (value: string | null) => value || '-' },
+    { title: '描述', dataIndex: 'description', render: (value: string) => value || '-' },
+    {
+      title: '操作',
+      key: 'action',
+      width: 80,
+      align: 'center',
+      render: (_, record) => (
+        <Popconfirm
+          title="确认删除该权限码？"
+          description="删除后不可恢复，请确保已解除角色/用户关联。"
+          onConfirm={() => void handleDeletePermission(record)}
+          okText="删除"
+          cancelText="取消"
+          okButtonProps={{ danger: true }}
+        >
+          <Button type="link" size="small" danger>
+            删除
+          </Button>
+        </Popconfirm>
+      ),
+    },
+  ];
+
   const userColumns: ColumnsType<UserListItem> = [
     { title: '用户名', dataIndex: 'username', width: 140 },
     {
@@ -459,38 +572,38 @@ export default function UserPermission(): React.ReactElement {
             <div className={styles.roleSection}>
               <div className={styles.sectionHeader}>
                 <Text strong>为 {selectedUser.username} 分配角色</Text>
-                <Button
-                  type="primary"
-                  size="small"
-                  loading={userRolesSaving}
-                  disabled={selectedUser.id === currentUserId}
-                  onClick={() => void handleSaveUserRoles()}
-                >
-                  保存角色
-                </Button>
+                {canManage && (
+                  <Button
+                    type="primary"
+                    size="small"
+                    loading={userRolesSaving}
+                    disabled={selectedUser.id === currentUserId}
+                    onClick={() => void handleSaveUserRoles()}
+                  >
+                    保存角色
+                  </Button>
+                )}
               </div>
               {rolesLoading ? (
                 <Spin />
               ) : roles.length === 0 ? (
                 <Empty description="暂无角色" />
               ) : (
-                <Checkbox.Group
+                <Select
+                  mode="multiple"
                   value={userRoleCodes}
-                  disabled={selectedUser.id === currentUserId}
-                  onChange={(values) => {
-                    setUserRoleCodes(
-                      values.filter((v): v is string => typeof v === 'string'),
-                    );
+                  disabled={!canManage || selectedUser.id === currentUserId}
+                  onChange={(values: string[]) => {
+                    setUserRoleCodes(normalizeRoleCodes(values));
                   }}
-                >
-                  <Space orientation="vertical">
-                    {roles.map((role) => (
-                      <Checkbox key={role.code} value={role.code}>
-                        {role.name}（{role.code}）
-                      </Checkbox>
-                    ))}
-                  </Space>
-                </Checkbox.Group>
+                  options={roles.map((role) => ({
+                    label: `${role.name}（${role.code}）`,
+                    value: role.code,
+                  }))}
+                  placeholder="请选择角色"
+                  style={{ width: '100%' }}
+                  allowClear
+                />
               )}
             </div>
 
@@ -498,15 +611,17 @@ export default function UserPermission(): React.ReactElement {
             <div className={styles.userPermSection}>
               <div className={styles.sectionHeader}>
                 <Text strong>用户菜单权限</Text>
-                <Button
-                  type="primary"
-                  size="small"
-                  loading={userMenusSaving}
-                  disabled={userMenusLoading}
-                  onClick={() => void handleSaveUserMenus()}
-                >
-                  保存菜单
-                </Button>
+                {canManage && (
+                  <Button
+                    type="primary"
+                    size="small"
+                    loading={userMenusSaving}
+                    disabled={userMenusLoading}
+                    onClick={() => void handleSaveUserMenus()}
+                  >
+                    保存菜单
+                  </Button>
+                )}
               </div>
               {userMenusLoading ? (
                 <Spin />
@@ -519,6 +634,7 @@ export default function UserPermission(): React.ReactElement {
                   treeData={menuTreeData}
                   checkedKeys={userMenuIds}
                   onCheck={handleUserMenuCheck}
+                  disabled={!canManage}
                 />
               )}
             </div>
@@ -532,14 +648,25 @@ export default function UserPermission(): React.ReactElement {
       <Card className={styles.panel}>
         <div className={styles.roleToolbar}>
           <div className={styles.panelTitle}>角色管理</div>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            size="small"
-            onClick={openCreateRoleModal}
-          >
-            新建角色
-          </Button>
+          {canManage && (
+            <Space size="small">
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                size="small"
+                onClick={openCreateRoleModal}
+              >
+                新建角色
+              </Button>
+              <Button
+                size="small"
+                icon={<SafetyCertificateOutlined />}
+                onClick={openPermissionModal}
+              >
+                权限码管理
+              </Button>
+            </Space>
+          )}
         </div>
 
         {rolesLoading ? (
@@ -565,39 +692,41 @@ export default function UserPermission(): React.ReactElement {
                     <span className={styles.roleCode}>（{role.code}）</span>
                     {role.is_builtin && <Tag color="orange" className={styles.builtinTag}>内置</Tag>}
                   </Radio>
-                  <Space size={4} className={styles.roleActions}>
-                    <Button
-                      type="link"
-                      size="small"
-                      icon={<EditOutlined />}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        openEditRoleModal(role);
-                      }}
-                    />
-                    {!role.is_builtin && (
-                      <Popconfirm
-                        title="确认删除该角色？"
-                        description="删除后不可恢复，请确保已解除用户关联。"
-                        onConfirm={() => void handleDeleteRole(role)}
-                        okText="删除"
-                        cancelText="取消"
-                        okButtonProps={{ danger: true }}
-                      >
-                        <Button
-                          type="link"
-                          size="small"
-                          danger
-                          icon={<DeleteOutlined />}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                          }}
-                        />
-                      </Popconfirm>
-                    )}
-                  </Space>
+                  {canManage && (
+                    <Space size={4} className={styles.roleActions}>
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openEditRoleModal(role);
+                        }}
+                      />
+                      {!role.is_builtin && (
+                        <Popconfirm
+                          title="确认删除该角色？"
+                          description="删除后不可恢复，请确保已解除用户关联。"
+                          onConfirm={() => void handleDeleteRole(role)}
+                          okText="删除"
+                          cancelText="取消"
+                          okButtonProps={{ danger: true }}
+                        >
+                          <Button
+                            type="link"
+                            size="small"
+                            danger
+                            icon={<DeleteOutlined />}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                          />
+                        </Popconfirm>
+                      )}
+                    </Space>
+                  )}
                 </div>
               ))}
             </Space>
@@ -608,14 +737,16 @@ export default function UserPermission(): React.ReactElement {
           <div className={styles.menuTree}>
             <div className={styles.sectionHeader}>
               <Text strong>为 {selectedRole.name} 分配菜单</Text>
-              <Button
-                type="primary"
-                size="small"
-                loading={roleMenusSaving}
-                onClick={() => void handleSaveRoleMenus()}
-              >
-                保存
-              </Button>
+              {canManage && (
+                <Button
+                  type="primary"
+                  size="small"
+                  loading={roleMenusSaving}
+                  onClick={() => void handleSaveRoleMenus()}
+                >
+                  保存
+                </Button>
+              )}
             </div>
             {menuTreeData.length === 0 ? (
               <Empty description="暂无菜单数据" />
@@ -626,6 +757,7 @@ export default function UserPermission(): React.ReactElement {
                 treeData={menuTreeData}
                 checkedKeys={checkedMenuIds}
                 onCheck={handleMenuCheck}
+                disabled={!canManage}
               />
             )}
           </div>
@@ -692,6 +824,63 @@ export default function UserPermission(): React.ReactElement {
             <Input.TextArea placeholder="可选，描述该角色的职责" rows={3} />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 权限码管理弹窗 */}
+      <Modal
+        open={permissionModalOpen}
+        title="权限码管理"
+        width={720}
+        onCancel={closePermissionModal}
+        footer={null}
+      >
+        <Form<PermissionFormValues>
+          form={permissionForm}
+          layout="inline"
+          onFinish={handlePermissionSubmit}
+          className={styles.permissionForm}
+        >
+          <Form.Item
+            label="权限码"
+            name="code"
+            rules={[
+              { required: true, message: '请输入权限码' },
+              { min: 3, max: 128, message: '权限码长度需在 3-128 之间' },
+              { pattern: /^[a-z][a-z0-9_]*:[a-z0-9_:]+$/, message: '格式如 admin:report:manage' },
+            ]}
+          >
+            <Input placeholder="如 admin:report:manage" style={{ width: 200 }} />
+          </Form.Item>
+          <Form.Item
+            label="名称"
+            name="name"
+            rules={[{ required: true, message: '请输入名称' }]}
+          >
+            <Input placeholder="如 报表管理" style={{ width: 140 }} />
+          </Form.Item>
+          <Form.Item label="模块" name="module">
+            <Input placeholder="如 report" style={{ width: 120 }} />
+          </Form.Item>
+          <Form.Item label="描述" name="description">
+            <Input placeholder="可选" style={{ width: 200 }} />
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" loading={permissionSubmitting}>
+              新建
+            </Button>
+          </Form.Item>
+        </Form>
+
+        <Table<PermissionItem>
+          rowKey="id"
+          columns={permissionColumns}
+          dataSource={permissions}
+          loading={permissionsLoading}
+          size="small"
+          style={{ marginTop: 16 }}
+          pagination={false}
+          scroll={{ y: 360 }}
+        />
       </Modal>
       </div>
     </SystemPage>

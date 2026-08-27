@@ -121,6 +121,45 @@ class TestCreateBot:
             assert len(deleted) == 1
             assert decrypt(active[0].app_secret) == _ANOTHER_SECRET
 
+    def test_create_with_parent_bot_id(
+        self, bot_service: BotService, db_session_factory
+    ) -> None:
+        """create 传入 parent_bot_id 应正确落库并回显父级 ID。"""
+        parent = bot_service.create_bot(
+            bot_id="parent-1",
+            name="父级部门",
+            platform="feishu",
+            app_id="app-1",
+            app_secret=_PLAIN_SECRET,
+        )
+        child = bot_service.create_bot(
+            bot_id="child-1",
+            name="子 Bot",
+            platform="feishu",
+            app_id="app-2",
+            app_secret=_ANOTHER_SECRET,
+            parent_bot_id=parent["id"],
+        )
+        assert child["parent_bot_id"] == parent["id"]
+
+        with db_session_factory() as session:
+            row = session.query(Bot).filter(Bot.bot_id == "child-1").one()
+            assert row.parent_bot_id == parent["id"]
+
+    def test_create_with_nonexistent_parent_raises(
+        self, bot_service: BotService, db_session_factory
+    ) -> None:
+        """parent_bot_id 指向不存在的 Bot 时应抛 ResourceNotFoundError。"""
+        with pytest.raises(ResourceNotFoundError):
+            bot_service.create_bot(
+                bot_id="orphan-1",
+                name="孤儿",
+                platform="feishu",
+                app_id="app-1",
+                app_secret=_PLAIN_SECRET,
+                parent_bot_id=999999,
+            )
+
 
 # ── update_bot：加密更新 ──────────────────────────────────────────
 
@@ -262,6 +301,31 @@ class TestList:
         assert "alive-1" in bot_ids
         assert "dead-1" not in bot_ids
         assert result["total"] == 1
+
+    def test_list_bots_includes_parent_bot_name(
+        self, bot_service: BotService, db_session_factory
+    ) -> None:
+        """list_bots 应联查并返回父级 Bot 的名称（表达部门隶属）。"""
+        parent = bot_service.create_bot(
+            bot_id="dept-1",
+            name="技术部",
+            platform="feishu",
+            app_id="app-1",
+            app_secret=_PLAIN_SECRET,
+        )
+        bot_service.create_bot(
+            bot_id="dept-child-1",
+            name="后端组",
+            platform="feishu",
+            app_id="app-2",
+            app_secret=_ANOTHER_SECRET,
+            parent_bot_id=parent["id"],
+        )
+
+        result = bot_service.list_bots(page=1, page_size=10)
+        child = next(b for b in result["items"] if b["bot_id"] == "dept-child-1")
+        assert child["parent_bot_id"] == parent["id"]
+        assert child["parent_bot_name"] == "技术部"
 
 
 # ── delete_bot：软删除 + 幂等性 ──────────────────────────────────

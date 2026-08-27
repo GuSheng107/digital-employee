@@ -20,8 +20,10 @@ router = APIRouter()
     dependencies=[
         Depends(
             require_permission(
-                PermissionCode.USER_PERMISSION,
+                PermissionCode.PERMISSION_MANAGE,
+                PermissionCode.PERMISSION_READONLY,
                 PermissionCode.USER_MANAGE,
+                PermissionCode.USER_READONLY,
             )
         )
     ],
@@ -39,7 +41,7 @@ def list_roles() -> dict:
 def create_role(
     payload: CreateRoleRequest,
     current_user: UserInfo = Depends(
-        require_permission(PermissionCode.USER_PERMISSION)
+        require_permission(PermissionCode.PERMISSION_MANAGE)
     ),
 ) -> dict:
     """创建自定义角色。"""
@@ -63,7 +65,7 @@ def update_role(
     role_id: int,
     payload: UpdateRoleRequest,
     current_user: UserInfo = Depends(
-        require_permission(PermissionCode.USER_PERMISSION)
+        require_permission(PermissionCode.PERMISSION_MANAGE)
     ),
 ) -> dict:
     """更新角色信息（名称/描述/菜单）。"""
@@ -86,7 +88,7 @@ def update_role(
 def delete_role(
     role_id: int,
     current_user: UserInfo = Depends(
-        require_permission(PermissionCode.USER_PERMISSION)
+        require_permission(PermissionCode.PERMISSION_MANAGE)
     ),
 ) -> dict:
     """删除角色（软删除，内置角色不可删）。"""
@@ -101,7 +103,14 @@ def delete_role(
 @router.get(
     "/{role_id}/menus",
     response_model=ApiResponse,
-    dependencies=[Depends(require_permission(PermissionCode.USER_PERMISSION))],
+    dependencies=[
+        Depends(
+            require_permission(
+                PermissionCode.PERMISSION_MANAGE,
+                PermissionCode.PERMISSION_READONLY,
+            )
+        )
+    ],
 )
 def get_role_menus(
     role_id: int,
@@ -119,7 +128,7 @@ def assign_menus(
     role_id: int,
     payload: AssignMenusRequest,
     current_user: UserInfo = Depends(
-        require_permission(PermissionCode.USER_PERMISSION)
+        require_permission(PermissionCode.PERMISSION_MANAGE)
     ),
 ) -> dict:
     """分配角色菜单（覆盖式）。"""

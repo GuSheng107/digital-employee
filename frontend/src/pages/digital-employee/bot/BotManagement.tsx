@@ -5,12 +5,23 @@ import type { ColumnsType } from 'antd/es/table';
 import { deleteBot, fetchBots, type BotItem } from '@/api/bot-api';
 import SystemPage from '@/components/system-page/SystemPage';
 import { getRequestErrorMessage } from '@/utils/request';
+import { hasManagePermission, PERMISSION_CODE } from '@/constants/access-control';
+import { useUserStore } from '@/store/user-store';
 import BotFormModal from './components/BotFormModal';
 import styles from './index.module.css';
 
 const DEFAULT_PAGE_SIZE = 20;
 
 export default function BotManagement(): React.ReactElement {
+  const currentUser = useUserStore((state) => state.userInfo);
+  /** 是否可管理 Bot（拥有 manage 权限；仅 readonly 时隐藏写操作入口） */
+  const canManage = currentUser !== null
+    && hasManagePermission(
+      currentUser.roles,
+      currentUser.permissions,
+      PERMISSION_CODE.BOT_MANAGE,
+    );
+
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<BotItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -128,6 +139,13 @@ export default function BotManagement(): React.ReactElement {
       },
     },
     {
+      title: '上级部门',
+      dataIndex: 'parent_bot_name',
+      key: 'parent_bot_name',
+      render: (name: string | null | undefined) =>
+        name ? <Tag color="geekblue">{name}</Tag> : <span style={{ color: '#8c8c8c' }}>—</span>,
+    },
+    {
       title: '创建者',
       dataIndex: 'created_by_name',
       key: 'created_by_name',
@@ -143,7 +161,12 @@ export default function BotManagement(): React.ReactElement {
       title: '操作',
       key: 'action',
       width: 150,
-      render: (_, record) => (
+      render: (_, record) => {
+        // 只读用户不展示任何写操作入口
+        if (!canManage) {
+          return <span>—</span>;
+        }
+        return (
         <div style={{ display: 'flex', gap: 8 }}>
           <Button type="link" size="small" onClick={() => handleEdit(record)}>
             编辑
@@ -161,7 +184,8 @@ export default function BotManagement(): React.ReactElement {
             </Button>
           </Popconfirm>
         </div>
-      ),
+        );
+      },
     },
   ];
 
@@ -174,9 +198,11 @@ export default function BotManagement(): React.ReactElement {
           <Button icon={<ReloadOutlined />} onClick={() => void loadData(page, pageSize)}>
             刷新
           </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
-            新增 Bot
-          </Button>
+          {canManage && (
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
+              新增 Bot
+            </Button>
+          )}
         </div>
       }
     >

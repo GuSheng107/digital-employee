@@ -31,11 +31,14 @@ import {
 import { fetchRoles, type RoleItem } from '@/api/role-api';
 import {
   getVipDisplayFallback,
+  hasManagePermission,
+  PERMISSION_CODE,
   ROLE_CODE,
   VIP_LEVEL,
 } from '@/constants/access-control';
 import { useUserStore } from '@/store/user-store';
 import { getRequestErrorMessage } from '@/utils/request';
+import { normalizeRoleCodes } from '@/utils/role-validation';
 import { PHONE_DIAL_PREFIX } from '@/config/identity-config';
 import {
   EMAIL_PATTERN,
@@ -82,8 +85,16 @@ function getErrorMessage(error: unknown): string {
 }
 
 export default function UserRegister(): React.ReactElement {
-  const currentUserRoles = useUserStore((state) => state.userInfo?.roles ?? []);
+  const currentUser = useUserStore((state) => state.userInfo);
+  const currentUserRoles = currentUser?.roles ?? [];
   const canAssignManager = currentUserRoles.includes(ROLE_CODE.SUPER_ADMIN);
+  /** 是否可管理用户（拥有 manage 权限；仅 readonly 时隐藏写操作入口） */
+  const canManage = currentUser !== null
+    && hasManagePermission(
+      currentUser.roles,
+      currentUser.permissions,
+      PERMISSION_CODE.USER_MANAGE,
+    );
   const [loading, setLoading] = useState<boolean>(false);
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [total, setTotal] = useState<number>(0);
@@ -459,7 +470,12 @@ export default function UserRegister(): React.ReactElement {
       fixed: 'right',
       width: 330,
       align: 'center',
-      render: (_, record) => (
+      render: (_, record) => {
+        // 只读用户不展示任何写操作入口
+        if (!canManage) {
+          return <span>—</span>;
+        }
+        return (
         <Space size={4}>
           <Button type="link" size="small" onClick={() => openAssignModal(record)}>
             分配角色
@@ -512,18 +528,19 @@ export default function UserRegister(): React.ReactElement {
             </Button>
           </Popconfirm>
         </Space>
-      ),
+        );
+      },
     },
   ];
 
   return (
     <SystemPage
       title="用户管理"
-      actions={(
+      actions={canManage ? (
         <Button type="primary" onClick={openCreateModal}>
           新建用户
         </Button>
-      )}
+      ) : null}
     >
       <div className={styles.container}>
 
@@ -625,7 +642,11 @@ export default function UserRegister(): React.ReactElement {
               placeholder="请选择角色"
               allowClear
               onChange={(nextRoleCodes: string[]) => {
-                if (nextRoleCodes.includes(ROLE_CODE.MANAGER)) {
+                const normalized = normalizeRoleCodes(nextRoleCodes);
+                if (normalized.length !== nextRoleCodes.length) {
+                  createForm.setFieldsValue({ roleCodes: normalized });
+                }
+                if (normalized.includes(ROLE_CODE.MANAGER)) {
                   createForm.setFieldsValue({
                     isVip: false,
                     vipLevel: undefined,
@@ -706,7 +727,9 @@ export default function UserRegister(): React.ReactElement {
         <Select
           mode="multiple"
           value={assignRoleCodes}
-          onChange={setAssignRoleCodes}
+          onChange={(nextRoleCodes: string[]) => {
+            setAssignRoleCodes(normalizeRoleCodes(nextRoleCodes));
+          }}
           options={roleOptions}
           loading={rolesLoading}
           placeholder="请选择角色"

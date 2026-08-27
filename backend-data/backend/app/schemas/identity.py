@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field, model_validator
+from auth_utils import PERMISSION_CODE_PATTERN
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 NON_NULLABLE_MENU_UPDATE_FIELDS = frozenset(
     {"parent_id", "menu_type", "title", "sort", "visible"}
@@ -267,6 +268,28 @@ class UpdateIdentityMenuRequest(BaseModel):
         if invalid_fields:
             raise ValueError(f"菜单字段不能设为空：{', '.join(invalid_fields)}")
         return self
+
+
+class CreateIdentityPermissionRequest(BaseModel):
+    """动态创建权限码。"""
+
+    code: str = Field(
+        ...,
+        min_length=3,
+        max_length=128,
+        pattern=PERMISSION_CODE_PATTERN,
+    )
+    name: str = Field(..., min_length=1, max_length=64)
+    description: str = Field(default="", max_length=255)
+    module: str | None = Field(default=None, max_length=32)
+
+    @field_validator("code", mode="before")
+    @classmethod
+    def strip_code(cls, value: object) -> object:
+        """去除权限码首尾空白，与 backend-auth 侧规范化保持一致。"""
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
 
 class CreateIdentityInviteCodeRequest(BaseModel):

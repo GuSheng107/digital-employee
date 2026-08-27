@@ -24,6 +24,7 @@ from auth_utils import (
     USER_PROFILE_ROUTE_PATH,
     MenuType,
     VipLevel,
+    expand_manage_to_readonly,
     get_vip_display,
 )
 from sqlalchemy import or_, select, update
@@ -434,7 +435,13 @@ class IdentityAuthService:
         role_codes: list[str],
         permission_codes: list[str],
     ) -> dict[int, dict[str, int | str | bool | None]]:
-        """按用户运行时快照筛选可见菜单。"""
+        """按用户运行时快照筛选可见菜单。
+
+        菜单 permission 绑定 readonly 码（最低可见权限）；manage 是 readonly
+        的超集，因此持有 manage 权限码的用户也应看到绑 readonly 码的菜单。
+        """
+        # manage 是 readonly 的超集：菜单绑 readonly 码，持有 manage 码的用户也应可见。
+        effective_codes = expand_manage_to_readonly(permission_codes)
         statement = select(
             Menu.id,
             Menu.parent_id,
@@ -480,7 +487,7 @@ class IdentityAuthService:
                     or_(direct_menu_exists, role_menu_exists),
                     or_(
                         Menu.permission.is_(None),
-                        Menu.permission.in_(permission_codes),
+                        Menu.permission.in_(effective_codes),
                     ),
                 )
                 .order_by(Menu.sort, Menu.id)

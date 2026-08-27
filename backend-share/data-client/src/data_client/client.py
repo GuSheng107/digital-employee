@@ -600,6 +600,33 @@ class DataClient:
         """读取权限码目录。"""
         return self._request_list("GET", "/api/v1/identity/permissions")
 
+    def create_permission(
+        self,
+        *,
+        code: str,
+        name: str,
+        description: str = "",
+        module: str | None = None,
+    ) -> dict[str, Any]:
+        """动态创建权限码。"""
+        return self._request_dict(
+            "POST",
+            "/api/v1/identity/permissions",
+            json={
+                "code": code,
+                "name": name,
+                "description": description,
+                "module": module,
+            },
+        )
+
+    def delete_permission(self, permission_id: int) -> dict[str, Any]:
+        """物理删除权限码。"""
+        return self._request_dict(
+            "DELETE",
+            f"/api/v1/identity/permissions/{permission_id}",
+        )
+
     def create_invite_code(
         self,
         *,
@@ -858,6 +885,7 @@ class DataClient:
         mode: str = "test",
         agent_id: str | None = None,
         created_by: int | None = None,
+        parent_bot_id: int | None = None,
     ) -> dict[str, Any]:
         """创建 Bot。"""
         payload: dict[str, Any] = {
@@ -872,6 +900,8 @@ class DataClient:
             payload["agent_id"] = agent_id
         if created_by is not None:
             payload["created_by"] = created_by
+        if parent_bot_id is not None:
+            payload["parent_bot_id"] = parent_bot_id
         return self._request_dict(
             "POST",
             "/api/v1/bots",

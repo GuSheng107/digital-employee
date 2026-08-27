@@ -16,6 +16,7 @@ from auth_utils import (
     RESERVED_ROLE_CODES,
     ROLE_CODE_MANAGER,
     ROLE_CODE_SUPER_ADMIN,
+    expand_manage_to_readonly,
 )
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -373,7 +374,10 @@ class RoleService:
         permission_codes = {
             menu.permission for menu in menus if menu.permission is not None
         }
-        unauthorized_codes = sorted(permission_codes - set(actor_permission_codes))
+        # manage 是 readonly 的超集：持有 xxx:manage 的操作者可分配绑 xxx:readonly
+        # 的菜单，避免“拥有管理权却无法分配只读菜单”的误判。
+        actor_scope = expand_manage_to_readonly(actor_permission_codes)
+        unauthorized_codes = sorted(permission_codes - actor_scope)
         if unauthorized_codes:
             raise PermissionDeniedError(
                 message=f"不能授予超出自身范围的权限：{', '.join(unauthorized_codes)}"

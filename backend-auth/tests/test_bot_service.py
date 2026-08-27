@@ -139,7 +139,9 @@ def test_list_bots_does_not_trigger_reload(
     result = bot_service.list_bots(page=1, page_size=20)
 
     assert result == fake_data_client.list_result
-    assert fake_data_client.calls == [("list_bots", {"page": 1, "page_size": 20})]
+    assert fake_data_client.calls == [
+        ("list_bots", {"page": 1, "page_size": 20, "created_by": None})
+    ]
     assert fake_http_post.calls == []
 
 

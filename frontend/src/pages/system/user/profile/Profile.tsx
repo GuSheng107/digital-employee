@@ -214,9 +214,10 @@ export default function Profile(): React.ReactElement {
             onFinish={handleSubmit}
             className={styles.form}
             initialValues={{ password: '', confirmPassword: '' }}
+            autoComplete="off"
           >
             <Form.Item label="昵称" name="nickname">
-              <Input placeholder="请输入昵称" />
+              <Input placeholder="请输入昵称" autoComplete="nickname" />
             </Form.Item>
             <Form.Item
               label="邮箱"
@@ -225,7 +226,7 @@ export default function Profile(): React.ReactElement {
                 { pattern: EMAIL_PATTERN, message: '请输入有效的邮箱地址' },
               ]}
             >
-              <Input placeholder="请输入邮箱" />
+              <Input placeholder="请输入邮箱" autoComplete="email" />
             </Form.Item>
             <Form.Item
               label="手机号"
