@@ -31,14 +31,18 @@ export default defineConfig(({ mode }) => {
       alias: [{ find: '@', replacement: path.resolve(__dirname, 'src') }],
     },
     server: {
+      host: true, // 监听所有本地 IP（0.0.0.0），允许通过任意域名/IP 访问
       port: 5173,
       strictPort: true,
       proxy,
+      allowedHosts: true, // 允许任意 Host 头（含 employee.rjgjx.top），不再拦截
     },
     preview: {
+      host: true, // 同上，preview 模式也允许任意域名/IP 访问
       port: 5173,
       strictPort: true,
       proxy,
+      allowedHosts: true, // 同上，preview 模式放行所有 Host
     },
     build: {
       rollupOptions: {
