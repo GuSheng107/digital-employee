@@ -44,4 +44,4 @@ Invoke-RestMethod http://127.0.0.1:8766/v1/model/test -Method Post
 - `POST /v1/model/test`：最小模型连通性检查。
 - `GET /v1/agents`、`GET /v1/traces/{trace_id}`：查看配置和本地 JSONL trace。
 
-长期 Memory、自动工具筛选、多 Agent、审批、Redis 和工作流不在本期运行路径中。详细设计见 [docs/agent-core](docs/agent-core/实现方案.md)。
+长期 Memory、自动工具筛选、多 Agent、审批、Redis 和工作流不在本期运行路径中。文档入口见 [AGENTS.md](AGENTS.md)；模块边界见 [docs/00-概览/架构总览与模块边界.md](docs/00-概览/架构总览与模块边界.md)，当前进度与下一步见 [docs/00-概览/当前状态与路线图.md](docs/00-概览/当前状态与路线图.md)。
