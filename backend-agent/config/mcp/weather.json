@@ -1,0 +1,7 @@
+{
+  "id": "weather",
+  "command": "${PYTHON}",
+  "args": ["${PROJECT_ROOT}/fixtures/weather_mcp/server.py"],
+  "env": {},
+  "timeout_seconds": 20
+}

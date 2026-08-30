@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Runtime 调试台</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
+      color: #17212b;
+      background: #eef2f4;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; }
+    button, textarea, select { font: inherit; }
+    button { cursor: pointer; }
+    .shell { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; }
+    .topbar { background: #17212b; color: #fff; padding: 14px 22px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .brand { font-size: 16px; font-weight: 650; letter-spacing: 0; }
+    .connection { color: #c8d3dc; font-size: 13px; white-space: nowrap; }
+    .connection.online { color: #a9e1bd; }
+    main { max-width: 1180px; width: 100%; margin: 0 auto; padding: 20px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; }
+    .workspace, .activity { min-width: 0; border: 1px solid #cbd5dc; background: #fff; border-radius: 6px; }
+    .workspace { display: grid; grid-template-rows: auto minmax(360px, 1fr) auto; min-height: 650px; }
+    .section-head { padding: 14px 16px; border-bottom: 1px solid #dbe3e8; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .section-head h1, .section-head h2 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: 0; }
+    .section-head h2 { font-size: 14px; }
+    .messages { padding: 16px; overflow: auto; display: flex; flex-direction: column; gap: 12px; background: #f8fafb; }
+    .message { max-width: min(82%, 720px); padding: 10px 12px; border-radius: 6px; border: 1px solid #d4dce1; white-space: pre-wrap; line-height: 1.55; font-size: 14px; }
+    .message.user { margin-left: auto; background: #dcecf8; border-color: #a5c5dc; }
+    .message.assistant { background: #fff; }
+    .message.error { background: #fde8e7; border-color: #dc938d; color: #802d2a; }
+    .message .label { display: block; margin-bottom: 4px; color: #58707f; font-size: 12px; font-weight: 650; }
+    .composer { padding: 14px 16px; border-top: 1px solid #dbe3e8; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+    textarea { min-height: 72px; max-height: 180px; resize: vertical; padding: 10px; border: 1px solid #9daeba; border-radius: 4px; color: #17212b; line-height: 1.45; }
+    textarea:focus, select:focus { outline: 2px solid #5d9ac8; outline-offset: 1px; }
+    .send { align-self: end; min-width: 76px; min-height: 40px; border: 1px solid #216694; border-radius: 4px; background: #2878a8; color: #fff; font-weight: 650; }
+    .send:disabled { cursor: wait; opacity: .65; }
+    .activity { align-self: start; }
+    .controls { padding: 14px 16px; display: grid; gap: 12px; border-bottom: 1px solid #dbe3e8; }
+    label { display: grid; gap: 6px; color: #506572; font-size: 12px; font-weight: 650; }
+    select { width: 100%; min-height: 36px; padding: 6px 8px; border: 1px solid #9daeba; border-radius: 4px; background: #fff; color: #17212b; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .actions button { min-height: 34px; border: 1px solid #9daeba; border-radius: 4px; background: #fff; color: #263844; font-size: 13px; }
+    .actions button:hover { background: #eef5f9; }
+    .events { margin: 0; padding: 10px 16px 16px; list-style: none; display: grid; gap: 8px; max-height: 460px; overflow: auto; }
+    .event { padding: 8px; border-left: 3px solid #b3c1ca; background: #f5f7f8; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+    .event.tool { border-left-color: #d39a31; background: #fff7e8; }
+    .event.done { border-left-color: #4c9a68; background: #edf8f0; }
+    .event.failed { border-left-color: #c45a54; background: #fdeeee; }
+    .empty { color: #627681; text-align: center; padding: 36px 12px; font-size: 14px; }
+    .trace { padding: 0 16px 14px; color: #657985; font-family: Consolas, monospace; font-size: 11px; overflow-wrap: anywhere; }
+    @media (max-width: 820px) {
+      main { grid-template-columns: 1fr; padding: 12px; }
+      .workspace { min-height: 520px; }
+      .activity { order: -1; }
+      .events { max-height: 230px; }
+    }
+    @media (max-width: 480px) {
+      .topbar { padding: 12px; }
+      .connection { display: none; }
+      .composer { grid-template-columns: 1fr; }
+      .send { width: 100%; }
+      .message { max-width: 94%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">Agent Runtime 调试台</div>
+      <div id="connection" class="connection">正在检查服务</div>
+    </header>
+    <main>
+      <section class="workspace" aria-label="对话">
+        <div class="section-head"><h1>对话</h1><span id="run-state" class="connection">空闲</span></div>
+        <div id="messages" class="messages"><div class="empty">选择 Agent 后发送消息</div></div>
+        <form id="composer" class="composer">
+          <textarea id="message" placeholder="例如：北京今天天气怎样" required></textarea>
+          <button id="send" class="send" type="submit">发送</button>
+        </form>
+      </section>
+      <aside class="activity" aria-label="运行事件">
+        <div class="section-head"><h2>运行事件</h2></div>
+        <div class="controls">
+          <label>Agent<select id="agent"></select></label>
+          <div class="actions">
+            <button id="model-test" type="button">模型连通性</button>
+            <button id="clear" type="button">清空记录</button>
+          </div>
+        </div>
+        <ul id="events" class="events"><li class="empty">尚无事件</li></ul>
+        <div id="trace" class="trace"></div>
+      </aside>
+    </main>
+  </div>
+  <script>
+    const state = { history: [], running: false };
+    const API_BASE = location.protocol === 'file:' ? 'http://127.0.0.1:8766' : '';
+    const api = (path) => `${API_BASE}${path}`;
+    const elements = {
+      agent: document.querySelector('#agent'), message: document.querySelector('#message'),
+      send: document.querySelector('#send'), messages: document.querySelector('#messages'),
+      events: document.querySelector('#events'), trace: document.querySelector('#trace'),
+      connection: document.querySelector('#connection'), runState: document.querySelector('#run-state'),
+    };
+
+    function setConnection(text, online = false) {
+      elements.connection.textContent = text;
+      elements.connection.classList.toggle('online', online);
+    }
+    function addMessage(role, text) {
+      elements.messages.querySelector('.empty')?.remove();
+      const item = document.createElement('article');
+      item.className = `message ${role}`;
+      const label = role === 'user' ? '用户' : role === 'error' ? '运行错误' : 'Agent';
+      item.innerHTML = `<span class="label">${label}</span>`;
+      const content = document.createElement('div'); content.textContent = text; item.append(content);
+      elements.messages.append(item); elements.messages.scrollTop = elements.messages.scrollHeight;
+    }
+    function addEvent(type, data) {
+      elements.events.querySelector('.empty')?.remove();
+      const item = document.createElement('li');
+      item.className = `event ${type.startsWith('tool.') ? 'tool' : type === 'run.completed' ? 'done' : type === 'run.failed' ? 'failed' : ''}`;
+      item.textContent = `${type} ${JSON.stringify(data)}`;
+      elements.events.append(item); elements.events.scrollTop = elements.events.scrollHeight;
+    }
+    function setRunning(running) {
+      state.running = running; elements.send.disabled = running;
+      elements.runState.textContent = running ? '运行中' : '空闲';
+    }
+    async function loadAgents() {
+      const response = await fetch(api('/v1/agents'));
+      if (!response.ok) throw new Error('无法读取 Agent 配置');
+      const payload = await response.json();
+      elements.agent.replaceChildren();
+      for (const agent of payload.agents) {
+        const option = document.createElement('option'); option.value = agent.id; option.textContent = `${agent.name} (${agent.id})`;
+        elements.agent.append(option);
+      }
+      setConnection('服务已连接', true);
+    }
+    async function runStream(message) {
+      const response = await fetch(api(`/v1/agents/${encodeURIComponent(elements.agent.value)}/stream`), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, history: state.history }),
+      });
+      if (!response.ok || !response.body) throw new Error(`请求失败 (${response.status})`);
+      const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
+      while (true) {
+        const { value, done } = await reader.read(); buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        let boundary;
+        while ((boundary = buffer.indexOf('\n\n')) >= 0) {
+          const block = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
+          const type = block.match(/^event: (.+)$/m)?.[1]; const raw = block.match(/^data: (.+)$/m)?.[1];
+          if (!type || !raw) continue;
+          const envelope = JSON.parse(raw); const data = envelope.data || {};
+          addEvent(type, data);
+          if (envelope.trace_id) elements.trace.textContent = `trace: ${envelope.trace_id}`;
+          if (type === 'run.completed') { addMessage('assistant', data.answer || '模型未返回文本。'); state.history.push({ role: 'assistant', content: data.answer || '' }); }
+          if (type === 'run.failed') addMessage('error', data.error_message || data.error_code || '运行失败');
+        }
+        if (done) break;
+      }
+    }
+    document.querySelector('#composer').addEventListener('submit', async (event) => {
+      event.preventDefault(); if (state.running) return;
+      const message = elements.message.value.trim(); if (!message) return;
+      addMessage('user', message); state.history.push({ role: 'user', content: message }); elements.message.value = ''; setRunning(true);
+      try { await runStream(message); } catch (error) { addMessage('error', error.message); } finally { setRunning(false); }
+    });
+    document.querySelector('#clear').addEventListener('click', () => {
+      state.history = []; elements.messages.innerHTML = '<div class="empty">选择 Agent 后发送消息</div>'; elements.events.innerHTML = '<li class="empty">尚无事件</li>'; elements.trace.textContent = '';
+    });
+    document.querySelector('#model-test').addEventListener('click', async () => {
+      try { const response = await fetch(api('/v1/model/test'), { method: 'POST' }); const data = await response.json(); addEvent('model.test', data); if (!response.ok) addMessage('error', data.detail?.message || '模型连通性失败'); }
+      catch (error) { addMessage('error', error.message); }
+    });
+    loadAgents().catch((error) => { setConnection('服务不可用'); addMessage('error', error.message); });
+  </script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+[project]
+name = "backend-agent-runtime"
+version = "0.1.0"
+description = "Phase 1 minimal Agent Runtime with LiteLLM, MCP, and Skills."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "fastmcp>=2,<3",
+  "httpx>=0.27,<1",
+  "jsonschema>=4.23,<5",
+  "litellm>=1.75,<2",
+  "mcp>=1.9,<2",
+  "pydantic>=2.8,<3",
+  "python-dotenv>=1,<2",
+  "uvicorn[standard]>=0.30,<1",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8,<9",
+  "pytest-asyncio>=0.24,<1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

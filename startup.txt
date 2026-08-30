@@ -1,0 +1,1 @@
+cd backend-agent; uv sync; uv run uvicorn app.main:app --reload --port 8766
