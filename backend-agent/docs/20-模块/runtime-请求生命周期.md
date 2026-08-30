@@ -4,7 +4,7 @@
 
 `RunRequest` 至少含 `agent_id`、`messages`、`request_id`、`stream`。服务端加载不可由客户端覆盖的 `AgentDefinition`，生成 `run_id` 和 `trace_id`。`RunResult` 返回最终消息、usage、终态及引用；流式时依次发送 `run.started`、`model.delta`、`tool.started`、`tool.completed`、`run.completed` 或 `run.failed`。
 
-一期只允许一个 Agent、当前用户消息和调用方明确传入的少量历史。AgentDefinition 中的 `allowed_mcp_servers`、`allowed_skills` 是工具面唯一来源，不能由用户请求临时扩大。
+一期只允许一个 Agent、当前用户消息和调用方明确传入的少量历史；当前二期在提供 `conversation_id` 时会从 SQLite 恢复该会话消息。AgentDefinition 中的 `allowed_mcp_servers`、`allowed_skills` 是工具面唯一来源，不能由用户请求临时扩大。`user_id` / `user_role` 已进入请求和会话模型，但 auth 接入前不参与权限判断。
 
 ## 状态机
 

@@ -1,17 +1,17 @@
-# 会话持久化 Phase 1：基础可用
+# 会话持久化 Phase 1：基础可用（已实现）
 
 > 所属模块：session（会话持久化）
-> 定位：第一阶段落地清单。目标 = 能正常聊天 + 能调 Tool/Sub Agent + 服务重启可恢复。
+> 定位：会话持久化第一阶段落地清单。目标 = 能正常聊天、保存工具调用事实，并在服务重启后恢复会话。
 
 ## 目标
 
 第一阶段只解决最核心的问题：
 
 - 用户能正常聊天
-- Agent 能调用 Tool / Sub Agent
+- Agent 能调用 Tool，并保存调用过程
 - 服务重启后可以恢复完整对话
 
-**不要在这个阶段实现：** Branch、Time Travel、Checkpoint、Context Snapshot、Compaction、Memory、大型 Artifact Storage、完整 Observability。
+**不要在这个阶段实现：** Branch、Sub Agent、Time Travel、Checkpoint、Context Snapshot、Compaction、Memory、大型 Artifact Storage、完整 Observability。
 
 ## Phase 1 数据库（5 张核心表）
 
@@ -23,7 +23,8 @@
 CREATE TABLE sessions (
     id UUID PRIMARY KEY,                -- 会话唯一标识
     tenant_id UUID,                     -- 租户 ID（多租户场景，可选）
-    user_id UUID NOT NULL,              -- 所属用户 ID
+    user_id UUID,                       -- 所属用户 ID（auth 接入前仅保存，不参与权限判断）
+    user_role VARCHAR(100),             -- 所属用户角色（预留字段，当前不启用）
     title TEXT,                         -- 会话标题（可由首条消息自动生成）
     status VARCHAR(32) NOT NULL DEFAULT 'active',  -- active / archived 等
     metadata JSONB NOT NULL DEFAULT '{}',           -- 扩展元数据
@@ -214,7 +215,7 @@ Context Builder
 LLM
 ```
 
-第一阶段已满足：保存用户/AI 消息、保存 Tool、保存 Sub Agent、恢复历史、服务重启恢复、多轮对话。
+当前实现已满足：保存用户/AI 消息、保存 Tool、恢复历史、服务重启恢复和多轮对话。Sub Agent 字段已预留，尚未接入运行路径。
 
 ## 最重要原则
 
@@ -235,7 +236,7 @@ events → rebuild → messages
 
 ❌ Event Bus　❌ Kafka　❌ Event Sourcing Framework　❌ CQRS Framework　❌ Vector Database　❌ Memory System　❌ Checkpoint　❌ Time Travel　❌ Context Compaction　❌ Object Storage　❌ 分布式 Trace　❌ 复杂 Branch Graph
 
-数据库先使用 SQLite，Runtime 直接使用 Transaction → Event → Message Projection，先把基础闭环跑起来；后续经 `RunStore` 迁移 PostgreSQL。
+数据库使用 SQLite，Runtime 直接使用 Transaction → Event → Message Projection；后续经 `RunStore` 迁移 PostgreSQL。
 
 ## 一致性原则（Phase 1）
 
@@ -267,7 +268,7 @@ COMMIT
 - 普通对话：`User → Agent → User → Agent`
 - 服务重启恢复：`Session → 完整恢复`
 - Tool：`User → Agent → Tool Call → Tool Result → Agent`，恢复后能正确重建 Context（User / Assistant(tool call) / Tool(result) / Assistant）
-- Sub Agent：`Main Agent → Sub Agent → Tool → Sub Agent Result → Main Agent`，能从 `parent_run_id` 找到完整执行关系
+- Sub Agent：只预留 `parent_run_id` 字段，具体功能后置，不作为本阶段验收项
 - Event：能根据 Event 的 `session_id + sequence` 按顺序 Replay
 
 ## 相关文档

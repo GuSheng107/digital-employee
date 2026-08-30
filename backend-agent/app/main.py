@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,6 +18,7 @@ from app.core.definitions import DefinitionStore, Settings
 from app.core.runtime import AgentRuntime
 from app.infrastructure.model_gateway import LiteLLMModelGateway
 from app.infrastructure.recorder import JsonlRunRecorder
+from app.infrastructure.session_store import SQLiteSessionStore
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -30,13 +31,19 @@ def create_runtime(project_root: Path = PROJECT_ROOT) -> AgentRuntime:
         definitions=DefinitionStore(project_root),
         model_gateway=LiteLLMModelGateway(),
         recorder=JsonlRunRecorder(project_root / "var" / "traces"),
+        session_store=SQLiteSessionStore(project_root / "var" / "sessions.sqlite3"),
     )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.runtime = create_runtime()
-    yield
+    try:
+        yield
+    finally:
+        session_store = app.state.runtime.session_store
+        if session_store is not None and hasattr(session_store, "close"):
+            session_store.close()
 
 
 app = FastAPI(title="Backend Agent Runtime", version="0.1.0", lifespan=lifespan)
@@ -54,11 +61,13 @@ class RunInput(BaseModel):
     message: str = Field(min_length=1, max_length=20_000)
     history: list[ChatMessage] = Field(default_factory=list, max_length=20)
     conversation_id: str | None = Field(default=None, max_length=200)
+    user_id: str | None = Field(default=None, max_length=200)
+    user_role: str | None = Field(default=None, max_length=100)
 
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok", "phase": "1"}
+    return {"status": "ok", "phase": "2"}
 
 
 @app.get("/v1/agents")
@@ -86,7 +95,7 @@ async def test_model(request: Request) -> dict[str, object]:
 async def run_agent(agent_id: str, payload: RunInput, request: Request) -> dict[str, object]:
     runtime: AgentRuntime = request.app.state.runtime
     result = await runtime.run(
-        RunRequest(agent_id=agent_id, message=payload.message, history=payload.history, conversation_id=payload.conversation_id),
+        RunRequest(agent_id=agent_id, message=payload.message, history=payload.history, conversation_id=payload.conversation_id, user_id=payload.user_id, user_role=payload.user_role),
     )
     if result.status != "completed":
         raise HTTPException(status_code=502, detail=result.model_dump(mode="json"))
@@ -105,7 +114,7 @@ async def stream_agent(agent_id: str, payload: RunInput, request: Request) -> St
 
         task = asyncio.create_task(
             runtime.run(
-                RunRequest(agent_id=agent_id, message=payload.message, history=payload.history, conversation_id=payload.conversation_id),
+                RunRequest(agent_id=agent_id, message=payload.message, history=payload.history, conversation_id=payload.conversation_id, user_id=payload.user_id, user_role=payload.user_role),
                 emit=emit,
             )
         )
@@ -132,3 +141,26 @@ async def get_trace(trace_id: str, request: Request) -> dict[str, object]:
     if not events:
         raise HTTPException(status_code=404, detail="trace 不存在")
     return {"trace_id": trace_id, "events": events}
+
+
+@app.get("/v1/sessions/{session_id}")
+async def get_session(session_id: str, request: Request) -> dict[str, object]:
+    runtime: AgentRuntime = request.app.state.runtime
+    if runtime.session_store is None:
+        raise HTTPException(status_code=503, detail="会话持久化未启用")
+    session = runtime.session_store.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return session
+
+
+@app.get("/v1/sessions")
+async def list_sessions(
+    request: Request,
+    user_id: str | None = Query(default=None, max_length=200),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict[str, object]:
+    runtime: AgentRuntime = request.app.state.runtime
+    if runtime.session_store is None:
+        raise HTTPException(status_code=503, detail="会话持久化未启用")
+    return {"sessions": runtime.session_store.list_sessions(user_id=user_id, limit=limit)}

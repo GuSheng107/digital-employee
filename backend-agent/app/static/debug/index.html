@@ -18,6 +18,8 @@
     .shell { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; }
     .topbar { background: #17212b; color: #fff; padding: 14px 22px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
     .brand { font-size: 16px; font-weight: 650; letter-spacing: 0; }
+    .topbar-info { display: flex; align-items: center; gap: 16px; }
+    .test-user { color: #c8d3dc; font-size: 12px; }
     .connection { color: #c8d3dc; font-size: 13px; white-space: nowrap; }
     .connection.online { color: #a9e1bd; }
     main { max-width: 1180px; width: 100%; margin: 0 auto; padding: 20px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; }
@@ -30,6 +32,7 @@
     .message { max-width: min(82%, 720px); padding: 10px 12px; border-radius: 6px; border: 1px solid #d4dce1; white-space: pre-wrap; line-height: 1.55; font-size: 14px; }
     .message.user { margin-left: auto; background: #dcecf8; border-color: #a5c5dc; }
     .message.assistant { background: #fff; }
+    .message.tool { max-width: 94%; background: #fff7e8; border-color: #e5c47c; font-family: Consolas, monospace; font-size: 12px; }
     .message.error { background: #fde8e7; border-color: #dc938d; color: #802d2a; }
     .message .label { display: block; margin-bottom: 4px; color: #58707f; font-size: 12px; font-weight: 650; }
     .composer { padding: 14px 16px; border-top: 1px solid #dbe3e8; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
@@ -44,13 +47,15 @@
     .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .actions button { min-height: 34px; border: 1px solid #9daeba; border-radius: 4px; background: #fff; color: #263844; font-size: 13px; }
     .actions button:hover { background: #eef5f9; }
+    .actions button:disabled { cursor: wait; opacity: .6; }
+    .session-meta { color: #657985; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
     .events { margin: 0; padding: 10px 16px 16px; list-style: none; display: grid; gap: 8px; max-height: 460px; overflow: auto; }
     .event { padding: 8px; border-left: 3px solid #b3c1ca; background: #f5f7f8; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
     .event.tool { border-left-color: #d39a31; background: #fff7e8; }
     .event.done { border-left-color: #4c9a68; background: #edf8f0; }
     .event.failed { border-left-color: #c45a54; background: #fdeeee; }
     .empty { color: #627681; text-align: center; padding: 36px 12px; font-size: 14px; }
-    .trace { padding: 0 16px 14px; color: #657985; font-family: Consolas, monospace; font-size: 11px; overflow-wrap: anywhere; }
+    .trace { padding: 0 16px 14px; color: #657985; font-family: Consolas, monospace; font-size: 11px; white-space: pre-wrap; max-height: 260px; overflow: auto; overflow-wrap: anywhere; }
     @media (max-width: 820px) {
       main { grid-template-columns: 1fr; padding: 12px; }
       .workspace { min-height: 520px; }
@@ -70,7 +75,7 @@
   <div class="shell">
     <header class="topbar">
       <div class="brand">Agent Runtime 调试台</div>
-      <div id="connection" class="connection">正在检查服务</div>
+      <div class="topbar-info"><span id="test-user" class="test-user"></span><span id="connection" class="connection">正在检查服务</span></div>
     </header>
     <main>
       <section class="workspace" aria-label="对话">
@@ -85,9 +90,13 @@
         <div class="section-head"><h2>运行事件</h2></div>
         <div class="controls">
           <label>Agent<select id="agent"></select></label>
+          <label>会话<select id="session"></select></label>
+          <div id="session-meta" class="session-meta">尚未选择会话</div>
           <div class="actions">
+            <button id="new-session" type="button">新对话</button>
+            <button id="refresh-sessions" type="button">刷新Session</button>
             <button id="model-test" type="button">模型连通性</button>
-            <button id="clear" type="button">清空记录</button>
+            <button id="trace-test" type="button" disabled>查看最新 Trace</button>
           </div>
         </div>
         <ul id="events" class="events"><li class="empty">尚无事件</li></ul>
@@ -96,7 +105,9 @@
     </main>
   </div>
   <script>
-    const state = { history: [], running: false };
+    const TEST_USER_ID = 'debug-user-1';
+    const TEST_USER_ROLE = 'tester';
+    const state = { history: [], conversationId: null, running: false, lastTraceId: null };
     const API_BASE = location.protocol === 'file:' ? 'http://127.0.0.1:8766' : '';
     const api = (path) => `${API_BASE}${path}`;
     const elements = {
@@ -104,7 +115,10 @@
       send: document.querySelector('#send'), messages: document.querySelector('#messages'),
       events: document.querySelector('#events'), trace: document.querySelector('#trace'),
       connection: document.querySelector('#connection'), runState: document.querySelector('#run-state'),
+      session: document.querySelector('#session'), sessionMeta: document.querySelector('#session-meta'),
+      traceTest: document.querySelector('#trace-test'),
     };
+    document.querySelector('#test-user').textContent = `测试用户：${TEST_USER_ID}`;
 
     function setConnection(text, online = false) {
       elements.connection.textContent = text;
@@ -114,7 +128,7 @@
       elements.messages.querySelector('.empty')?.remove();
       const item = document.createElement('article');
       item.className = `message ${role}`;
-      const label = role === 'user' ? '用户' : role === 'error' ? '运行错误' : 'Agent';
+      const label = role === 'user' ? '用户' : role === 'error' ? '运行错误' : role === 'tool' ? '工具' : 'Agent';
       item.innerHTML = `<span class="label">${label}</span>`;
       const content = document.createElement('div'); content.textContent = text; item.append(content);
       elements.messages.append(item); elements.messages.scrollTop = elements.messages.scrollHeight;
@@ -130,6 +144,53 @@
       state.running = running; elements.send.disabled = running;
       elements.runState.textContent = running ? '运行中' : '空闲';
     }
+    function formatTime(value) {
+      if (!value) return '时间未知';
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false });
+    }
+    function shortText(value, max = 42) {
+      const text = String(value || '').replace(/\s+/g, ' ').trim();
+      return text.length > max ? `${text.slice(0, max)}...` : text || '空会话';
+    }
+    function updateSessionLabel() {
+      elements.sessionMeta.textContent = state.conversationId
+        ? `当前 Session：${state.conversationId}`
+        : '当前为新会话，发送第一条消息后创建 Session';
+    }
+    function clearConversationView() {
+      elements.messages.innerHTML = '<div class="empty">选择 Agent 后发送消息</div>';
+      elements.events.innerHTML = '<li class="empty">尚无事件</li>';
+      elements.trace.textContent = '';
+      state.lastTraceId = null;
+      elements.traceTest.disabled = true;
+      updateSessionLabel();
+    }
+    function renderMessages(messages) {
+      elements.messages.innerHTML = '<div class="empty">暂无对话消息</div>';
+      for (const message of messages || []) {
+        if (message.role === 'user' || (message.role === 'assistant' && message.content)) addMessage(message.role, message.content || '');
+      }
+    }
+    function renderEvents(events) {
+      elements.events.innerHTML = '<li class="empty">尚无事件</li>';
+      for (const event of events || []) addEvent(event.type, { ...event.payload, time: event.created_at });
+    }
+    function resetToNewConversation() {
+      state.history = [];
+      state.conversationId = null;
+      elements.session.value = '';
+      clearConversationView();
+    }
+    function requestBody(message, history) {
+      return {
+        message,
+        history: history.slice(-20),
+        conversation_id: state.conversationId,
+        user_id: TEST_USER_ID,
+        user_role: TEST_USER_ROLE,
+      };
+    }
     async function loadAgents() {
       const response = await fetch(api('/v1/agents'));
       if (!response.ok) throw new Error('无法读取 Agent 配置');
@@ -141,10 +202,56 @@
       }
       setConnection('服务已连接', true);
     }
-    async function runStream(message) {
+    async function checkHealth() {
+      try {
+        const response = await fetch(api('/health'), { cache: 'no-store' });
+        if (!response.ok) throw new Error('health check failed');
+        setConnection('服务已连接', true);
+      } catch {
+        setConnection('服务不可用');
+      }
+    }
+    async function loadSessions({ preferredId = null, selectLatest = false, preserveTrace = false } = {}) {
+      const traceId = preserveTrace ? state.lastTraceId : null;
+      const query = new URLSearchParams({ user_id: TEST_USER_ID, limit: '100' });
+      const response = await fetch(api(`/v1/sessions?${query}`));
+      if (!response.ok) throw new Error('无法读取历史会话');
+      const payload = await response.json();
+      const sessions = payload.sessions || [];
+      elements.session.replaceChildren(new Option('新对话', ''));
+      for (const session of sessions) {
+        const firstMessage = shortText(session.first_message);
+        const time = formatTime(session.first_message_at || session.created_at);
+        elements.session.append(new Option(`${firstMessage} · ${time}`, session.id));
+      }
+      const target = preferredId || (selectLatest && sessions[0]?.id) || '';
+      elements.session.value = target;
+      if (target) await loadSession(target);
+      else updateSessionLabel();
+      if (traceId) {
+        state.lastTraceId = traceId;
+        elements.trace.textContent = `trace: ${traceId}`;
+        elements.traceTest.disabled = false;
+      }
+    }
+    async function loadSession(sessionId) {
+      if (!sessionId) { resetToNewConversation(); return; }
+      const response = await fetch(api(`/v1/sessions/${encodeURIComponent(sessionId)}`));
+      if (!response.ok) throw new Error('无法读取会话详情');
+      const session = await response.json();
+      state.conversationId = session.id;
+      state.history = session.messages || [];
+      renderMessages(state.history);
+      renderEvents(session.events || []);
+      elements.trace.textContent = '';
+      state.lastTraceId = null;
+      elements.traceTest.disabled = true;
+      updateSessionLabel();
+    }
+    async function runStream(message, history) {
       const response = await fetch(api(`/v1/agents/${encodeURIComponent(elements.agent.value)}/stream`), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, history: state.history }),
+        body: JSON.stringify(requestBody(message, history)),
       });
       if (!response.ok || !response.body) throw new Error(`请求失败 (${response.status})`);
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
@@ -157,27 +264,61 @@
           if (!type || !raw) continue;
           const envelope = JSON.parse(raw); const data = envelope.data || {};
           addEvent(type, data);
-          if (envelope.trace_id) elements.trace.textContent = `trace: ${envelope.trace_id}`;
-          if (type === 'run.completed') { addMessage('assistant', data.answer || '模型未返回文本。'); state.history.push({ role: 'assistant', content: data.answer || '' }); }
-          if (type === 'run.failed') addMessage('error', data.error_message || data.error_code || '运行失败');
+          if (envelope.trace_id) { state.lastTraceId = envelope.trace_id; elements.trace.textContent = `trace: ${envelope.trace_id}`; elements.traceTest.disabled = false; }
+          if (type === 'run.completed') { addMessage('assistant', data.answer || '模型未返回文本。'); state.history.push({ role: 'assistant', content: data.answer || '' }); state.conversationId = data.conversation_id || state.conversationId; }
+          if (type === 'run.failed') {
+            state.conversationId = data.conversation_id || state.conversationId;
+            addMessage('error', data.error_message || data.error_code || '运行失败');
+          }
         }
         if (done) break;
       }
     }
+    async function refreshAfterRun() {
+      if (state.conversationId) await loadSessions({ preferredId: state.conversationId, preserveTrace: true });
+      else await loadSessions();
+    }
     document.querySelector('#composer').addEventListener('submit', async (event) => {
       event.preventDefault(); if (state.running) return;
       const message = elements.message.value.trim(); if (!message) return;
+      const history = state.history.slice();
       addMessage('user', message); state.history.push({ role: 'user', content: message }); elements.message.value = ''; setRunning(true);
-      try { await runStream(message); } catch (error) { addMessage('error', error.message); } finally { setRunning(false); }
+      try { await runStream(message, history); await refreshAfterRun(); } catch (error) { addMessage('error', error.message); } finally { setRunning(false); }
     });
-    document.querySelector('#clear').addEventListener('click', () => {
-      state.history = []; elements.messages.innerHTML = '<div class="empty">选择 Agent 后发送消息</div>'; elements.events.innerHTML = '<li class="empty">尚无事件</li>'; elements.trace.textContent = '';
+    document.querySelector('#new-session').addEventListener('click', () => {
+      if (state.running) return;
+      resetToNewConversation();
+      addEvent('session.new', { user_id: TEST_USER_ID });
+    });
+    document.querySelector('#refresh-sessions').addEventListener('click', async () => {
+      try { await loadSessions({ preferredId: state.conversationId }); } catch (error) { addMessage('error', error.message); }
+    });
+    elements.session.addEventListener('change', async () => {
+      try { await loadSession(elements.session.value); } catch (error) { addMessage('error', error.message); }
     });
     document.querySelector('#model-test').addEventListener('click', async () => {
       try { const response = await fetch(api('/v1/model/test'), { method: 'POST' }); const data = await response.json(); addEvent('model.test', data); if (!response.ok) addMessage('error', data.detail?.message || '模型连通性失败'); }
       catch (error) { addMessage('error', error.message); }
     });
-    loadAgents().catch((error) => { setConnection('服务不可用'); addMessage('error', error.message); });
+    elements.traceTest.addEventListener('click', async () => {
+      if (!state.lastTraceId) return;
+      try {
+        const response = await fetch(api(`/v1/traces/${encodeURIComponent(state.lastTraceId)}`));
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || `请求失败 (${response.status})`);
+        elements.trace.textContent = JSON.stringify(data, null, 2);
+        addEvent('trace.loaded', { trace_id: state.lastTraceId, event_count: (data.events || []).length });
+      } catch (error) { addMessage('error', error.message); }
+    });
+    async function bootstrap() {
+      try {
+        await loadAgents();
+        await loadSessions({ selectLatest: true });
+        await checkHealth();
+      } catch (error) { setConnection('服务不可用'); addMessage('error', error.message); }
+    }
+    window.setInterval(checkHealth, 15000);
+    bootstrap();
   </script>
 </body>
 </html>

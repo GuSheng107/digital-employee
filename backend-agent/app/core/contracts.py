@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -68,6 +68,8 @@ class RunRequest(BaseModel):
     message: str = Field(min_length=1, max_length=20_000)
     history: list[ChatMessage] = Field(default_factory=list, max_length=20)
     conversation_id: str | None = Field(default=None, max_length=200)
+    user_id: str | None = Field(default=None, max_length=200)
+    user_role: str | None = Field(default=None, max_length=100)
     request_id: str | None = Field(default=None, max_length=200)
 
 
@@ -82,8 +84,45 @@ class RunResult(BaseModel):
     run_id: str
     trace_id: str
     status: Literal["completed", "failed", "cancelled"]
+    conversation_id: str | None = None
     answer: str = ""
     usage: dict[str, int] = Field(default_factory=dict)
     error_code: ErrorCode | None = None
     error_message: str | None = None
 
+
+class SessionStore(Protocol):
+    """Persistence contract used by the runtime; storage details stay outside core."""
+
+    def ensure_session(
+        self,
+        session_id: str | None,
+        *,
+        user_id: str | None = None,
+        user_role: str | None = None,
+    ) -> tuple[str, bool]: ...
+
+    def load_messages(self, session_id: str) -> list[ChatMessage]: ...
+
+    def load_events(self, session_id: str) -> list[dict[str, Any]]: ...
+
+    def begin_turn(self, session_id: str, run_id: str, agent_id: str) -> str: ...
+
+    def append_event(self, session_id: str, event_type: str, payload: dict[str, Any], *, turn_id: str | None = None, run_id: str | None = None) -> str: ...
+
+    def append_message_event(
+        self,
+        session_id: str,
+        message: ChatMessage,
+        *,
+        event_type: str,
+        payload: dict[str, Any],
+        turn_id: str,
+        run_id: str,
+    ) -> str: ...
+
+    def finish_run(self, run_id: str, status: str) -> None: ...
+
+    def get_session(self, session_id: str) -> dict[str, Any] | None: ...
+
+    def list_sessions(self, *, user_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]: ...
