@@ -8,7 +8,11 @@ dependencies = [
     "api-common==0.1.0",
     "data-client==0.1.0",
     "fastapi==0.140.7",
+    "fastmcp>=2,<3",
     "httpx==0.28.1",
+    "jsonschema>=4.23,<5",
+    "litellm>=1.75,<2",
+    "mcp>=1.9,<2",
     "nacos-client==0.1.0",
     "observability==0.1.0",
     "psutil==7.0.0",
@@ -43,6 +47,7 @@ packages = ["app"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -56,6 +61,12 @@ module = [
     "api_common.*",
     "data_client",
     "data_client.*",
+    "fastmcp",
+    "fastmcp.*",
+    "litellm",
+    "litellm.*",
+    "mcp",
+    "mcp.*",
     "nacos_client",
     "nacos_client.*",
     "observability",

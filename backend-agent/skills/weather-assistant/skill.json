@@ -1,0 +1,23 @@
+{
+  "id": "weather-assistant",
+  "version": "1.0.0",
+  "description": "天气结果解释与回答格式。",
+  "inject_instructions": true,
+  "tools": [
+    {
+      "name": "format_weather_observation",
+      "description": "将已有天气观测数据格式化为一句中文摘要。它不能查询实时天气。",
+      "input_schema": {
+        "type": "object",
+        "required": ["city", "weather", "temperature_c"],
+        "properties": {
+          "city": {"type": "string"},
+          "weather": {"type": "string"},
+          "temperature_c": {"type": "number"}
+        },
+        "additionalProperties": false
+      },
+      "handler": "format_weather_observation"
+    }
+  ]
+}

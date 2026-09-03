@@ -5,24 +5,35 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, cast
 
 from api_common import ApiResponse, ErrorCode, InternalError, success_response
 from api_common.exceptions import ApiException
 from data_client import get_data_client
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from observability import TraceBatch, TraceMiddleware, TraceService, TraceSink
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.router import api_router
+from app.core.agent_runtime import AgentRuntime
 from app.core.config import Settings, settings
+from app.core.definitions import DefinitionStore
+from app.core.definitions import Settings as AgentSettings
 from app.core.logging import configure_logging
 from app.core.runtime import RuntimeManager
+from app.infrastructure.model_gateway import LiteLLMModelGateway
+from app.infrastructure.recorder import JsonlRunRecorder
+from app.infrastructure.session_store import SQLiteSessionStore
 from app.schemas.health import ServiceInfo
 
 logger = logging.getLogger("backend_agent.app")
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 async def _export_trace_batch(batch: TraceBatch) -> None:
@@ -41,10 +52,24 @@ async def _close_data_client() -> None:
     client.close()
 
 
+def _create_agent_runtime() -> AgentRuntime:
+    """根据本地 .env 与项目目录构造完整 Agent 运行时。"""
+    load_dotenv(PROJECT_ROOT / ".env")
+    agent_settings = AgentSettings.from_environment(PROJECT_ROOT)
+    return AgentRuntime(
+        settings=agent_settings,
+        definitions=DefinitionStore(PROJECT_ROOT),
+        model_gateway=LiteLLMModelGateway(),
+        recorder=JsonlRunRecorder(PROJECT_ROOT / "var" / "traces"),
+        session_store=SQLiteSessionStore(PROJECT_ROOT / "var" / "sessions.sqlite3"),
+    )
+
+
 def create_app(
     *,
     configured_settings: Settings | None = None,
     runtime: RuntimeManager | None = None,
+    agent_runtime: AgentRuntime | None = None,
     trace_sink: TraceSink | None = None,
 ) -> FastAPI:
     """创建可注入配置和运行时的 FastAPI 应用。
@@ -52,6 +77,7 @@ def create_app(
     Args:
         configured_settings: 测试或运行时覆盖配置。
         runtime: 测试或运行时覆盖生命周期管理器。
+        agent_runtime: 测试或运行时覆盖 Agent 运行时；默认按项目目录构造。
         trace_sink: Trace 输出函数；默认提交至 backend-data。
 
     Returns:
@@ -59,6 +85,7 @@ def create_app(
     """
     active_settings = configured_settings or settings
     active_runtime = runtime or RuntimeManager()
+    active_agent_runtime = agent_runtime or _create_agent_runtime()
     active_trace_sink = trace_sink or _export_trace_batch
     configure_logging(active_settings.log_level)
 
@@ -66,11 +93,15 @@ def create_app(
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         application.state.settings = active_settings
         application.state.runtime = active_runtime
+        application.state.agent_runtime = active_agent_runtime
         await active_runtime.start()
         try:
             yield
         finally:
             await active_runtime.stop()
+            session_store = active_agent_runtime.session_store
+            if session_store is not None and hasattr(session_store, "close"):
+                session_store.close()
             if active_trace_sink is _export_trace_batch:
                 await _close_data_client()
 
@@ -84,11 +115,15 @@ def create_app(
     )
     application.state.settings = active_settings
     application.state.runtime = active_runtime
+    application.state.agent_runtime = active_agent_runtime
     application.add_middleware(
         TraceMiddleware,
         service=TraceService.BACKEND_AGENT,
         sink=active_trace_sink,
     )
+    debug_dir = PROJECT_ROOT / "app" / "static" / "debug"
+    if debug_dir.is_dir():
+        application.mount("/debug", StaticFiles(directory=debug_dir, html=True), name="debug")
 
     @application.exception_handler(ApiException)
     async def api_exception_handler(
