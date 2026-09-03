@@ -38,7 +38,14 @@ class UpdateAgentPayload(BaseModel):
 @router.get(
     "",
     response_model=ApiResponse,
-    dependencies=[Depends(require_permission(PermissionCode.AGENT_MANAGE))],
+    dependencies=[
+        Depends(
+            require_permission(
+                PermissionCode.AGENT_MANAGE,
+                PermissionCode.AGENT_READONLY,
+            )
+        )
+    ],
 )
 def list_agents(
     page: int = Query(default=1, ge=1),

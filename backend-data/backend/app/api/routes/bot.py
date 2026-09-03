@@ -58,6 +58,7 @@ def create_bot(payload: CreateBotRequest) -> dict:
         mode=payload.mode,
         agent_id=payload.agent_id,
         created_by=payload.created_by,
+        parent_bot_id=payload.parent_bot_id,
     )
     return success_response(result)
 

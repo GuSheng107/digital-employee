@@ -5,11 +5,22 @@ import type { ColumnsType } from 'antd/es/table';
 import { deleteAgent, fetchAgents, type AgentItem } from '@/api/agent-api';
 import SystemPage from '@/components/system-page/SystemPage';
 import { getRequestErrorMessage } from '@/utils/request';
+import { hasManagePermission, PERMISSION_CODE } from '@/constants/access-control';
+import { useUserStore } from '@/store/user-store';
 import AgentFormModal from './components/AgentFormModal';
 
 const DEFAULT_PAGE_SIZE = 20;
 
 export default function AgentManagement(): React.ReactElement {
+  const currentUser = useUserStore((state) => state.userInfo);
+  /** 是否可管理 Agent（拥有 manage 权限；仅 readonly 时隐藏写操作入口） */
+  const canManage = currentUser !== null
+    && hasManagePermission(
+      currentUser.roles,
+      currentUser.permissions,
+      PERMISSION_CODE.AGENT_MANAGE,
+    );
+
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<AgentItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -101,7 +112,12 @@ export default function AgentManagement(): React.ReactElement {
     {
       title: '操作',
       key: 'action',
-      render: (_: unknown, record: AgentItem) => (
+      render: (_: unknown, record: AgentItem) => {
+        // 只读用户不展示任何写操作入口
+        if (!canManage) {
+          return <span>—</span>;
+        }
+        return (
         <span style={{ display: 'inline-flex', gap: 8 }}>
           <Button type="link" size="small" onClick={() => handleEdit(record)}>
             编辑
@@ -119,7 +135,8 @@ export default function AgentManagement(): React.ReactElement {
             </Button>
           </Popconfirm>
         </span>
-      ),
+        );
+      },
     },
   ];
 
@@ -132,9 +149,11 @@ export default function AgentManagement(): React.ReactElement {
           <Button icon={<ReloadOutlined />} onClick={() => void loadData()}>
             刷新
           </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
-            新建 Agent
-          </Button>
+          {canManage && (
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
+              新建 Agent
+            </Button>
+          )}
         </span>
       }
     >

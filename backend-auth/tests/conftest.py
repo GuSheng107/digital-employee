@@ -31,8 +31,12 @@ class FakeDataClient:
         self.update_result: dict[str, Any] = {"bot_id": "bot-1", "status": "updated"}
         self.delete_result: dict[str, Any] = {"bot_id": "bot-1", "status": "deleted"}
 
-    def list_bots(self, *, page: int, page_size: int) -> dict[str, Any]:
-        self.calls.append(("list_bots", {"page": page, "page_size": page_size}))
+    def list_bots(
+        self, *, page: int, page_size: int, created_by: int | None = None
+    ) -> dict[str, Any]:
+        self.calls.append(
+            ("list_bots", {"page": page, "page_size": page_size, "created_by": created_by})
+        )
         return self.list_result
 
     def create_bot(self, **payload: Any) -> dict[str, Any]:
@@ -46,6 +50,14 @@ class FakeDataClient:
     def delete_bot(self, bot_id: str) -> dict[str, Any]:
         self.calls.append(("delete_bot", {"bot_id": bot_id}))
         return self.delete_result
+
+    def create_user(self, **payload: Any) -> dict[str, Any]:
+        self.calls.append(("create_user", payload))
+        return {"user_id": 1, "status": "created"}
+
+    def assign_user_roles(self, *, user_id: int, role_codes: list[str], **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(("assign_user_roles", {"user_id": user_id, "role_codes": role_codes}))
+        return {"user_id": user_id, "status": "assigned"}
 
 
 class FakeResponse:

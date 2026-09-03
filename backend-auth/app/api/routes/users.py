@@ -37,7 +37,9 @@ router = APIRouter()
         Depends(
             require_permission(
                 PermissionCode.USER_MANAGE,
-                PermissionCode.USER_PERMISSION,
+                PermissionCode.USER_READONLY,
+                PermissionCode.PERMISSION_MANAGE,
+                PermissionCode.PERMISSION_READONLY,
             )
         )
     ],
@@ -102,7 +104,14 @@ def update_profile(
 @router.get(
     "/vip-levels",
     response_model=ApiResponse,
-    dependencies=[Depends(require_permission(PermissionCode.USER_MANAGE))],
+    dependencies=[
+        Depends(
+            require_permission(
+                PermissionCode.USER_MANAGE,
+                PermissionCode.USER_READONLY,
+            )
+        )
+    ],
 )
 def list_vip_levels() -> dict:
     """返回可配置的业务 VIP 枚举。"""
@@ -156,7 +165,7 @@ def assign_roles(
     user_id: int,
     payload: AssignRolesRequest,
     current_user: UserInfo = Depends(
-        require_permission(PermissionCode.USER_PERMISSION)
+        require_permission(PermissionCode.PERMISSION_MANAGE)
     ),
 ) -> dict:
     """分配用户角色（管理员）。
@@ -265,7 +274,14 @@ def delete_user(
 @router.get(
     "/{user_id}/menus",
     response_model=ApiResponse,
-    dependencies=[Depends(require_permission(PermissionCode.USER_PERMISSION))],
+    dependencies=[
+        Depends(
+            require_permission(
+                PermissionCode.PERMISSION_MANAGE,
+                PermissionCode.PERMISSION_READONLY,
+            )
+        )
+    ],
 )
 def get_user_menus(
     user_id: int,
@@ -283,7 +299,7 @@ def assign_user_menus(
     user_id: int,
     payload: AssignUserMenusRequest,
     current_user: UserInfo = Depends(
-        require_permission(PermissionCode.USER_PERMISSION)
+        require_permission(PermissionCode.PERMISSION_MANAGE)
     ),
 ) -> dict:
     """分配用户独立菜单（覆盖式，管理员）。
@@ -304,7 +320,14 @@ def assign_user_menus(
 @router.get(
     "/{user_id}/permissions",
     response_model=ApiResponse,
-    dependencies=[Depends(require_permission(PermissionCode.USER_PERMISSION))],
+    dependencies=[
+        Depends(
+            require_permission(
+                PermissionCode.PERMISSION_MANAGE,
+                PermissionCode.PERMISSION_READONLY,
+            )
+        )
+    ],
 )
 def get_user_permissions(
     user_id: int,
@@ -322,7 +345,7 @@ def assign_user_permissions(
     user_id: int,
     payload: AssignUserPermissionsRequest,
     current_user: UserInfo = Depends(
-        require_permission(PermissionCode.USER_PERMISSION)
+        require_permission(PermissionCode.PERMISSION_MANAGE)
     ),
 ) -> dict:
     """分配用户独立权限（覆盖式，管理员）。"""

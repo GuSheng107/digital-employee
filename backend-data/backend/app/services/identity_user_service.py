@@ -20,7 +20,9 @@ from auth_utils import (
     ROLE_CODE_MANAGER,
     ROLE_CODE_SUPER_ADMIN,
     VipLevel,
+    expand_manage_to_readonly,
     get_vip_display,
+    validate_role_codes,
 )
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -122,6 +124,9 @@ class UserService:
             role_codes=requested_role_codes,
             actor_role_codes=actor_role_codes,
         )
+        role_error = validate_role_codes(requested_role_codes)
+        if role_error is not None:
+            raise ValidationError(message=role_error)
         if ROLE_CODE_MANAGER in requested_role_codes and is_vip:
             raise ValidationError(message="管理员身份不能同时配置业务 VIP")
 
@@ -233,6 +238,9 @@ class UserService:
             role_codes=role_codes,
             actor_role_codes=actor_role_codes,
         )
+        role_error = validate_role_codes(role_codes)
+        if role_error is not None:
+            raise ValidationError(message=role_error)
 
         user = self._session.get(User, user_id)
         if user is None or user.deleted_at is not None:
@@ -699,7 +707,10 @@ class UserService:
         """禁止普通管理员授予超出自身范围的权限。"""
         if ROLE_CODE_SUPER_ADMIN in actor_role_codes:
             return
-        unauthorized_codes = sorted(permission_codes - set(actor_permission_codes))
+        # manage 是 readonly 的超集：持有 xxx:manage 的操作者可分配 xxx:readonly，
+        # 避免“拥有管理权却无法分配只读权限”的误判。
+        actor_scope = expand_manage_to_readonly(actor_permission_codes)
+        unauthorized_codes = sorted(permission_codes - actor_scope)
         if unauthorized_codes:
             raise PermissionDeniedError(
                 message=f"不能授予超出自身范围的权限：{', '.join(unauthorized_codes)}"

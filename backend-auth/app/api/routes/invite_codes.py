@@ -42,7 +42,14 @@ def create_invite_code(
 @router.get(
     "",
     response_model=ApiResponse,
-    dependencies=[Depends(require_permission(PermissionCode.INVITE_CODE_MANAGE))],
+    dependencies=[
+        Depends(
+            require_permission(
+                PermissionCode.INVITE_CODE_MANAGE,
+                PermissionCode.INVITE_CODE_READONLY,
+            )
+        )
+    ],
 )
 def list_invite_codes(
     page: int = Query(default=1, ge=1),

@@ -43,6 +43,13 @@ FULL_ACCESS_ROLE_CODES = frozenset({ROLE_CODE_SUPER_ADMIN})
 PROTECTED_ROLE_CODES = frozenset({ROLE_CODE_SUPER_ADMIN})
 PRIVILEGED_ROLE_CODES = frozenset({ROLE_CODE_SUPER_ADMIN, ROLE_CODE_MANAGER})
 RESERVED_ROLE_CODES = frozenset({ROLE_CODE_SUPER_ADMIN, ROLE_CODE_MANAGER})
+# 身份角色：super_admin / manager / user 三者互斥，一个用户最多持有其一。
+IDENTITY_ROLE_CODES = frozenset(
+    {ROLE_CODE_SUPER_ADMIN, ROLE_CODE_MANAGER, ROLE_CODE_USER}
+)
+# 独占角色：持有后不能再叠加任何其他角色（含自定义角色）。
+# manager 独占；super_admin 全局唯一；user 可叠加自定义角色。
+EXCLUSIVE_ROLE_CODES = frozenset({ROLE_CODE_SUPER_ADMIN, ROLE_CODE_MANAGER})
 BUSINESS_VIP_LEVELS = tuple(
     level for level in VipLevel if VipLevel.VIP1 <= level <= VipLevel.VIP9
 )
@@ -61,6 +68,29 @@ AVATAR_CONTENT_TYPES = frozenset(
     }
 )
 USER_PROFILE_ROUTE_PATH = "/system/user/profile"
+
+
+def validate_role_codes(role_codes: list[str] | set[str]) -> str | None:
+    """校验角色组合是否合法，返回错误消息（None 表示合法）。
+
+    规则：
+    - 身份角色（super_admin / manager / user）之间互斥，最多选一个。
+    - 独占角色（super_admin / manager）不能叠加任何其他角色；
+      user 作为基础身份，允许叠加自定义角色（如 editor）。
+
+    该函数不抛异常，由调用方决定如何映射到各自的异常类型，
+    避免 auth-utils 依赖 api-common 的异常层级。
+    """
+    codes = set(role_codes)
+    if not codes:
+        return None
+    identity = IDENTITY_ROLE_CODES.intersection(codes)
+    if len(identity) > 1:
+        return "身份角色之间互斥，只能选择一个"
+    exclusive = EXCLUSIVE_ROLE_CODES.intersection(codes)
+    if exclusive and len(codes) > 1:
+        return "该角色不能与其他角色同时分配"
+    return None
 
 
 def get_vip_display(level: int | None) -> str:

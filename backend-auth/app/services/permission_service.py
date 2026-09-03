@@ -16,3 +16,23 @@ class PermissionService:
     def list_permissions(self) -> list[dict[str, Any]]:
         """列出权限码目录。"""
         return self._data.list_permissions()
+
+    def create_permission(
+        self,
+        *,
+        code: str,
+        name: str,
+        description: str = "",
+        module: str | None = None,
+    ) -> dict[str, Any]:
+        """动态创建权限码。"""
+        return self._data.create_permission(
+            code=code,
+            name=name,
+            description=description,
+            module=module,
+        )
+
+    def delete_permission(self, *, permission_id: int) -> dict[str, Any]:
+        """物理删除权限码。"""
+        return self._data.delete_permission(permission_id)

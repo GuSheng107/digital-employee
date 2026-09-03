@@ -44,6 +44,7 @@ import {
 } from '@/api/permission-api';
 import { useUserStore } from '@/store/user-store';
 import { getMenuIcon, MENU_ICON_NAMES } from '@/constants/menu-icons';
+import { hasManagePermission, PERMISSION_CODE } from '@/constants/access-control';
 import { getRequestErrorMessage } from '@/utils/request';
 import SystemPage from '@/components/system-page/SystemPage';
 import styles from './index.module.css';
@@ -184,6 +185,15 @@ export default function MenuManagement(): React.ReactElement {
   const [form] = Form.useForm<MenuFormValues>();
 
   const reloadMenus = useUserStore((state) => state.reloadMenus);
+  const userInfo = useUserStore((state) => state.userInfo);
+
+  /** 是否可管理菜单（拥有 manage 权限；仅 readonly 时隐藏写操作入口） */
+  const canManage = userInfo !== null
+    && hasManagePermission(
+      userInfo.roles,
+      userInfo.permissions,
+      PERMISSION_CODE.MENU_MANAGE,
+    );
 
   /** 表格数据：仅根节点进入 dataSource，子节点通过 children 嵌套 */
   const tableData = useMemo(() => buildTableData(menus), [menus]);
@@ -197,6 +207,9 @@ export default function MenuManagement(): React.ReactElement {
   const loadMenus = useCallback(async (
     isActive: () => boolean = () => true,
   ): Promise<void> => {
+    if (!isActive()) {
+      return;
+    }
     setLoading(true);
     try {
       const [list, permissionList] = await Promise.all([
@@ -455,6 +468,10 @@ export default function MenuManagement(): React.ReactElement {
       width: 154,
       align: 'center',
       render: (_, record) => {
+        // 只读用户不展示任何写操作入口
+        if (!canManage) {
+          return <span className={styles.emptyValue}>—</span>;
+        }
         // 根目录（顶级）不允许删除，避免误删顶层导航结构
         const isRoot = record.parent_id === 0;
         // 有子菜单的节点不允许删除，需先删除子菜单
@@ -549,9 +566,11 @@ export default function MenuManagement(): React.ReactElement {
           >
             刷新
           </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
-            新建菜单
-          </Button>
+          {canManage && (
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
+              新建菜单
+            </Button>
+          )}
         </Space>
       )}
     >
@@ -609,7 +628,7 @@ export default function MenuManagement(): React.ReactElement {
             label="父菜单"
             name="parent_id"
             rules={[{ required: true, message: '请选择父菜单' }]}
-            extra="仅目录可作为父节点；顶级菜单（目录）选「顶级菜单」"
+            extra="仅目录可作为父节点"
           >
             <TreeSelect
               treeData={parentTreeData}
@@ -627,9 +646,8 @@ export default function MenuManagement(): React.ReactElement {
             <Select
               disabled={editingHasChildren}
               options={[
-                { value: 1, label: '目录（含子菜单的容器）' },
-                { value: 2, label: '菜单（实际页面）' },
-                { value: 3, label: '按钮（仅权限点，不显示）' },
+                { value: 1, label: '目录' },
+                { value: 2, label: '菜单' },
               ]}
               placeholder="选择类型"
             />
@@ -650,7 +668,7 @@ export default function MenuManagement(): React.ReactElement {
             label="路由路径"
             name="path"
             rules={[{ max: 255, message: '路径不超过 255 字符' }]}
-            extra="前端路由路径，如 /data-platform/dashboard；目录可留空"
+            extra="如 /data-platform/dashboard；目录可留空"
           >
             <Input placeholder="/system/menu" />
           </Form.Item>
@@ -667,7 +685,7 @@ export default function MenuManagement(): React.ReactElement {
           <Form.Item
             label="图标名"
             name="icon"
-            extra="从前端已注册的 Ant Design 图标中选择；留空则使用默认图标"
+            extra="留空则使用默认图标"
           >
             <Select
               allowClear
@@ -689,7 +707,7 @@ export default function MenuManagement(): React.ReactElement {
           <Form.Item
             label="权限码"
             name="permission"
-            extra="访问该菜单所需权限码；留空表示仅登录可见"
+            extra="留空则登录即可访问，不校验权限"
           >
             <Select
               allowClear

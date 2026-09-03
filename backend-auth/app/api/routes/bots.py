@@ -35,6 +35,7 @@ class CreateBotPayload(BaseModel):
     app_secret: str = Field(..., min_length=1, max_length=256)
     mode: BotMode = Field(default="test")
     agent_id: str | None = Field(default=None)
+    parent_bot_id: int | None = Field(default=None, description="父级 Bot 主键 ID（表达部门隶属）")
 
 
 class UpdateBotPayload(BaseModel):
@@ -46,12 +47,20 @@ class UpdateBotPayload(BaseModel):
     app_secret: str | None = Field(default=None, min_length=1, max_length=256)
     mode: BotMode | None = Field(default=None)
     agent_id: str | None = Field(default=None)
+    parent_bot_id: int | None = Field(default=None, description="父级 Bot 主键 ID（表达部门隶属）")
 
 
 @router.get(
     "",
     response_model=ApiResponse,
-    dependencies=[Depends(require_permission(PermissionCode.BOT_MANAGE))],
+    dependencies=[
+        Depends(
+            require_permission(
+                PermissionCode.BOT_MANAGE,
+                PermissionCode.BOT_READONLY,
+            )
+        )
+    ],
 )
 def list_bots(
     page: int = Query(default=1, ge=1),
@@ -87,6 +96,7 @@ def create_bot(
         mode=payload.mode,
         agent_id=payload.agent_id,
         created_by=current_user.id,
+        parent_bot_id=payload.parent_bot_id,
     )
     return success_response(result)
 

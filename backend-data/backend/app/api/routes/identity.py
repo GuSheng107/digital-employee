@@ -24,6 +24,7 @@ from app.schemas.identity import (
     ConsumeIdentityRateLimitsRequest,
     CreateIdentityInviteCodeRequest,
     CreateIdentityMenuRequest,
+    CreateIdentityPermissionRequest,
     CreateIdentityRoleRequest,
     CreateIdentityUserRequest,
     DeleteIdentityRoleRequest,
@@ -509,6 +510,28 @@ def list_permissions(
     return success_response(PermissionService(session).list_permissions())
 
 
+@router.post("/permissions", response_model=ApiResponse)
+def create_permission(
+    payload: CreateIdentityPermissionRequest,
+    session: Session = Depends(get_core_db_session),
+) -> dict:
+    """动态创建权限码（仅用于菜单可见性与角色授权）。"""
+    return success_response(
+        PermissionService(session).create_permission(**payload.model_dump())
+    )
+
+
+@router.delete("/permissions/{permission_id}", response_model=ApiResponse)
+def delete_permission(
+    permission_id: int,
+    session: Session = Depends(get_core_db_session),
+) -> dict:
+    """物理删除权限码（无角色/用户引用时）。"""
+    return success_response(
+        PermissionService(session).delete_permission(permission_id=permission_id)
+    )
+
+
 @router.post("/invite-codes", response_model=ApiResponse)
 def create_invite_code(
     payload: CreateIdentityInviteCodeRequest,
@@ -577,4 +600,4 @@ def delete_invite_code(
 ) -> dict:
     """删除邀请码。"""
     InviteCodeService().delete(code=code)
-    return success_response(None)
+    return success_response({"code": code, "deleted": True})

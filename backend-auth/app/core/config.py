@@ -6,6 +6,7 @@ HTTP 服务以及通过 backend-share 调用 backend-data 所需的服务地址�
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -28,6 +29,11 @@ def _load_nacos_config_to_environ() -> None:
         from nacos_client import NacosClient
     except ImportError:
         return  # nacos-client 未安装，仅本地开发场景
+
+    # 未配置 Nacos 地址时静默跳过（本地开发/测试场景），
+    # 仅当显式配置了 NACOS_SERVER_ADDR 时才走强制可用路径。
+    if not os.getenv("NACOS_SERVER_ADDR"):
+        return
 
     client = NacosClient.from_env_required()
     client.load_to_environ()

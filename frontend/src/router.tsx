@@ -101,21 +101,21 @@ export const router = createBrowserRouter([
         path: 'system/user/register',
         element: withPermission(
           <UserRegister />,
-          [PERMISSION_CODE.USER_MANAGE],
+          [PERMISSION_CODE.USER_MANAGE, PERMISSION_CODE.USER_READONLY],
         ),
       },
       {
         path: 'system/user/permission',
         element: withPermission(
           <UserPermission />,
-          [PERMISSION_CODE.USER_PERMISSION],
+          [PERMISSION_CODE.PERMISSION_MANAGE, PERMISSION_CODE.PERMISSION_READONLY],
         ),
       },
       {
         path: 'system/user/invite-code',
         element: withPermission(
           <InviteCode />,
-          [PERMISSION_CODE.INVITE_CODE_MANAGE],
+          [PERMISSION_CODE.INVITE_CODE_MANAGE, PERMISSION_CODE.INVITE_CODE_READONLY],
         ),
       },
       // 系统设置-系统-菜单管理
@@ -123,7 +123,7 @@ export const router = createBrowserRouter([
         path: 'system/menu',
         element: withPermission(
           <MenuManagement />,
-          [PERMISSION_CODE.MENU_MANAGE],
+          [PERMISSION_CODE.MENU_MANAGE, PERMISSION_CODE.MENU_READONLY],
         ),
       },
       {
@@ -138,7 +138,7 @@ export const router = createBrowserRouter([
         path: 'digital-employee/bots',
         element: withPermission(
           <BotManagement />,
-          [PERMISSION_CODE.BOT_MANAGE],
+          [PERMISSION_CODE.BOT_MANAGE, PERMISSION_CODE.BOT_READONLY],
         ),
       },
       // 数字员工-Agent管理
@@ -146,7 +146,7 @@ export const router = createBrowserRouter([
         path: 'digital-employee/agents',
         element: withPermission(
           <AgentManagement />,
-          [PERMISSION_CODE.AGENT_MANAGE],
+          [PERMISSION_CODE.AGENT_MANAGE, PERMISSION_CODE.AGENT_READONLY],
         ),
       },
       // ★ 动态路由兜底：菜单管理页面新增的菜单项若未在静态路由中注册，

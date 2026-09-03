@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Form, Input, Modal, Select, message } from 'antd';
-import { createBot, updateBot, type BotItem, type CreateBotPayload, type UpdateBotPayload } from '@/api/bot-api';
+import { Form, Input, Modal, Select, TreeSelect, message } from 'antd';
+import { createBot, updateBot, fetchBots, type BotItem, type CreateBotPayload, type UpdateBotPayload } from '@/api/bot-api';
 import { fetchAgents, type AgentItem } from '@/api/agent-api';
 import { getRequestErrorMessage } from '@/utils/request';
 
@@ -11,6 +11,35 @@ interface BotFormModalProps {
   onSuccess: () => void;
 }
 
+interface BotTreeData {
+  title: string;
+  value: number;
+  children?: BotTreeData[];
+}
+
+/** 把 Bot 列表转换为 TreeSelect 树形数据（表达部门隶属关系） */
+function buildBotTree(bots: BotItem[]): BotTreeData[] {
+  const nodes = new Map<number, BotTreeData>();
+  bots.forEach((bot) => {
+    nodes.set(bot.id, {
+      title: `${bot.name} (${bot.bot_id})`,
+      value: bot.id,
+    });
+  });
+  const roots: BotTreeData[] = [];
+  bots.forEach((bot) => {
+    const node = nodes.get(bot.id);
+    if (!node) return;
+    const parent = bot.parent_bot_id ? nodes.get(bot.parent_bot_id) : undefined;
+    if (parent) {
+      parent.children = [...(parent.children ?? []), node];
+    } else {
+      roots.push(node);
+    }
+  });
+  return roots;
+}
+
 export default function BotFormModal({
   open,
   editingBot,
@@ -19,6 +48,7 @@ export default function BotFormModal({
 }: BotFormModalProps): React.ReactElement {
   const [form] = Form.useForm();
   const [agents, setAgents] = useState<AgentItem[]>([]);
+  const [bots, setBots] = useState<BotItem[]>([]);
   const isEditing = Boolean(editingBot);
 
   useEffect(() => {
@@ -26,6 +56,14 @@ export default function BotFormModal({
       void fetchAgents(1, 100)
         .then((res) => {
           setAgents(res.items);
+        })
+        .catch(() => {
+          // 忽略无影响的静默失败
+        });
+
+      void fetchBots(1, 100)
+        .then((res) => {
+          setBots(res.items);
         })
         .catch(() => {
           // 忽略无影响的静默失败
@@ -40,6 +78,7 @@ export default function BotFormModal({
           app_secret: '', // 编辑时密码框留空，若填写则更新
           mode: editingBot.mode,
           agent_id: editingBot.agent_id || undefined,
+          parent_bot_id: editingBot.parent_bot_id || undefined,
         });
       } else {
         form.resetFields();
@@ -61,6 +100,7 @@ export default function BotFormModal({
           app_id: values.app_id,
           mode: values.mode,
           agent_id: values.agent_id || null,
+          parent_bot_id: values.parent_bot_id || null,
         };
         if (values.app_secret) {
           updatePayload.app_secret = values.app_secret;
@@ -76,6 +116,7 @@ export default function BotFormModal({
           app_secret: values.app_secret,
           mode: values.mode,
           agent_id: values.agent_id || null,
+          parent_bot_id: values.parent_bot_id || null,
         };
         await createBot(createPayload);
         message.success('新增机器人成功');
@@ -172,6 +213,21 @@ export default function BotFormModal({
               label: `${agent.name} (${agent.agent_id})`,
               value: agent.agent_id,
             }))}
+          />
+        </Form.Item>
+
+        <Form.Item
+          name="parent_bot_id"
+          label="上级部门"
+          extra="选择该 Bot 所属的上级部门（Bot 树形结构，可选）"
+        >
+          <TreeSelect
+            placeholder="请选择上级部门 (可选)"
+            allowClear
+            showSearch
+            treeNodeFilterProp="title"
+            treeDefaultExpandAll
+            treeData={buildBotTree(bots.filter((b) => b.id !== editingBot?.id))}
           />
         </Form.Item>
       </Form>

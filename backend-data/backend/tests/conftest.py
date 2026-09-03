@@ -23,7 +23,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base
+from app.models.agent import Agent
 from app.models.bot import Bot
+from app.models.user import User
 from app.services.bot_service import BotService
 
 
@@ -35,10 +37,17 @@ def sqlite_engine() -> Generator[Engine, None, None]:
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    # 只创建 bots 表，避免其它模型（User/Role 等）的 FK 与 relationship 干扰。
-    Base.metadata.create_all(engine, tables=[Bot.__table__])
+    # list_bots 联表 users / agents 展示创建者与 Agent 名称，需一并创建；
+    # 其余模型（Role 等）不涉及，仍不创建以免 FK/relationship 干扰。
+    Base.metadata.create_all(
+        engine,
+        tables=[User.__table__, Agent.__table__, Bot.__table__],
+    )
     yield engine
-    Base.metadata.drop_all(engine, tables=[Bot.__table__])
+    Base.metadata.drop_all(
+        engine,
+        tables=[Bot.__table__, Agent.__table__, User.__table__],
+    )
     engine.dispose()
 
 

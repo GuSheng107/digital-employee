@@ -21,6 +21,7 @@ class CreateBotRequest(BaseModel):
     mode: BotMode = Field(default="test")
     agent_id: str | None = Field(default=None)
     created_by: int | None = Field(default=None)
+    parent_bot_id: int | None = Field(default=None, description="父级 Bot 主键 ID（表达部门隶属）")
 
 
 class UpdateBotRequest(BaseModel):
@@ -32,3 +33,4 @@ class UpdateBotRequest(BaseModel):
     app_secret: str | None = Field(default=None, min_length=1, max_length=256)
     mode: BotMode | None = Field(default=None)
     agent_id: str | None = Field(default=None)
+    parent_bot_id: int | None = Field(default=None, description="父级 Bot 主键 ID（表达部门隶属）")

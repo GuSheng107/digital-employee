@@ -28,7 +28,9 @@ router = APIRouter()
         Depends(
             require_permission(
                 PermissionCode.MENU_MANAGE,
-                PermissionCode.USER_PERMISSION,
+                PermissionCode.MENU_READONLY,
+                PermissionCode.PERMISSION_MANAGE,
+                PermissionCode.PERMISSION_READONLY,
             )
         )
     ],

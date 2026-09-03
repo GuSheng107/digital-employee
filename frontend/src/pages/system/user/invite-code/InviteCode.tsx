@@ -24,6 +24,11 @@ import {
 } from '@/api/invite-code-api';
 import { getRequestErrorMessage } from '@/utils/request';
 import {
+  hasManagePermission,
+  PERMISSION_CODE,
+} from '@/constants/access-control';
+import { useUserStore } from '@/store/user-store';
+import {
   INVITE_CODE_MESSAGE,
   INVITE_CODE_PATTERN,
 } from '@/utils/identity-validation';
@@ -61,6 +66,15 @@ function getErrorMessage(error: unknown): string {
 }
 
 export default function InviteCode(): React.ReactElement {
+  const currentUser = useUserStore((state) => state.userInfo);
+  /** 是否可管理邀请码（拥有 manage 权限；仅 readonly 时隐藏写操作入口） */
+  const canManage = currentUser !== null
+    && hasManagePermission(
+      currentUser.roles,
+      currentUser.permissions,
+      PERMISSION_CODE.INVITE_CODE_MANAGE,
+    );
+
   const [loading, setLoading] = useState<boolean>(false);
   const [page, setPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(DEFAULT_TABLE_PAGE_SIZE);
@@ -251,21 +265,25 @@ export default function InviteCode(): React.ReactElement {
           >
             复制
           </Button>
-          <Button
-            type="link"
-            size="small"
-            onClick={() => openEditModal(record)}
-          >
-            编辑
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            danger
-            onClick={() => void handleDeleteCode(record)}
-          >
-            删除
-          </Button>
+          {canManage && (
+            <>
+              <Button
+                type="link"
+                size="small"
+                onClick={() => openEditModal(record)}
+              >
+                编辑
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                danger
+                onClick={() => void handleDeleteCode(record)}
+              >
+                删除
+              </Button>
+            </>
+          )}
         </Space>
       ),
     },
@@ -277,9 +295,11 @@ export default function InviteCode(): React.ReactElement {
       actions={(
         <Space>
           <Button onClick={() => void loadInviteCodes()}>刷新</Button>
-          <Button type="primary" onClick={openCreateModal}>
-            新建邀请码
-          </Button>
+          {canManage && (
+            <Button type="primary" onClick={openCreateModal}>
+              新建邀请码
+            </Button>
+          )}
         </Space>
       )}
     >
