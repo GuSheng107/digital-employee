@@ -1,1 +1,1 @@
-"""Domain contracts and the runtime loop."""
+"""Agent 核心基础设施包：配置、生命周期与运行时循环。"""

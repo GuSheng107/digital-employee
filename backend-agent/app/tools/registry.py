@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import AsyncExitStack, AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack
 
 from app.core.contracts import ErrorCode, RuntimeError, ToolCall, ToolResult, ToolSpec
 from app.core.definitions import AgentDefinition, DefinitionStore, Settings
@@ -19,7 +19,7 @@ class BoundToolRegistry(AbstractAsyncContextManager["BoundToolRegistry"]):
         self._skill_executor = SkillToolExecutor()
         self.tools: list[ToolSpec] = []
 
-    async def __aenter__(self) -> "BoundToolRegistry":
+    async def __aenter__(self) -> BoundToolRegistry:
         names: set[str] = set()
         for tool in SkillLoader(self.definitions).load_tools(self.agent.allowed_skills):
             if tool.name in names:

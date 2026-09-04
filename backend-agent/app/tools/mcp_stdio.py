@@ -30,7 +30,7 @@ class MCPStdioSession(AbstractAsyncContextManager["MCPStdioSession"]):
         self.tools: list[ToolSpec] = []
         self._remote_names: dict[str, str] = {}
 
-    async def __aenter__(self) -> "MCPStdioSession":
+    async def __aenter__(self) -> MCPStdioSession:
         environment = {**os.environ, **self.server.env}
         parameters = StdioServerParameters(command=self.server.command, args=self.server.args, env=environment)
         try:
@@ -77,10 +77,10 @@ class MCPStdioSession(AbstractAsyncContextManager["MCPStdioSession"]):
                 tool_name=tool_name,
                 status="error" if is_error else "success",
                 content=self._truncate(text or "工具未返回文本。"),
-                structured_data=structured if isinstance(structured, (dict, list)) else None,
+                structured_data=structured if isinstance(structured, dict | list) else None,
                 error_code=ErrorCode.TOOL_EXECUTION_FAILED if is_error else None,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return ToolResult(
                 tool_call_id=tool_call_id,
                 tool_name=tool_name,

@@ -52,7 +52,7 @@ class SkillToolExecutor:
                 content=str(data.get("summary") or data),
                 structured_data=data,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return ToolResult(tool_call_id=tool_call_id, tool_name=qualified_name, status="error", content="Skill 工具调用超时。", error_code=ErrorCode.TOOL_TIMEOUT)
         except Exception:
             return ToolResult(tool_call_id=tool_call_id, tool_name=qualified_name, status="error", content="Skill 工具调用失败。", error_code=ErrorCode.TOOL_EXECUTION_FAILED)

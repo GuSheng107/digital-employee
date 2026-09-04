@@ -1,27 +1,90 @@
 [project]
-name = "backend-agent-runtime"
+name = "backend-agent"
 version = "0.1.0"
-description = "Phase 1 minimal Agent Runtime with LiteLLM, MCP, and Skills."
+description = "Digital Employee Agent Runtime Service"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "fastapi>=0.115,<1",
-  "fastmcp>=2,<3",
-  "httpx>=0.27,<1",
-  "jsonschema>=4.23,<5",
-  "litellm>=1.75,<2",
-  "mcp>=1.9,<2",
-  "pydantic>=2.8,<3",
-  "python-dotenv>=1,<2",
-  "uvicorn[standard]>=0.30,<1",
+    "api-common==0.1.0",
+    "data-client==0.1.0",
+    "fastapi==0.140.7",
+    "fastmcp>=2,<3",
+    "httpx==0.28.1",
+    "jsonschema>=4.23,<5",
+    "litellm>=1.75,<2",
+    "mcp>=1.9,<2",
+    "nacos-client==0.1.0",
+    "observability==0.1.0",
+    "psutil==7.0.0",
+    "pydantic==2.13.4",
+    "pydantic-settings==2.14.2",
+    "python-dotenv==1.2.2",
+    "uvicorn[standard]==0.51.0",
 ]
 
 [dependency-groups]
 dev = [
-  "pytest>=8,<9",
-  "pytest-asyncio>=0.24,<1",
+    "mypy==1.15.0",
+    "pytest==7.4.4",
+    "pytest-asyncio==0.23.8",
+    "ruff==0.6.9",
+    "types-psutil==7.2.2.20260827",
 ]
 
+[tool.uv.sources]
+api-common = { path = "../backend-share/api-common", editable = true }
+data-client = { path = "../backend-share/data-client", editable = true }
+nacos-client = { path = "../backend-share/nacos-client", editable = true }
+observability = { path = "../backend-share/observability", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
 [tool.pytest.ini_options]
+pythonpath = ["."]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+exclude = ["tests"]
+
+[[tool.mypy.overrides]]
+module = [
+    "api_common",
+    "api_common.*",
+    "data_client",
+    "data_client.*",
+    "fastmcp",
+    "fastmcp.*",
+    "litellm",
+    "litellm.*",
+    "mcp",
+    "mcp.*",
+    "nacos_client",
+    "nacos_client.*",
+    "observability",
+    "observability.*",
+]
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "E501",
+    "B008",
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    "RUF006",
+]

@@ -3,13 +3,13 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from test_runtime import write_test_project
+
 from app.core.contracts import ChatMessage, ModelResponse, RunRequest
 from app.core.definitions import DefinitionStore, ModelProfile, Settings
-from app.core.runtime import AgentRuntime
+from app.core.agent_runtime import AgentRuntime
 from app.infrastructure.recorder import JsonlRunRecorder
 from app.infrastructure.session_store import SQLiteSessionStore
-
-from test_runtime import write_test_project
 
 
 def test_sqlite_store_reopens_with_session_messages_and_reserved_role(tmp_path: Path) -> None:

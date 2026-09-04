@@ -1,6 +1,9 @@
 .env
+.mypy_cache/
+.pytest_cache/
+.runtime/
 .venv/
 __pycache__/
-*.py[cod]
+logs/
 var/
-.pytest_cache/
+*.py[cod]

@@ -41,7 +41,7 @@ class SkillManifest(BaseModel):
     version: str
     description: str = ""
     inject_instructions: bool = True
-    tools: list["SkillToolDefinition"] = Field(default_factory=list)
+    tools: list[SkillToolDefinition] = Field(default_factory=list)
 
 
 class SkillToolDefinition(BaseModel):
@@ -58,7 +58,7 @@ class Settings(BaseModel):
     tool_result_max_chars: int = Field(default=8_000, ge=200, le=100_000)
 
     @classmethod
-    def from_environment(cls, project_root: Path) -> "Settings":
+    def from_environment(cls, project_root: Path) -> Settings:
         return cls(
             project_root=project_root,
             model=ModelProfile(

@@ -4,7 +4,14 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any, Protocol
 
-from app.core.contracts import ChatMessage, ErrorCode, ModelResponse, RuntimeError, ToolCall, ToolSpec
+from app.core.contracts import (
+    ChatMessage,
+    ErrorCode,
+    ModelResponse,
+    RuntimeError,
+    ToolCall,
+    ToolSpec,
+)
 from app.core.definitions import ModelProfile
 
 

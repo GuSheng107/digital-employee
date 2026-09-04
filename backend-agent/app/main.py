@@ -1,166 +1,225 @@
+"""backend-agent FastAPI 应用入口。"""
+
 from __future__ import annotations
 
-import asyncio
-import json
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, cast
 
-from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from api_common import ApiResponse, ErrorCode, InternalError, success_response
+from api_common.exceptions import ApiException
+from data_client import get_data_client
 from dotenv import load_dotenv
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from observability import TraceBatch, TraceMiddleware, TraceService, TraceSink
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.core.contracts import ChatMessage, RunEvent, RunRequest, RuntimeError
-from app.core.definitions import DefinitionStore, Settings
-from app.core.runtime import AgentRuntime
+from app.api.router import api_router
+from app.core.agent_runtime import AgentRuntime
+from app.core.config import Settings, settings
+from app.core.definitions import DefinitionStore
+from app.core.definitions import Settings as AgentSettings
+from app.core.logging import configure_logging
+from app.core.runtime import RuntimeManager
 from app.infrastructure.model_gateway import LiteLLMModelGateway
 from app.infrastructure.recorder import JsonlRunRecorder
 from app.infrastructure.session_store import SQLiteSessionStore
+from app.schemas.health import ServiceInfo
+
+logger = logging.getLogger("backend_agent.app")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def create_runtime(project_root: Path = PROJECT_ROOT) -> AgentRuntime:
-    load_dotenv(project_root / ".env")
-    settings = Settings.from_environment(project_root)
+async def _export_trace_batch(batch: TraceBatch) -> None:
+    """把 Agent Trace 委托给 backend-data 持久化。"""
+    await get_data_client().submit_trace_batch(batch.model_dump(mode="json"))
+
+
+async def _discard_trace_batch(_batch: TraceBatch) -> None:
+    """丢弃 Trace 批次，供隔离测试构造应用。"""
+
+
+async def _close_data_client() -> None:
+    """关闭共享 data-client 的同步和异步连接池。"""
+    client = get_data_client()
+    await client.aclose()
+    client.close()
+
+
+def _create_agent_runtime() -> AgentRuntime:
+    """根据本地 .env 与项目目录构造完整 Agent 运行时。"""
+    load_dotenv(PROJECT_ROOT / ".env")
+    agent_settings = AgentSettings.from_environment(PROJECT_ROOT)
     return AgentRuntime(
-        settings=settings,
-        definitions=DefinitionStore(project_root),
+        settings=agent_settings,
+        definitions=DefinitionStore(PROJECT_ROOT),
         model_gateway=LiteLLMModelGateway(),
-        recorder=JsonlRunRecorder(project_root / "var" / "traces"),
-        session_store=SQLiteSessionStore(project_root / "var" / "sessions.sqlite3"),
+        recorder=JsonlRunRecorder(PROJECT_ROOT / "var" / "traces"),
+        session_store=SQLiteSessionStore(PROJECT_ROOT / "var" / "sessions.sqlite3"),
     )
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    app.state.runtime = create_runtime()
-    try:
-        yield
-    finally:
-        session_store = app.state.runtime.session_store
-        if session_store is not None and hasattr(session_store, "close"):
-            session_store.close()
+def create_app(
+    *,
+    configured_settings: Settings | None = None,
+    runtime: RuntimeManager | None = None,
+    agent_runtime: AgentRuntime | None = None,
+    trace_sink: TraceSink | None = None,
+) -> FastAPI:
+    """创建可注入配置和运行时的 FastAPI 应用。
 
+    Args:
+        configured_settings: 测试或运行时覆盖配置。
+        runtime: 测试或运行时覆盖生命周期管理器。
+        agent_runtime: 测试或运行时覆盖 Agent 运行时；默认按项目目录构造。
+        trace_sink: Trace 输出函数；默认提交至 backend-data。
 
-app = FastAPI(title="Backend Agent Runtime", version="0.1.0", lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["null", "http://127.0.0.1:8766", "http://localhost:8766"],
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type"],
-)
-app.mount("/debug", StaticFiles(directory=PROJECT_ROOT / "app" / "static" / "debug", html=True), name="debug")
+    Returns:
+        配置完成的 FastAPI 应用。
+    """
+    active_settings = configured_settings or settings
+    active_runtime = runtime or RuntimeManager()
+    active_agent_runtime = agent_runtime or _create_agent_runtime()
+    active_trace_sink = trace_sink or _export_trace_batch
+    configure_logging(active_settings.log_level)
 
-
-class RunInput(BaseModel):
-    message: str = Field(min_length=1, max_length=20_000)
-    history: list[ChatMessage] = Field(default_factory=list, max_length=20)
-    conversation_id: str | None = Field(default=None, max_length=200)
-    user_id: str | None = Field(default=None, max_length=200)
-    user_role: str | None = Field(default=None, max_length=100)
-
-
-@app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok", "phase": "2"}
-
-
-@app.get("/v1/agents")
-async def list_agents(request: Request) -> dict[str, object]:
-    runtime: AgentRuntime = request.app.state.runtime
-    agents = runtime.definitions.list_agents()
-    return {"agents": [{"id": agent.id, "name": agent.name} for agent in agents]}
-
-
-@app.post("/v1/model/test")
-async def test_model(request: Request) -> dict[str, object]:
-    runtime: AgentRuntime = request.app.state.runtime
-    try:
-        response = await runtime.model_gateway.complete(
-            [ChatMessage(role="user", content="你好")],
-            [],
-            runtime.settings.model,
-        )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail={"error_code": exc.code, "message": exc.message}) from exc
-    return {"ok": True, "model": runtime.settings.model.model, "answer": response.content, "usage": response.usage}
-
-
-@app.post("/v1/agents/{agent_id}/test")
-async def run_agent(agent_id: str, payload: RunInput, request: Request) -> dict[str, object]:
-    runtime: AgentRuntime = request.app.state.runtime
-    result = await runtime.run(
-        RunRequest(agent_id=agent_id, message=payload.message, history=payload.history, conversation_id=payload.conversation_id, user_id=payload.user_id, user_role=payload.user_role),
-    )
-    if result.status != "completed":
-        raise HTTPException(status_code=502, detail=result.model_dump(mode="json"))
-    return result.model_dump(mode="json")
-
-
-@app.post("/v1/agents/{agent_id}/stream")
-async def stream_agent(agent_id: str, payload: RunInput, request: Request) -> StreamingResponse:
-    runtime: AgentRuntime = request.app.state.runtime
-
-    async def generate() -> AsyncIterator[str]:
-        queue: asyncio.Queue[RunEvent | None] = asyncio.Queue()
-
-        async def emit(event: RunEvent) -> None:
-            await queue.put(event)
-
-        task = asyncio.create_task(
-            runtime.run(
-                RunRequest(agent_id=agent_id, message=payload.message, history=payload.history, conversation_id=payload.conversation_id, user_id=payload.user_id, user_role=payload.user_role),
-                emit=emit,
-            )
-        )
+    @asynccontextmanager
+    async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+        application.state.settings = active_settings
+        application.state.runtime = active_runtime
+        application.state.agent_runtime = active_agent_runtime
+        await active_runtime.start()
         try:
-            while True:
-                event = await queue.get()
-                if event is None:
-                    break
-                yield f"event: {event.type}\ndata: {event.model_dump_json()}\n\n"
-                if event.type in {"run.completed", "run.failed"}:
-                    break
+            yield
         finally:
-            if not task.done():
-                task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+            await active_runtime.stop()
+            session_store = active_agent_runtime.session_store
+            if session_store is not None and hasattr(session_store, "close"):
+                session_store.close()
+            if active_trace_sink is _export_trace_batch:
+                await _close_data_client()
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    application = FastAPI(
+        title=active_settings.app_name,
+        version=active_settings.app_version,
+        docs_url="/docs" if active_settings.docs_enabled else None,
+        redoc_url="/redoc" if active_settings.docs_enabled else None,
+        openapi_url="/openapi.json" if active_settings.docs_enabled else None,
+        lifespan=lifespan,
+    )
+    application.state.settings = active_settings
+    application.state.runtime = active_runtime
+    application.state.agent_runtime = active_agent_runtime
+    application.add_middleware(
+        TraceMiddleware,
+        service=TraceService.BACKEND_AGENT,
+        sink=active_trace_sink,
+    )
+    debug_dir = PROJECT_ROOT / "app" / "static" / "debug"
+    if debug_dir.is_dir():
+        application.mount("/debug", StaticFiles(directory=debug_dir, html=True), name="debug")
+
+    @application.exception_handler(ApiException)
+    async def api_exception_handler(
+        _request: Request,
+        exc: ApiException,
+    ) -> JSONResponse:
+        """把业务异常转换为统一错误响应。"""
+        headers = None
+        if exc.http_status == 429 and isinstance(exc.detail, dict):
+            retry_after = exc.detail.get("retry_after_seconds")
+            if isinstance(retry_after, int) and retry_after > 0:
+                headers = {"Retry-After": str(retry_after)}
+        return JSONResponse(
+            status_code=exc.http_status,
+            content=exc.to_response(),
+            headers=headers,
+        )
+
+    @application.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(
+        _request: Request,
+        exc: StarletteHTTPException,
+    ) -> JSONResponse:
+        """把 Starlette HTTP 异常转换为统一错误响应。"""
+        message = "internal server error" if exc.status_code >= 500 else str(exc.detail)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "success": False,
+                "message": message,
+                "data": {
+                    "code": f"HTTP_{exc.status_code}",
+                    "detail": str(exc.detail) if exc.detail else "",
+                },
+            },
+        )
+
+    @application.exception_handler(RequestValidationError)
+    async def validation_exception_handler(
+        _request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
+        """把请求校验异常转换为统一错误响应。"""
+        validation_errors = [
+            {
+                "location": [str(part) for part in error.get("loc", ())],
+                "message": str(error.get("msg", "请求参数校验失败")),
+                "type": str(error.get("type", "validation_error")),
+            }
+            for error in exc.errors()
+        ]
+        first_message = validation_errors[0]["message"] if validation_errors else "请求参数校验失败"
+        return JSONResponse(
+            status_code=422,
+            content={
+                "success": False,
+                "message": f"请求参数校验失败：{first_message}",
+                "data": {
+                    "code": ErrorCode.VALIDATION_FAILED,
+                    "detail": validation_errors,
+                },
+            },
+        )
+
+    @application.exception_handler(Exception)
+    async def unhandled_exception_handler(
+        _request: Request,
+        exc: Exception,
+    ) -> JSONResponse:
+        """兜底未捕获异常并对外隐藏内部细节。"""
+        logger.error(
+            "Unhandled Agent request error",
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        return JSONResponse(
+            status_code=500,
+            content=InternalError().to_response(),
+        )
+
+    @application.get("/", response_model=ApiResponse)
+    def root() -> dict[str, Any]:
+        """返回 Agent 服务基本信息。"""
+        return cast(
+            dict[str, Any],
+            success_response(
+                ServiceInfo(
+                    name=active_settings.app_name,
+                    version=active_settings.app_version,
+                    environment=active_settings.app_env,
+                    status="running",
+                ).model_dump()
+            ),
+        )
+
+    application.include_router(api_router, prefix=active_settings.api_prefix)
+    return application
 
 
-@app.get("/v1/traces/{trace_id}")
-async def get_trace(trace_id: str, request: Request) -> dict[str, object]:
-    runtime: AgentRuntime = request.app.state.runtime
-    events = runtime.recorder.get_trace(trace_id)
-    if not events:
-        raise HTTPException(status_code=404, detail="trace 不存在")
-    return {"trace_id": trace_id, "events": events}
-
-
-@app.get("/v1/sessions/{session_id}")
-async def get_session(session_id: str, request: Request) -> dict[str, object]:
-    runtime: AgentRuntime = request.app.state.runtime
-    if runtime.session_store is None:
-        raise HTTPException(status_code=503, detail="会话持久化未启用")
-    session = runtime.session_store.get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="会话不存在")
-    return session
-
-
-@app.get("/v1/sessions")
-async def list_sessions(
-    request: Request,
-    user_id: str | None = Query(default=None, max_length=200),
-    limit: int = Query(default=50, ge=1, le=200),
-) -> dict[str, object]:
-    runtime: AgentRuntime = request.app.state.runtime
-    if runtime.session_store is None:
-        raise HTTPException(status_code=503, detail="会话持久化未启用")
-    return {"sessions": runtime.session_store.list_sessions(user_id=user_id, limit=limit)}
+app = create_app()

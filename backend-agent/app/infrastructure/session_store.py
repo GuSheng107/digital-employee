@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from app.core.contracts import ChatMessage, SessionStore
+from app.core.contracts import ChatMessage
 
 
 class SQLiteSessionStore:
@@ -316,7 +316,7 @@ class SQLiteSessionStore:
         return int(row["next_sequence"])
 
     class _Transaction:
-        def __init__(self, owner: "SQLiteSessionStore") -> None:
+        def __init__(self, owner: SQLiteSessionStore) -> None:
             self.owner = owner
             self.connection = owner._connection
 
@@ -334,7 +334,7 @@ class SQLiteSessionStore:
             finally:
                 self.owner._lock.release()
 
-    def _transaction(self) -> "SQLiteSessionStore._Transaction":
+    def _transaction(self) -> SQLiteSessionStore._Transaction:
         return self._Transaction(self)
 
 
