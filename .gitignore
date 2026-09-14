@@ -73,6 +73,10 @@ digital-employee-data-platform/
 .trae/
 .ai-memory/
 
+# 本地笔记与临时脚本，不上传
+/md/
+/startup.txt
+
 # ========================
 # Secrets
 # ========================
