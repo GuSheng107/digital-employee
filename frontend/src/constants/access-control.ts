@@ -62,6 +62,14 @@ export const VIP_LEVEL: Readonly<VipLevelMap> = Object.freeze({
   SUPER_ADMIN: 99,
 });
 
+/** 公共体验账号（游客）用户名集合；与后端 auth-utils 的 GUEST_USERNAMES 镜像。 */
+export const GUEST_USERNAMES: ReadonlySet<string> = new Set(['youke']);
+
+/** 判断当前用户是否为密码被冻结的游客体验账号。 */
+export function isGuestAccount(username: string | null | undefined): boolean {
+  return typeof username === 'string' && GUEST_USERNAMES.has(username);
+}
+
 export const PERMISSION_CODE: Readonly<PermissionCodeMap> = Object.freeze({
   USER_MANAGE: 'admin:user:manage',
   USER_READONLY: 'admin:user:readonly',

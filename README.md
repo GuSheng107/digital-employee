@@ -143,7 +143,7 @@ node -v   # 应为 v22.14.x
 | backend-data | http://127.0.0.1:8010/api/v1/health |
 | backend-gateway | http://127.0.0.1:8864/api/v1/health |
 
-体验账号：`youke` / 密码：`youkezhanghao@2026`
+体验账号：`youke` / 密码：`youkezhanghao@2026`（密码已冻结：自助改密与管理员重置均被拒绝，仅可带外修改数据库维护）
 
 > `start-all` 把服务放到独立进程会话，脚本退出后 Ctrl+C 无法停止服务。停止执行：`python scripts/kill-port.py`（或指定 `8010 8020 8864 5173`）。
 

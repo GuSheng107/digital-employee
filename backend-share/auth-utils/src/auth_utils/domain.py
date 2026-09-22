@@ -58,6 +58,10 @@ INVITE_CODE_MIN_LENGTH = 4
 INVITE_CODE_MAX_LENGTH = 32
 INVITE_CODE_GENERATED_LENGTH = 8
 INVITE_CODE_ALLOWED_PATTERN = r"^[A-Z0-9_-]+$"
+
+# 公共体验账号（游客）用户名集合：这些账号的密码完全冻结，
+# 自助改密与管理员重置均被拒绝，凭据只能由带外维护（SQL）。
+GUEST_USERNAMES = frozenset({"youke"})
 AVATAR_MAX_SIZE_BYTES = 3 * 1024 * 1024
 AVATAR_CONTENT_TYPES = frozenset(
     {

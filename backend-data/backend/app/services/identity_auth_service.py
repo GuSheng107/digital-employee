@@ -20,6 +20,7 @@ from api_common import (
 )
 from auth_utils import (
     FULL_ACCESS_ROLE_CODES,
+    GUEST_USERNAMES,
     ROLE_CODE_USER,
     USER_PROFILE_ROUTE_PATH,
     MenuType,
@@ -366,6 +367,11 @@ class IdentityAuthService:
             else {}
         )
         must_change_password = self._sessions.is_password_change_required(user.id)
+        if must_change_password and user.username in GUEST_USERNAMES:
+            # 游客账号密码已冻结，历史遗留的强制改密标志会将其锁死在
+            # 个人信息页（改密入口同时被禁用），读取上下文时自愈清除。
+            self._sessions.clear_password_change_required(user.id)
+            must_change_password = False
         if must_change_password:
             permission_codes = []
             if include_menus:
