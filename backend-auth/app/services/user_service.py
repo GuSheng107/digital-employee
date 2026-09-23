@@ -11,6 +11,7 @@ from typing import Any
 
 from api_common import InvalidCredentialsError, PermissionDeniedError, ValidationError
 from auth_utils import (
+    GUEST_USERNAMES,
     PROTECTED_ROLE_CODES,
     ROLE_CODE_MANAGER,
     ROLE_CODE_SUPER_ADMIN,
@@ -168,6 +169,9 @@ class UserService:
         current_password: str | None = None,
     ) -> dict:
         """更新当前用户资料；主动改密时清除强制改密标志。"""
+        if username in GUEST_USERNAMES and password:
+            # 游客体验账号密码完全冻结，仅允许维护昵称等资料字段。
+            raise PermissionDeniedError(message="游客体验账号不允许修改密码")
         if password:
             credentials = self._data.get_credentials(username)
             password_hash = credentials.get("password_hash") if credentials else None

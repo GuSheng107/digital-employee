@@ -27,6 +27,7 @@ import {
 } from '@/utils/identity-validation';
 import {
   getVipDisplayFallback,
+  isGuestAccount,
   VIP_LEVEL,
 } from '@/constants/access-control';
 import SystemPage from '@/components/system-page/SystemPage';
@@ -151,6 +152,8 @@ export default function Profile(): React.ReactElement {
     || getVipDisplayFallback(userInfo.vip_level, userInfo.is_vip);
   const isSuperAdmin = userInfo.vip_level === VIP_LEVEL.SUPER_ADMIN;
   const isManager = userInfo.vip_level === VIP_LEVEL.MANAGER;
+  // 游客体验账号密码冻结：隐藏改密表单，防止无效提交
+  const isGuest = isGuestAccount(userInfo.username);
 
   return (
     <SystemPage title="个人信息" contentMode="scroll">
@@ -250,6 +253,15 @@ export default function Profile(): React.ReactElement {
                 autoComplete="tel"
               />
             </Form.Item>
+            {isGuest ? (
+              <Alert
+                type="info"
+                showIcon
+                message="游客体验账号不支持修改密码"
+                description="该账号为公共演示账号，密码由系统统一维护。"
+              />
+            ) : (
+              <>
             <Form.Item
               label="当前密码"
               name="currentPassword"
@@ -318,6 +330,8 @@ export default function Profile(): React.ReactElement {
                 </Button>
               </div>
             </Form.Item>
+              </>
+            )}
           </Form>
         </div>
       </div>

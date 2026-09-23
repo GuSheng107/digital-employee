@@ -16,6 +16,7 @@ from api_common import (
 )
 from auth_utils import (
     BUSINESS_VIP_LEVELS,
+    GUEST_USERNAMES,
     PROTECTED_ROLE_CODES,
     ROLE_CODE_MANAGER,
     ROLE_CODE_SUPER_ADMIN,
@@ -488,6 +489,9 @@ class UserService:
         ``password`` 非空时同步更新密码哈希（用于个人信息页自助修改密码）。
         """
         user = self._get_user(user_id)
+        if password_hash and user.username in GUEST_USERNAMES:
+            # 游客体验账号密码完全冻结，拒绝任何自助改密写入。
+            raise PermissionDeniedError(message="游客体验账号不允许修改密码")
 
         if nickname is not None:
             user.nickname = nickname
@@ -525,6 +529,9 @@ class UserService:
     ) -> dict:
         """管理员重置指定用户的密码（覆盖式，不校验旧密码）。"""
         user = self._get_user(user_id)
+        if user.username in GUEST_USERNAMES:
+            # 游客体验账号密码完全冻结，管理员重置同样拒绝，避免强制改密死锁。
+            raise PermissionDeniedError(message="游客体验账号密码已冻结，不允许重置")
         self._ensure_not_protected_account(user)
         self._ensure_actor_can_manage_user(
             user=user,
